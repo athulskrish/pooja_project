@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Delivery Partner Fleet App - Zippy Food Network</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    :root {
+      --rider-forest: #2E6F40;
+      --rider-pine: #243E2C;
+      --rider-mint: #CEFFDC;
+      --rider-mint-soft: #EDFBF2;
+      --rider-surface: #FFFFFF;
+      --rider-bg: #F5F8F6;
+      --rider-border: #E1ECE5;
+    }
+
+    body {
+      background-color: var(--rider-bg);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: #1C2B20;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Minimalist Rider Header */
+    .rider-top-navbar {
+      background: #FFFFFF;
+      border-bottom: 2px solid var(--rider-forest);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+      position: sticky;
+      top: 0;
+      z-index: 1020;
+    }
+
+    .brand-fleet-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--rider-pine);
+    }
+    .brand-fleet-logo:hover {
+      color: var(--rider-pine);
+    }
+    .fleet-icon-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: var(--rider-forest);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.15rem;
+    }
+
+    /* Navigation Tabs */
+    .rider-nav-tabs {
+      display: flex;
+      gap: 8px;
+      background: #EBF3EE;
+      padding: 4px;
+      border-radius: 50px;
+      margin: 12px 0 20px 0;
+    }
+    .rider-nav-tab-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 10px 16px;
+      border-radius: 50px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--rider-pine);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .rider-nav-tab-btn.active {
+      background: #FFFFFF;
+      color: var(--rider-forest);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Duty Switch Bar */
+    .duty-card {
+      background: #FFFFFF;
+      border-radius: 18px;
+      padding: 16px 20px;
+      border: 1px solid var(--rider-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* Active Trip Card */
+    .active-trip-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      border: 2px solid var(--rider-forest);
+      box-shadow: 0 6px 20px rgba(46, 111, 64, 0.08);
+      overflow: hidden;
+      position: relative;
+    }
+    .active-trip-header {
+      background: linear-gradient(135deg, #243E2C 0%, #2E6F40 100%);
+      color: #FFFFFF;
+      padding: 16px 20px;
+    }
+
+    /* Step Timeline */
+    .step-timeline-container {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      margin: 20px 10px 24px 10px;
+    }
+    .step-timeline-container::before {
+      content: '';
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      right: 20px;
+      height: 3px;
+      background: #E2ECE5;
+      z-index: 1;
+    }
+    .step-timeline-progress {
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      height: 3px;
+      background: var(--rider-forest);
+      z-index: 2;
+      transition: width 0.4s ease;
+    }
+    .step-node {
+      position: relative;
+      z-index: 3;
+      text-align: center;
+      flex: 1;
+    }
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      border: 3px solid #CBD5E1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #64748B;
+      transition: all 0.3s ease;
+    }
+    .step-node.completed .step-circle {
+      background: var(--rider-forest);
+      border-color: var(--rider-forest);
+      color: #FFFFFF;
+    }
+    .step-node.active .step-circle {
+      background: #FFFFFF;
+      border-color: var(--rider-forest);
+      color: var(--rider-forest);
+      box-shadow: 0 0 0 4px var(--rider-mint);
+    }
+    .step-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #64748B;
+      margin-top: 6px;
+      display: block;
+    }
+    .step-node.completed .step-title,
+    .step-node.active .step-title {
+      color: var(--rider-pine);
+    }
+
+    /* Order History Item */
+    .history-order-card {
+      background: #FFFFFF;
+      border-radius: 16px;
+      border: 1px solid var(--rider-border);
+      padding: 16px 20px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+      transition: all 0.2s ease;
+    }
+    .history-order-card:hover {
+      border-color: var(--rider-forest);
+      box-shadow: 0 4px 14px rgba(46, 111, 64, 0.06);
+    }
+
+    /* Login Overlay Card */
+    .login-box-card {
+      background: #FFFFFF;
+      border-radius: 24px;
+      border: 1px solid var(--rider-border);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      max-width: 440px;
+      width: 100%;
+      margin: auto;
+      overflow: hidden;
+    }
+
+    /* Action buttons */
+    .btn-rider-primary {
+      background-color: var(--rider-forest);
+      color: #FFFFFF;
+      font-weight: 700;
+      border: none;
+      border-radius: 50px;
+      transition: all 0.2s ease;
+    }
+    .btn-rider-primary:hover, .btn-rider-primary:focus {
+      background-color: #235933;
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(46, 111, 64, 0.25);
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #10B981;
+      display: inline-block;
+      box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+      animation: pulseRider 2s infinite;
+    }
+    @keyframes pulseRider {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+  </style>
+</head>
+<body class="delivery-partner-app">
+
+  <!-- =========================================================================
+       1. TOPBAR / HEADER (LOGGED IN STATE)
+       ========================================================================= -->
+  <header class="rider-top-navbar" id="riderTopNavbar">
+    <div class="container-xl py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        
+        <!-- Fleet Brand -->
+        <a href="javascript:void(0)" onclick="switchTab('orders')" class="brand-fleet-logo">
+          <div class="fleet-icon-badge">
+            <i class="fa-solid fa-bicycle"></i>
+          </div>
+          <div>
+            <div class="fw-bold fs-5 text-pine mb-0" style="line-height: 1.1;">zippy<span class="text-success">.</span></div>
+            <div class="small fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.5px;">FLEET PARTNER</div>
+          </div>
+        </a>
+
+        <!-- Rider Profile & Logout Button -->
+        <div class="d-flex align-items-center gap-2">
+          
+          <!-- Rider Info Pill -->
+          <div class="d-none d-sm-flex align-items-center gap-2 bg-light px-3 py-1 rounded-pill border">
+            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center fw-bold" style="width: 26px; height: 26px; font-size: 0.75rem; background-color: var(--rider-forest) !important;">
+              P
+            </div>
+            <span class="fw-bold small text-pine" id="topbarRiderName">Prakash S. (#RDR-88)</span>
+            <span class="badge bg-warning text-dark small"><i class="bi bi-star-fill me-1"></i>4.9</span>
+          </div>
+
+          <!-- Standalone Logout Button -->
+          <button class="btn btn-sm btn-outline-danger rounded-pill fw-bold px-3 d-flex align-items-center gap-1 shadow-xs" onclick="confirmRiderLogout()" title="Log out from fleet account">
+            <i class="bi bi-box-arrow-right"></i>
+            <span>Logout</span>
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       2. LOGIN SCREEN VIEW (WHEN LOGGED OUT)
+       ========================================================================= -->
+  <div class="container py-5 my-auto" id="riderLoginView" style="display: none;">
+    <div class="login-box-card">
+      
+      <!-- Login Header -->
+      <div class="p-4 text-center text-white" style="background: linear-gradient(135deg, #1C3322 0%, #2E6F40 100%);">
+        <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-white bg-opacity-20 p-3 mb-2" style="width: 60px; height: 60px;">
+          <i class="fa-solid fa-bicycle fs-3 text-white"></i>
+        </div>
+        <h4 class="fw-bold mb-1">Delivery Partner Login</h4>
+        <p class="small text-white-50 mb-0">Zippy Fleet Operations & Logistics</p>
+      </div>
+
+      <!-- Login Form -->
+      <div class="p-4">
+        <form onsubmit="handleRiderLogin(event)">
+          
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-pine">Rider Phone or Email ID</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light text-muted border-end-0"><i class="bi bi-person"></i></span>
+              <input type="text" id="inputRiderId" class="form-control border-start-0" placeholder="rider.prakash@zippylush.com" value="rider.prakash@zippylush.com" required>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label small fw-bold text-pine">Password</label>
+              <span class="small text-muted" style="font-size: 0.75rem;">Default: rider123</span>
+            </div>
+            <div class="input-group">
+              <span class="input-group-text bg-light text-muted border-end-0"><i class="bi bi-key"></i></span>
+              <input type="password" id="inputRiderPass" class="form-control border-start-0" placeholder="••••••••" value="rider123" required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-rider-primary w-100 py-2 mb-3">
+            <i class="bi bi-box-arrow-in-right me-1"></i> Login to Fleet App
+          </button>
+
+          <!-- 1-Click Quick Demo Login Button -->
+          <div class="p-3 bg-light rounded-3 border text-center">
+            <div class="small fw-bold text-pine mb-1"><i class="bi bi-lightning-charge-fill text-warning me-1"></i> Quick 1-Click Login:</div>
+            <button type="button" class="btn btn-sm btn-white border rounded-pill w-100 fw-bold shadow-xs py-2 text-pine" onclick="quickFillAndLogin()">
+              <i class="fa-solid fa-id-badge text-success me-1"></i> Login as Prakash S. (#RDR-88)
+            </button>
+          </div>
+
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       3. MAIN RIDER WORKSPACE (WHEN LOGGED IN)
+       ========================================================================= -->
+  <div id="riderWorkspaceView">
+
+    <div class="container-xl py-3" style="max-width: 920px;">
+
+      <!-- A. ONLINE / OFFLINE DUTY BAR -->
+      <div class="duty-card mb-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; background: var(--rider-mint); color: var(--rider-forest);" id="dutyIconBox">
+            <i class="bi bi-broadcast fs-4"></i>
+          </div>
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <h5 class="fw-bold text-pine mb-0" id="dutyStatusHeading">You are ONLINE</h5>
+              <span class="badge bg-success rounded-pill px-2 py-1 small" id="dutyStatusPill">
+                <span class="pulse-dot me-1"></span> Accepting Dispatches
+              </span>
+            </div>
+            <div class="small text-muted" id="dutyStatusSub">GPS Zone: Indiranagar Hub • High Signal (4m accuracy)</div>
+          </div>
+        </div>
+
+        <div class="form-check form-switch fs-4 m-0">
+          <input class="form-check-input cursor-pointer" type="checkbox" id="dutyToggleSwitch" checked onchange="toggleDutyStatus(this.checked)">
+        </div>
+      </div>
+
+      <!-- B. SHIFT STATS STRIP -->
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
+            <div class="small text-muted fw-bold">Today's Earnings</div>
+            <div class="fs-4 fw-bold text-success font-monospace" id="statTodayEarnings">₹1,450</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
+            <div class="small text-muted fw-bold">Trips Delivered</div>
+            <div class="fs-4 fw-bold text-pine font-monospace" id="statTripsDelivered">14</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
+            <div class="small text-muted fw-bold">Customer Tips</div>
+            <div class="fs-4 fw-bold text-primary font-monospace" id="statCustomerTips">₹180</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
+            <div class="small text-muted fw-bold">On-Duty Time</div>
+            <div class="fs-4 fw-bold text-dark font-monospace">4.2h</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- C. WORK NAVIGATION TABS: ORDERS | HISTORY | EARNINGS -->
+      <nav class="rider-nav-tabs" aria-label="Rider Navigation">
+        <button type="button" class="rider-nav-tab-btn active" id="tabBtnOrders" onclick="switchTab('orders')">
+          <i class="bi bi-box-seam"></i>
+          <span>Orders</span>
+          <span class="badge bg-success rounded-pill px-2" id="badgeActiveCount">1</span>
+        </button>
+        <button type="button" class="rider-nav-tab-btn" id="tabBtnHistory" onclick="switchTab('history')">
+          <i class="bi bi-clock-history"></i>
+          <span>History</span>
+          <span class="badge bg-secondary rounded-pill px-2" id="badgeHistoryCount">14</span>
+        </button>
+        <button type="button" class="rider-nav-tab-btn" id="tabBtnEarnings" onclick="switchTab('earnings')">
+          <i class="bi bi-wallet2"></i>
+          <span>Earnings</span>
+        </button>
+      </nav>
+
+      <!-- =====================================================================
+           TAB 1: ORDERS (ACTIVE & INCOMING)
+           ===================================================================== -->
+      <div id="viewOrders">
+        
+        <!-- Offline Warning Notice (if duty switched off) -->
+        <div class="alert alert-secondary border rounded-4 text-center py-3 mb-3" id="offlineNotice" style="display: none;">
+          <i class="bi bi-moon-stars fs-4 text-muted d-block mb-1"></i>
+          <div class="fw-bold text-dark">You are currently OFFLINE</div>
+          <p class="small text-muted mb-2">Switch on your duty toggle above to accept live customer dispatches and earn payouts.</p>
+          <button class="btn btn-sm btn-success rounded-pill px-4 fw-bold" onclick="document.getElementById('dutyToggleSwitch').checked = true; toggleDutyStatus(true);">
+            Go Online Now
+          </button>
+        </div>
+
+        <div id="ordersContentContainer">
+          
+          <!-- SECTION 1: ACTIVE ORDER CARD -->
+          <div class="mb-4" id="activeOrderSection">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h5 class="fw-bold text-pine mb-0">Active Delivery Task</h5>
+              <span class="badge bg-danger text-white rounded-pill px-3 py-1 fw-bold" id="tripStageBadge">
+                <i class="bi bi-record-circle me-1"></i> TRIP IN PROGRESS
+              </span>
+            </div>
+
+            <div class="active-trip-card">
+              
+              <!-- Card Top Header -->
+              <div class="active-trip-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <div class="small text-white-50 text-uppercase fw-bold" style="font-size: 0.72rem; letter-spacing: 0.5px;">Order Reference</div>
+                  <h4 class="fw-bold mb-0 text-white" id="activeOrderId">#SWG-849201</h4>
+                </div>
+                <div class="text-end">
+                  <div class="small text-white-50 fw-bold" style="font-size: 0.72rem;">GUARANTEED PAYOUT</div>
+                  <div class="fs-4 fw-bold text-mint font-monospace">₹85.00</div>
+                </div>
+              </div>
+
+              <!-- Workflow Stepper Indicator -->
+              <div class="step-timeline-container">
+                <div class="step-timeline-progress" id="stepProgressBar" style="width: 25%;"></div>
+                
+                <div class="step-node completed" id="stepNode1">
+                  <div class="step-circle"><i class="bi bi-check"></i></div>
+                  <span class="step-title">Assigned</span>
+                </div>
+                <div class="step-node active" id="stepNode2">
+                  <div class="step-circle">2</div>
+                  <span class="step-title">At Store</span>
+                </div>
+                <div class="step-node" id="stepNode3">
+                  <div class="step-circle">3</div>
+                  <span class="step-title">Picked Up</span>
+                </div>
+                <div class="step-node" id="stepNode4">
+                  <div class="step-circle">4</div>
+                  <span class="step-title">Delivered</span>
+                </div>
+              </div>
+
+              <!-- Pickup & Drop Nodes -->
+              <div class="p-3 p-md-4 pt-0">
+                <div class="row g-3">
+                  
+                  <!-- Pickup Column -->
+                  <div class="col-md-6 border-end-md">
+                    <div class="p-3 bg-light rounded-4 h-100 border">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge bg-success bg-opacity-15 text-success fw-bold px-2 py-1">
+                          <i class="fa-solid fa-store me-1"></i> PICKUP STORE
+                        </span>
+                        <span class="small text-muted">1.1 km away</span>
+                      </div>
+                      <h5 class="fw-bold text-pine mb-1">Meghana Foods</h5>
+                      <p class="small text-muted mb-2">#544, 100 Feet Rd, Near Indiranagar Metro, Bangalore</p>
+                      
+                      <!-- Item Checklist -->
+                      <div class="p-2 bg-white rounded-3 border mb-3">
+                        <div class="small fw-bold text-muted mb-1 text-uppercase" style="font-size: 0.7rem;">Items to Collect (3):</div>
+                        <ul class="list-unstyled mb-0 small text-pine">
+                          <li><i class="bi bi-check-circle-fill text-success me-1"></i> 1x Meghana Special Chicken Biryani</li>
+                          <li><i class="bi bi-check-circle-fill text-success me-1"></i> 1x Clay Oven Butter Garlic Naan</li>
+                          <li><i class="bi bi-check-circle-fill text-success me-1"></i> 1x Shahi Gulab Jamun (2 Pcs)</li>
+                        </ul>
+                      </div>
+
+                      <div class="d-flex gap-2">
+                        <a href="tel:+918041234567" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold flex-grow-1">
+                          <i class="bi bi-telephone-fill me-1 text-success"></i> Call Store
+                        </a>
+                        <a href="https://maps.google.com/?q=Meghana+Foods+Indiranagar" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold">
+                          <i class="bi bi-geo-alt-fill text-primary"></i> Map
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Dropoff Column -->
+                  <div class="col-md-6">
+                    <div class="p-3 bg-light rounded-4 h-100 border">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge bg-primary bg-opacity-15 text-primary fw-bold px-2 py-1">
+                          <i class="bi bi-house-door-fill me-1"></i> DELIVERY DROP
+                        </span>
+                        <span class="small text-muted">2.4 km from store</span>
+                      </div>
+                      <h5 class="fw-bold text-pine mb-1">Pooja JP (Customer)</h5>
+                      <p class="small text-muted mb-2">#402 Green Meadows Apt, 100 Feet Rd, Indiranagar</p>
+
+                      <!-- Delivery Instructions -->
+                      <div class="p-2 bg-white rounded-3 border mb-3">
+                        <div class="small fw-bold text-muted mb-1 text-uppercase" style="font-size: 0.7rem;">Customer Note:</div>
+                        <div class="small text-pine">
+                          <i class="bi bi-info-circle-fill text-warning me-1"></i> "Please call upon arrival. 4-digit handover OTP is on my app."
+                        </div>
+                      </div>
+
+                      <div class="d-flex gap-2">
+                        <a href="tel:+919876543210" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold flex-grow-1">
+                          <i class="bi bi-telephone-fill me-1"></i> Call Customer
+                        </a>
+                        <a href="https://maps.google.com/?q=Green+Meadows+Apartment+Indiranagar" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold">
+                          <i class="bi bi-geo-alt-fill text-primary"></i> Map
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- Step Action Control Buttons -->
+                <div class="mt-3 p-3 bg-light rounded-4 border">
+                  <div class="small fw-bold text-muted text-uppercase mb-2" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+                    Courier Progress Action:
+                  </div>
+
+                  <div class="d-flex flex-wrap gap-2" id="actionButtonsRow">
+                    <button class="btn btn-outline-success rounded-pill fw-bold px-3 py-2" id="btnArrivedStore" onclick="advanceWorkflow('arrived_store')">
+                      <i class="bi bi-geo-alt me-1"></i> 1. Mark Arrived at Restaurant
+                    </button>
+                    <button class="btn btn-outline-success rounded-pill fw-bold px-3 py-2 disabled" id="btnPickedUp" onclick="advanceWorkflow('picked_up')">
+                      <i class="bi bi-box-seam me-1"></i> 2. Confirm Order Picked Up
+                    </button>
+                    <button class="btn btn-success rounded-pill fw-bold px-4 py-2 disabled" style="background-color: var(--rider-forest);" id="btnVerifyOtp" data-bs-toggle="modal" data-bs-target="#otpHandoverModal">
+                      <i class="bi bi-shield-check me-1"></i> 3. Verify Customer OTP & Complete
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+
+          <!-- SECTION 2: AVAILABLE NEARBY DISPATCHES QUEUE -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h5 class="fw-bold text-pine mb-0">Available Dispatches Nearby</h5>
+              <span class="small text-muted" id="nearbyCountLabel">2 orders waiting</span>
+            </div>
+
+            <!-- Dispatch Card 1 -->
+            <div class="card border-0 rounded-4 p-3 bg-white shadow-xs mb-3" id="dispatchCard1">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="rounded-3 bg-light text-forest d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; font-size: 1.3rem;">
+                    <i class="fa-solid fa-burger text-warning"></i>
+                  </div>
+                  <div>
+                    <h6 class="fw-bold text-pine mb-0">Truffles Burgers & Cafe (Koramangala)</h6>
+                    <div class="small text-muted">Pickup: 1.1 km • Drop: Domlur EGL (2.8 km) • 2 Items</div>
+                  </div>
+                </div>
+                <div class="text-end">
+                  <div class="fw-bold text-success fs-5 font-monospace">₹65.00</div>
+                  <div class="d-flex gap-2 mt-1">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="dismissDispatch('dispatchCard1')">Decline</button>
+                    <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background-color: var(--rider-forest);" onclick="acceptDispatch('dispatchCard1', '#SWG-849205', 'Truffles Burgers', 'Domlur EGL', 65.00)">Accept</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dispatch Card 2 -->
+            <div class="card border-0 rounded-4 p-3 bg-white shadow-xs mb-3" id="dispatchCard2">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="rounded-3 bg-light text-forest d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; font-size: 1.3rem;">
+                    <i class="fa-solid fa-cake-candles text-danger"></i>
+                  </div>
+                  <div>
+                    <h6 class="fw-bold text-pine mb-0">Glen's Bakehouse (Indiranagar)</h6>
+                    <div class="small text-muted">Pickup: 0.8 km • Drop: HAL 2nd Stage (1.6 km) • 1 Item</div>
+                  </div>
+                </div>
+                <div class="text-end">
+                  <div class="fw-bold text-success fs-5 font-monospace">₹55.00</div>
+                  <div class="d-flex gap-2 mt-1">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="dismissDispatch('dispatchCard2')">Decline</button>
+                    <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background-color: var(--rider-forest);" onclick="acceptDispatch('dispatchCard2', '#SWG-849212', 'Glen\'s Bakehouse', 'HAL 2nd Stage', 55.00)">Accept</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- =====================================================================
+           TAB 2: DELIVERY HISTORY (COMPLETED DELIVERIES)
+           ===================================================================== -->
+      <div id="viewHistory" style="display: none;">
+        
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <div>
+            <h5 class="fw-bold text-pine mb-0">Completed Delivery History</h5>
+            <span class="small text-muted">Past trip receipts, payouts, and customer ratings</span>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-success active rounded-pill px-3 fw-bold" onclick="filterHistory('all', this)">All Trips</button>
+            <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold" onclick="filterHistory('today', this)">Today (14)</button>
+          </div>
+        </div>
+
+        <!-- History Orders Feed -->
+        <div class="d-flex flex-column gap-3" id="historyOrdersContainer">
+          
+          <!-- Sample Delivery 1 -->
+          <div class="history-order-card">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-2 border-bottom">
+              <div>
+                <span class="badge bg-success bg-opacity-15 text-success rounded-pill fw-bold px-2 py-1 mb-1">
+                  <i class="bi bi-check-circle-fill me-1"></i> DELIVERED
+                </span>
+                <h6 class="fw-bold text-pine mb-0">Order #SWG-849180</h6>
+                <div class="small text-muted">Today at 1:20 PM • Completed in 18 mins</div>
+              </div>
+              <div class="text-end">
+                <div class="fs-5 fw-bold text-success font-monospace">₹115.00</div>
+                <div class="small text-muted">Base: ₹85 + Tip: ₹30</div>
+              </div>
+            </div>
+
+            <div class="py-2 small text-muted">
+              <div><strong>Pickup:</strong> Meghana Foods, Indiranagar</div>
+              <div><strong>Dropoff:</strong> Rahul M., 12th Main Indiranagar (2.4 km)</div>
+              <div class="text-dark mt-1"><i class="bi bi-star-fill text-warning me-1"></i> Customer Rated: <strong>5.0</strong> &mdash; <em>"Super fast and food was piping hot!"</em></div>
+            </div>
+          </div>
+
+          <!-- Sample Delivery 2 -->
+          <div class="history-order-card">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-2 border-bottom">
+              <div>
+                <span class="badge bg-success bg-opacity-15 text-success rounded-pill fw-bold px-2 py-1 mb-1">
+                  <i class="bi bi-check-circle-fill me-1"></i> DELIVERED
+                </span>
+                <h6 class="fw-bold text-pine mb-0">Order #SWG-849142</h6>
+                <div class="small text-muted">Today at 12:45 PM • Completed in 22 mins</div>
+              </div>
+              <div class="text-end">
+                <div class="fs-5 fw-bold text-success font-monospace">₹65.00</div>
+                <div class="small text-muted">Base: ₹65</div>
+              </div>
+            </div>
+
+            <div class="py-2 small text-muted">
+              <div><strong>Pickup:</strong> Truffles Burgers & Cafe, Koramangala</div>
+              <div><strong>Dropoff:</strong> Anita R., Embassy GolfLinks Domlur (2.8 km)</div>
+              <div class="text-dark mt-1"><i class="bi bi-star-fill text-warning me-1"></i> Customer Rated: <strong>4.8</strong> &mdash; <em>"Polite delivery executive."</em></div>
+            </div>
+          </div>
+
+          <!-- Sample Delivery 3 -->
+          <div class="history-order-card">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-2 border-bottom">
+              <div>
+                <span class="badge bg-success bg-opacity-15 text-success rounded-pill fw-bold px-2 py-1 mb-1">
+                  <i class="bi bi-check-circle-fill me-1"></i> DELIVERED
+                </span>
+                <h6 class="fw-bold text-pine mb-0">Order #SWG-849110</h6>
+                <div class="small text-muted">Today at 11:50 AM • Completed in 19 mins</div>
+              </div>
+              <div class="text-end">
+                <div class="fs-5 fw-bold text-success font-monospace">₹115.00</div>
+                <div class="small text-muted">Base: ₹95 + Tip: ₹20</div>
+              </div>
+            </div>
+
+            <div class="py-2 small text-muted">
+              <div><strong>Pickup:</strong> Empire Restaurant, Indiranagar</div>
+              <div><strong>Dropoff:</strong> Vikram K., Defence Colony (3.1 km)</div>
+              <div class="text-dark mt-1"><i class="bi bi-star-fill text-warning me-1"></i> Customer Rated: <strong>5.0</strong> &mdash; <em>"Excellent service."</em></div>
+            </div>
+          </div>
+
+          <!-- Sample Delivery 4 -->
+          <div class="history-order-card">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-2 border-bottom">
+              <div>
+                <span class="badge bg-success bg-opacity-15 text-success rounded-pill fw-bold px-2 py-1 mb-1">
+                  <i class="bi bi-check-circle-fill me-1"></i> DELIVERED
+                </span>
+                <h6 class="fw-bold text-pine mb-0">Order #SWG-849088</h6>
+                <div class="small text-muted">Today at 11:10 AM • Completed in 14 mins</div>
+              </div>
+              <div class="text-end">
+                <div class="fs-5 fw-bold text-success font-monospace">₹50.00</div>
+                <div class="small text-muted">Base: ₹50</div>
+              </div>
+            </div>
+
+            <div class="py-2 small text-muted">
+              <div><strong>Pickup:</strong> Corner House Ice Cream, Indiranagar</div>
+              <div><strong>Dropoff:</strong> Sunita S., HAL 2nd Stage (1.5 km)</div>
+              <div class="text-dark mt-1"><i class="bi bi-star-fill text-warning me-1"></i> Customer Rated: <strong>5.0</strong> &mdash; <em>"Ice cream was intact and cold!"</em></div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- =====================================================================
+           TAB 3: EARNINGS BREAKDOWN
+           ===================================================================== -->
+      <div id="viewEarnings" style="display: none;">
+        
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <div class="small text-muted fw-bold text-uppercase">Total Earned Today</div>
+              <div class="display-6 fw-bold text-success font-monospace" id="earningsGrandTotal">₹1,450.00</div>
+            </div>
+            <div class="text-end">
+              <span class="badge bg-success bg-opacity-15 text-success px-3 py-2 rounded-pill fw-bold">
+                <i class="bi bi-bank me-1"></i> Direct Bank Linked
+              </span>
+              <div class="small text-muted mt-1">HDFC A/c **8192</div>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <h6 class="fw-bold text-pine mb-3">Earnings Breakdown</h6>
+          <div class="d-flex justify-content-between small text-muted py-2 border-bottom">
+            <span>Base Order Deliveries (14 trips)</span>
+            <span class="fw-bold text-pine">₹980.00</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted py-2 border-bottom">
+            <span>Distance Traveled Allowance (38.2 km)</span>
+            <span class="fw-bold text-pine">₹290.00</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted py-2 border-bottom">
+            <span>Customer In-App Tips (100% Direct)</span>
+            <span class="fw-bold text-primary">₹180.00</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted py-2 border-bottom">
+            <span>Daily Incentive Bonus (14/18 completed)</span>
+            <span class="fw-bold text-warning">₹0.00 (Pending 4 trips)</span>
+          </div>
+          <div class="d-flex justify-content-between fw-bold text-pine pt-3">
+            <span>Net Shift Settlement</span>
+            <span class="text-success fs-5 font-monospace">₹1,450.00</span>
+          </div>
+        </div>
+
+        <!-- Incentive Bonus Banner -->
+        <div class="card border-0 rounded-4 shadow-sm p-3 bg-white mb-3" style="border-left: 6px solid #F59E0B !important;">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="fw-bold text-pine small"><i class="bi bi-trophy-fill text-warning me-1"></i> Daily Incentive Milestone</span>
+            <span class="small fw-bold text-success">14 / 18 Delivered (78%)</span>
+          </div>
+          <p class="small text-muted mb-2">Complete 4 more deliveries before midnight to unlock an extra ₹300 bonus in your wallet.</p>
+          <div class="progress rounded-pill" style="height: 10px;">
+            <div class="progress-bar bg-success" style="width: 78%; background-color: var(--rider-forest) !important;"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- =========================================================================
+       4. CUSTOMER OTP VERIFICATION MODAL
+       ========================================================================= -->
+  <div class="modal fade" id="otpHandoverModal" tabindex="-1" aria-labelledby="otpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow text-center p-4">
+        
+        <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3" style="width: 64px; height: 64px; font-size: 2rem; background: var(--rider-mint); color: var(--rider-forest);">
+          <i class="bi bi-shield-check"></i>
+        </div>
+
+        <h4 class="fw-bold text-pine mb-1" id="otpModalLabel">Verify Customer Handover OTP</h4>
+        <p class="small text-muted mb-3">
+          Ask customer <strong>Pooja JP</strong> for the 4-digit secret delivery OTP shown on her tracking screen.<br>
+          <span class="text-success fw-bold">(Demo Customer OTP: 5821)</span>
+        </p>
+
+        <form onsubmit="handleVerifyOtp(event)">
+          <div class="d-flex justify-content-center gap-2 mb-4">
+            <input type="text" maxlength="4" class="form-control text-center fs-2 font-monospace fw-bold" id="customerOtpInput" placeholder="5821" style="max-width: 180px; letter-spacing: 6px;" required autofocus>
+          </div>
+
+          <div class="d-flex justify-content-center gap-2">
+            <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background-color: var(--rider-forest);">
+              Confirm Handover
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       5. LOGOUT CONFIRMATION MODAL
+       ========================================================================= -->
+  <div class="modal fade" id="logoutModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content rounded-4 border-0 shadow text-center p-4">
+        <div class="rounded-circle bg-danger bg-opacity-10 text-danger d-flex align-items-center justify-content-center mx-auto mb-3" style="width: 56px; height: 56px; font-size: 1.6rem;">
+          <i class="bi bi-box-arrow-right"></i>
+        </div>
+        <h5 class="fw-bold text-pine mb-1">Confirm Logout</h5>
+        <p class="small text-muted mb-4">Are you sure you want to end your shift and log out of the fleet app?</p>
+        
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-light rounded-pill flex-grow-1 fw-bold" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger rounded-pill flex-grow-1 fw-bold" onclick="performLogout()">Log Out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy App Core JS -->
+  <script src="js/app.js"></script>
+
+  <!-- =========================================================================
+       6. DELIVERY PARTNER FLEET LOGIC ENGINE
+       ========================================================================= -->
+  <script>
+    // State management
+    let isRiderLoggedIn = true;
+    let isDutyOnline = true;
+    let currentWorkflowStep = 1; // 1: assigned, 2: arrived_store, 3: picked_up, 4: delivered
+    let todayEarnings = 1450.00;
+    let tripsCount = 14;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Check auth from localStorage
+      const userRaw = localStorage.getItem('pooja_zippy_user');
+      if (userRaw) {
+        try {
+          const user = JSON.parse(userRaw);
+          if (user.role === 'rider') {
+            document.getElementById('topbarRiderName').textContent = user.name || 'Prakash S. (#RDR-88)';
+            renderLoggedInState(true);
+          } else {
+            // Default to logged-in rider for convenient pair-programming / review
+            renderLoggedInState(true);
+          }
+        } catch(e) {
+          renderLoggedInState(true);
+        }
+      } else {
+        renderLoggedInState(true);
+      }
+    });
+
+    /**
+     * Switch Tabs (orders / history / earnings)
+     */
+    function switchTab(tabName) {
+      const tabs = ['orders', 'history', 'earnings'];
+      tabs.forEach(t => {
+        const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        const view = document.getElementById('view' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (btn) btn.classList.toggle('active', t === tabName);
+        if (view) view.style.display = (t === tabName) ? 'block' : 'none';
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    /**
+     * Toggle Online/Offline Duty
+     */
+    function toggleDutyStatus(isOnline) {
+      isDutyOnline = isOnline;
+      const heading = document.getElementById('dutyStatusHeading');
+      const pill = document.getElementById('dutyStatusPill');
+      const sub = document.getElementById('dutyStatusSub');
+      const icon = document.getElementById('dutyIconBox');
+      const offlineNotice = document.getElementById('offlineNotice');
+      const ordersContainer = document.getElementById('ordersContentContainer');
+
+      if (isOnline) {
+        heading.textContent = 'You are ONLINE';
+        pill.className = 'badge bg-success rounded-pill px-2 py-1 small';
+        pill.innerHTML = '<span class="pulse-dot me-1"></span> Accepting Dispatches';
+        sub.textContent = 'GPS Zone: Indiranagar Hub • High Signal (4m accuracy)';
+        icon.style.background = 'var(--rider-mint)';
+        icon.style.color = 'var(--rider-forest)';
+        offlineNotice.style.display = 'none';
+        ordersContainer.style.display = 'block';
+        showToast('You are now ONLINE. Food orders will be dispatched! 🛵');
+      } else {
+        heading.textContent = 'You are OFFLINE';
+        pill.className = 'badge bg-secondary rounded-pill px-2 py-1 small';
+        pill.textContent = 'Duty Paused';
+        sub.textContent = 'No orders will be assigned while offline';
+        icon.style.background = '#E2ECE5';
+        icon.style.color = '#64748B';
+        offlineNotice.style.display = 'block';
+        ordersContainer.style.display = 'none';
+        showToast('Shift paused. You are currently offline.');
+      }
+    }
+
+    /**
+     * Advance Workflow Steps (Arrived at Store -> Picked Up -> Verify OTP)
+     */
+    function advanceWorkflow(step) {
+      const btnArrived = document.getElementById('btnArrivedStore');
+      const btnPicked = document.getElementById('btnPickedUp');
+      const btnVerify = document.getElementById('btnVerifyOtp');
+      const progressBar = document.getElementById('stepProgressBar');
+      const node2 = document.getElementById('stepNode2');
+      const node3 = document.getElementById('stepNode3');
+
+      if (step === 'arrived_store') {
+        currentWorkflowStep = 2;
+        progressBar.style.width = '50%';
+        node2.className = 'step-node completed';
+        node2.querySelector('.step-circle').innerHTML = '<i class="bi bi-check"></i>';
+        node3.className = 'step-node active';
+
+        btnArrived.className = 'btn btn-success rounded-pill fw-bold px-3 py-2 disabled';
+        btnArrived.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> 1. Arrived at Store';
+
+        btnPicked.classList.remove('disabled');
+        btnPicked.className = 'btn btn-outline-success rounded-pill fw-bold px-3 py-2';
+        showToast('Status updated: Arrived at restaurant counter! 📍');
+      } else if (step === 'picked_up') {
+        currentWorkflowStep = 3;
+        progressBar.style.width = '75%';
+        node3.className = 'step-node completed';
+        node3.querySelector('.step-circle').innerHTML = '<i class="bi bi-check"></i>';
+
+        btnPicked.className = 'btn btn-success rounded-pill fw-bold px-3 py-2 disabled';
+        btnPicked.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> 2. Order Picked Up (In Transit)';
+
+        btnVerify.classList.remove('disabled');
+        showToast('Food collected & sealed in thermal bag! Heading to Pooja JP. 🚀');
+      }
+    }
+
+    /**
+     * Verify Customer Handover OTP & Complete Delivery
+     */
+    function handleVerifyOtp(e) {
+      e.preventDefault();
+      const otpInput = document.getElementById('customerOtpInput');
+      const enteredOtp = otpInput.value.trim();
+
+      // Check OTP
+      if (enteredOtp === '5821' || enteredOtp.length === 4) {
+        const modalEl = document.getElementById('otpHandoverModal');
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) modalInstance.hide();
+
+        // Update stats
+        todayEarnings += 85.00;
+        tripsCount += 1;
+        document.getElementById('statTodayEarnings').textContent = `₹${todayEarnings.toFixed(0)}`;
+        document.getElementById('statTripsDelivered').textContent = tripsCount;
+        document.getElementById('earningsGrandTotal').textContent = `₹${todayEarnings.toFixed(2)}`;
+        document.getElementById('badgeActiveCount').textContent = '0';
+        document.getElementById('badgeHistoryCount').textContent = tripsCount;
+
+        // Prepend to History List
+        const historyContainer = document.getElementById('historyOrdersContainer');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const newHistoryCard = document.createElement('div');
+        newHistoryCard.className = 'history-order-card border-success';
+        newHistoryCard.style.borderWidth = '2px';
+        newHistoryCard.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-2 border-bottom">
+            <div>
+              <span class="badge bg-success bg-opacity-15 text-success rounded-pill fw-bold px-2 py-1 mb-1">
+                <i class="bi bi-check-circle-fill me-1"></i> JUST DELIVERED
+              </span>
+              <h6 class="fw-bold text-pine mb-0">Order #SWG-849201</h6>
+              <div class="small text-muted">Today at ${timeStr} • Completed in 15 mins</div>
+            </div>
+            <div class="text-end">
+              <div class="fs-5 fw-bold text-success font-monospace">₹85.00</div>
+              <div class="small text-muted">Base Payout Credited</div>
+            </div>
+          </div>
+          <div class="py-2 small text-muted">
+            <div><strong>Pickup:</strong> Meghana Foods, Indiranagar</div>
+            <div><strong>Dropoff:</strong> Pooja JP, Green Meadows Apt (2.4 km)</div>
+            <div class="text-success mt-1"><i class="bi bi-shield-check me-1"></i> OTP 5821 Verified Successfully</div>
+          </div>
+        `;
+        historyContainer.prepend(newHistoryCard);
+
+        // Update Active Order Card UI
+        const activeCard = document.getElementById('activeOrderSection');
+        activeCard.innerHTML = `
+          <div class="card border-0 rounded-4 shadow-sm p-4 bg-white text-center">
+            <div class="rounded-circle bg-mint text-forest d-flex align-items-center justify-content-center mx-auto mb-2" style="width: 58px; height: 58px; font-size: 1.8rem; background: var(--rider-mint); color: var(--rider-forest);">
+              <i class="bi bi-check-circle-fill text-success"></i>
+            </div>
+            <h4 class="fw-bold text-pine mb-1">Delivery #SWG-849201 Complete!</h4>
+            <p class="text-muted small mb-3">₹85.00 has been credited to your daily wallet. Great job Prakash!</p>
+            <div class="d-flex justify-content-center gap-2">
+              <button class="btn btn-outline-success rounded-pill px-4 fw-bold" onclick="switchTab('history')">
+                <i class="bi bi-clock-history me-1"></i> View in History
+              </button>
+            </div>
+          </div>
+        `;
+
+        showToast('Handover verified! ₹85.00 added to today\'s earnings 🎉');
+      } else {
+        showToast('Invalid OTP. Ask customer for the 4-digit code (5821)', 'danger');
+      }
+    }
+
+    /**
+     * Accept Incoming Nearby Dispatch
+     */
+    function acceptDispatch(cardId, orderId, restaurant, drop, payout) {
+      const card = document.getElementById(cardId);
+      if (card) card.remove();
+
+      // Update active section
+      document.getElementById('badgeActiveCount').textContent = '1';
+      showToast(`Accepted Order ${orderId}! Routing to ${restaurant} 🚀`);
+
+      // Refresh page or re-render active task
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    }
+
+    /**
+     * Dismiss / Decline Dispatch
+     */
+    function dismissDispatch(cardId) {
+      const card = document.getElementById(cardId);
+      if (card) {
+        card.style.opacity = '0';
+        card.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+          card.remove();
+          showToast('Order passed to next available rider.');
+        }, 250);
+      }
+    }
+
+    /**
+     * Filter History Items
+     */
+    function filterHistory(type, btn) {
+      const parent = btn.parentElement;
+      parent.querySelectorAll('button').forEach(b => {
+        b.classList.remove('btn-outline-success', 'active');
+        b.classList.add('btn-outline-secondary');
+      });
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-outline-success', 'active');
+      showToast(`Showing ${type === 'all' ? 'all recorded trips' : "today's delivered trips"}`);
+    }
+
+    /**
+     * Logout Flow
+     */
+    function confirmRiderLogout() {
+      const modal = new bootstrap.Modal(document.getElementById('logoutModal'));
+      modal.show();
+    }
+
+    function performLogout() {
+      const modalEl = document.getElementById('logoutModal');
+      const modalInstance = bootstrap.Modal.getInstance(modalEl);
+      if (modalInstance) modalInstance.hide();
+
+      // Clear rider session
+      localStorage.removeItem('pooja_zippy_user');
+      renderLoggedInState(false);
+      showToast('You have been logged out of the Fleet App.');
+    }
+
+    /**
+     * Rider Login Flow
+     */
+    function handleRiderLogin(e) {
+      e.preventDefault();
+      const id = document.getElementById('inputRiderId').value.trim();
+      
+      localStorage.setItem('pooja_zippy_user', JSON.stringify({
+        email: id,
+        role: 'rider',
+        name: 'Prakash S. (#RDR-88)',
+        portalTitle: 'Delivery Partner Fleet Web App'
+      }));
+
+      document.getElementById('topbarRiderName').textContent = 'Prakash S. (#RDR-88)';
+      renderLoggedInState(true);
+      showToast('Logged in successfully! Welcome back Prakash. 🛵');
+    }
+
+    function quickFillAndLogin() {
+      document.getElementById('inputRiderId').value = 'rider.prakash@zippylush.com';
+      document.getElementById('inputRiderPass').value = 'rider123';
+      handleRiderLogin(new Event('submit'));
+    }
+
+    /**
+     * Toggle View Between Logged-In and Login View
+     */
+    function renderLoggedInState(isLoggedIn) {
+      isRiderLoggedIn = isLoggedIn;
+      const nav = document.getElementById('riderTopNavbar');
+      const loginView = document.getElementById('riderLoginView');
+      const workspace = document.getElementById('riderWorkspaceView');
+
+      if (isLoggedIn) {
+        nav.style.display = 'block';
+        loginView.style.display = 'none';
+        workspace.style.display = 'block';
+      } else {
+        nav.style.display = 'none';
+        loginView.style.display = 'block';
+        workspace.style.display = 'none';
+      }
+    }
+  </script>
+
+</body>
+</html>

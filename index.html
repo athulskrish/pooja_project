@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zippy - Online Food Delivery | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        
+        <!-- Left: Brand Logo & Location -->
+        <div class="d-flex align-items-center gap-3 gap-xl-4 flex-shrink-0">
+          <a href="index.html" class="brand-logo text-decoration-none">
+            <div class="brand-icon-box">
+              <i class="fa-solid fa-utensils"></i>
+            </div>
+            <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+            <span class="brand-badge d-none d-sm-inline-block">Lush Edition</span>
+          </a>
+
+          <!-- Location Selector -->
+          <div class="location-selector d-none d-md-flex" data-bs-toggle="modal" data-bs-target="#locationModal">
+            <i class="bi bi-geo-alt-fill text-success"></i>
+            <div>
+              <span class="loc-title">Indiranagar</span>
+              <span class="loc-desc d-inline-block ms-1">Bangalore, Karnataka</span>
+            </div>
+            <i class="bi bi-chevron-down text-muted small ms-1"></i>
+          </div>
+        </div>
+
+        <!-- Center: Quick Nav Links -->
+        <div class="d-none d-lg-flex align-items-center gap-1">
+          <a href="search.html" class="nav-link-custom">
+            <i class="bi bi-search text-success"></i>
+            <span>Search</span>
+          </a>
+          <a href="offers.html" class="nav-link-custom">
+            <i class="fa-solid fa-percent text-success"></i>
+            <span>Offers</span>
+            <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">NEW</span>
+          </a>
+          <a href="order-history.html" class="nav-link-custom">
+            <i class="bi bi-clock-history text-success"></i>
+            <span>Orders</span>
+          </a>
+          <a href="help.html" class="nav-link-custom">
+            <i class="bi bi-question-circle text-success"></i>
+            <span>Help</span>
+          </a>
+          <a href="portals.html" class="nav-link-custom">
+            <i class="bi bi-grid-fill text-success"></i>
+            <span>Portals</span>
+            <span class="badge bg-success rounded-pill" style="font-size: 0.65rem;">4 APPS</span>
+          </a>
+        </div>
+
+        <!-- Right: Profile & Cart -->
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <a href="#" class="nav-link-custom" data-bs-toggle="modal" data-bs-target="#profileModal">
+            <i class="bi bi-person-circle text-success"></i>
+            <span class="d-none d-sm-inline">Pooja JP</span>
+          </a>
+
+          <!-- Cart Trigger Button -->
+          <a href="cart.html" class="btn nav-link-custom cart-pill">
+            <i class="bi bi-cart3"></i>
+            <span class="d-none d-md-inline">Cart</span>
+            <span class="cart-count-badge">0</span>
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Mobile Search Bar -->
+      <div class="d-lg-none mt-2 pt-2 border-top">
+        <a href="search.html" class="text-decoration-none">
+          <div class="input-group">
+            <span class="input-group-text bg-white border-end-0 rounded-start-pill text-muted ps-3">
+              <i class="bi bi-search text-success"></i>
+            </span>
+            <input type="text" class="form-control border-start-0 rounded-end-pill py-2" placeholder="Search dishes, restaurants..." readonly style="cursor: pointer; background: white;">
+          </div>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       HERO PROMOTIONAL BANNER CAROUSEL
+       ========================================================================= -->
+  <section class="hero-promo-section" id="offers-section">
+    <div class="container-xl">
+      <div id="promoCarousel" class="carousel slide" data-bs-ride="carousel">
+        <div class="carousel-inner">
+          
+          <!-- Slide 1: Lush Forest 50% Off -->
+          <div class="carousel-item active">
+            <div class="promo-card card-forest">
+              <div class="promo-content">
+                <span class="promo-tag">
+                  <i class="fa-solid fa-bolt"></i> Flash Deal
+                </span>
+                <h2 class="display-6 fw-bold mb-2">Flat 50% OFF on Top Cuisines</h2>
+                <p class="mb-3 text-white-50">Savor royal biryanis, gourmet burgers & South Indian classics delivered hot in 25 mins.</p>
+                <div class="d-flex align-items-center gap-3">
+                  <a href="restaurant.html" class="btn btn-light rounded-pill px-4 fw-bold text-success shadow-sm">Order Now</a>
+                  <span class="badge bg-dark bg-opacity-50 text-white px-3 py-2 rounded-pill font-monospace">USE: ZIPPY50</span>
+                </div>
+              </div>
+              <div class="promo-img-box">
+                <img src="https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=800&q=80" alt="Delicious Biryani">
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 2: Lush Forest Healthy Gourmet -->
+          <div class="carousel-item">
+            <div class="promo-card card-mint">
+              <div class="promo-content">
+                <span class="promo-tag">
+                  <i class="fa-solid fa-leaf"></i> Lush Green Organic
+                </span>
+                <h2 class="display-6 fw-bold mb-2 text-pine">Farm Fresh Salads & Vegan Bowls</h2>
+                <p class="mb-3 text-muted">Curated farm-to-table organic bowls enriched with micronutrients and flavor.</p>
+                <div class="d-flex align-items-center gap-3">
+                  <a href="restaurant.html" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" style="background-color: var(--lush-forest);">Explore Menu</a>
+                  <span class="badge bg-white text-dark border px-3 py-2 rounded-pill font-monospace">USE: LUSHFOREST</span>
+                </div>
+              </div>
+              <div class="promo-img-box">
+                <img src="https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80" alt="Fresh Healthy Salad">
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 3: Free Delivery Offer -->
+          <div class="carousel-item">
+            <div class="promo-card card-sage">
+              <div class="promo-content">
+                <span class="promo-tag">
+                  <i class="fa-solid fa-motorcycle"></i> Super Fast Delivery
+                </span>
+                <h2 class="display-6 fw-bold mb-2">Zero Delivery Fee Above ₹499</h2>
+                <p class="mb-3 text-white-50">Enjoy lightning-speed deliveries from premium cloud kitchens without extra fees.</p>
+                <div class="d-flex align-items-center gap-3">
+                  <a href="#restaurants-section" class="btn btn-light rounded-pill px-4 fw-bold text-success shadow-sm">View Restaurants</a>
+                </div>
+              </div>
+              <div class="promo-img-box">
+                <img src="https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80" alt="Artisanal Pizza">
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Carousel Indicators / Nav -->
+        <button class="carousel-control-prev" type="button" data-bs-target="#promoCarousel" data-bs-slide="prev" style="width: 5%;">
+          <span class="carousel-control-prev-icon p-3 bg-dark rounded-circle bg-opacity-25" aria-hidden="true"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#promoCarousel" data-bs-slide="next" style="width: 5%;">
+          <span class="carousel-control-next-icon p-3 bg-dark rounded-circle bg-opacity-25" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       "WHAT'S ON YOUR MIND?" (FOOD CATEGORIES)
+       ========================================================================= -->
+  <section class="py-4">
+    <div class="container-xl">
+      <div class="section-title-wrap">
+        <div>
+          <h3 class="section-title">What's on your mind?</h3>
+          <p class="section-subtitle">Explore dishes curated from top culinary masters</p>
+        </div>
+      </div>
+
+      <div class="category-scroll-container">
+        <!-- Biryani -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=240&q=80" alt="Biryani">
+          </div>
+          <span class="category-name">Biryani</span>
+        </a>
+
+        <!-- Pizzas -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&w=240&q=80" alt="Pizza">
+          </div>
+          <span class="category-name">Pizzas</span>
+        </a>
+
+        <!-- North Indian -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=240&q=80" alt="North Indian">
+          </div>
+          <span class="category-name">North Indian</span>
+        </a>
+
+        <!-- Burgers -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=240&q=80" alt="Burgers">
+          </div>
+          <span class="category-name">Burgers</span>
+        </a>
+
+        <!-- Rolls & Shawarma -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=240&q=80" alt="Rolls">
+          </div>
+          <span class="category-name">Rolls</span>
+        </a>
+
+        <!-- South Indian / Dosa -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=240&q=80" alt="Dosa">
+          </div>
+          <span class="category-name">Dosa</span>
+        </a>
+
+        <!-- Chinese -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=240&q=80" alt="Noodles Chinese">
+          </div>
+          <span class="category-name">Chinese</span>
+        </a>
+
+        <!-- Cakes & Desserts -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=240&q=80" alt="Cakes & Desserts">
+          </div>
+          <span class="category-name">Desserts</span>
+        </a>
+
+        <!-- Healthy Salads -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=240&q=80" alt="Healthy Bowls">
+          </div>
+          <span class="category-name">Salads</span>
+        </a>
+
+        <!-- Beverages & Shakes -->
+        <a href="restaurant.html" class="category-item">
+          <div class="category-img-wrap">
+            <img src="https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=240&q=80" alt="Beverages">
+          </div>
+          <span class="category-name">Shakes</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       TOP RESTAURANT CHAINS (HORIZONTAL CAROUSEL)
+       ========================================================================= -->
+  <section class="py-3">
+    <div class="container-xl">
+      <div class="section-title-wrap">
+        <div>
+          <h3 class="section-title">Top restaurant chains in Bangalore</h3>
+          <p class="section-subtitle">Most trusted and frequently ordered restaurants near you</p>
+        </div>
+      </div>
+
+      <div class="chains-scroll-container">
+        
+        <!-- Meghana Foods -->
+        <a href="restaurant.html" class="chain-card">
+          <div class="chain-img-box">
+            <img src="https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80" alt="Meghana Foods">
+            <div class="chain-overlay-badge">
+              <i class="fa-solid fa-fire"></i> ₹125 OFF ABOVE ₹349
+            </div>
+          </div>
+          <div class="chain-body">
+            <h5 class="chain-title">Meghana Foods</h5>
+            <div class="meta-row">
+              <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.5</span>
+              <span class="meta-dot"></span>
+              <span class="text-pine">25-30 mins</span>
+            </div>
+            <p class="chain-cuisines">Biryani, Andhra, South Indian</p>
+            <span class="chain-location">Indiranagar • 2.4 km</span>
+          </div>
+        </a>
+
+        <!-- Truffles -->
+        <a href="restaurant.html" class="chain-card">
+          <div class="chain-img-box">
+            <img src="https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80" alt="Truffles">
+            <div class="chain-overlay-badge">
+              <i class="fa-solid fa-percent"></i> 20% OFF UPTO ₹50
+            </div>
+          </div>
+          <div class="chain-body">
+            <h5 class="chain-title">Truffles Cafe & Burgers</h5>
+            <div class="meta-row">
+              <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.6</span>
+              <span class="meta-dot"></span>
+              <span class="text-pine">30-35 mins</span>
+            </div>
+            <p class="chain-cuisines">American, Burgers, Continental, Pasta</p>
+            <span class="chain-location">Koramangala • 3.8 km</span>
+          </div>
+        </a>
+
+        <!-- Empire Restaurant -->
+        <a href="restaurant.html" class="chain-card">
+          <div class="chain-img-box">
+            <img src="https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=600&q=80" alt="Empire Restaurant">
+            <div class="chain-overlay-badge">
+              <i class="fa-solid fa-gift"></i> FLAT 15% OFF
+            </div>
+          </div>
+          <div class="chain-body">
+            <h5 class="chain-title">Hotel Empire</h5>
+            <div class="meta-row">
+              <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.3</span>
+              <span class="meta-dot"></span>
+              <span class="text-pine">20-25 mins</span>
+            </div>
+            <p class="chain-cuisines">North Indian, Kebabs, Mughlai</p>
+            <span class="chain-location">Church Street • 4.1 km</span>
+          </div>
+        </a>
+
+        <!-- Glen's Bakehouse -->
+        <a href="restaurant.html" class="chain-card">
+          <div class="chain-img-box">
+            <img src="https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80" alt="Glen's Bakehouse">
+            <div class="chain-overlay-badge">
+              <i class="fa-solid fa-tag"></i> FREE CUPCAKE ON ₹399
+            </div>
+          </div>
+          <div class="chain-body">
+            <h5 class="chain-title">Glen's Bakehouse</h5>
+            <div class="meta-row">
+              <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.7</span>
+              <span class="meta-dot"></span>
+              <span class="text-pine">25-30 mins</span>
+            </div>
+            <p class="chain-cuisines">Bakery, Desserts, Italian, Cafe</p>
+            <span class="chain-location">Lavelle Road • 3.2 km</span>
+          </div>
+        </a>
+
+        <!-- A2B Adyar Ananda Bhavan -->
+        <a href="restaurant.html" class="chain-card">
+          <div class="chain-img-box">
+            <img src="https://images.unsplash.com/photo-1610192244261-3f33de3f55e4?auto=format&fit=crop&w=600&q=80" alt="A2B">
+            <div class="chain-overlay-badge">
+              <i class="fa-solid fa-leaf text-mint"></i> 100% PURE VEG
+            </div>
+          </div>
+          <div class="chain-body">
+            <h5 class="chain-title">A2B - Adyar Ananda Bhavan</h5>
+            <div class="meta-row">
+              <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.4</span>
+              <span class="meta-dot"></span>
+              <span class="text-pine">15-20 mins</span>
+            </div>
+            <p class="chain-cuisines">South Indian, Sweets, Chaats</p>
+            <span class="chain-location">MG Road • 1.9 km</span>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       FILTER & SORT BAR (STICKY)
+       ========================================================================= -->
+  <div class="filter-bar-sticky" id="restaurants-section">
+    <div class="container-xl">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        
+        <!-- Filter Buttons -->
+        <div class="filter-pills-row">
+          <button class="filter-btn" data-filter="fast">
+            <i class="bi bi-lightning-charge-fill"></i> Fast Delivery
+          </button>
+          
+          <button class="filter-btn" data-filter="rating">
+            <i class="bi bi-star-fill"></i> Ratings 4.2+
+          </button>
+          
+          <button class="filter-btn" data-filter="veg">
+            <span class="food-type-icon veg"></span> Pure Veg
+          </button>
+          
+          <button class="filter-btn" data-filter="offer">
+            <i class="fa-solid fa-tag"></i> Offers
+          </button>
+
+          <button class="filter-btn" data-bs-toggle="modal" data-bs-target="#filterModal">
+            <i class="bi bi-sliders"></i> More Filters
+          </button>
+        </div>
+
+        <!-- Sort Dropdown -->
+        <div class="dropdown">
+          <button class="btn filter-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-arrow-down-up"></i> Sort By: Relevance
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li><a class="dropdown-item fw-bold small text-success" href="#">Relevance (Default)</a></li>
+            <li><a class="dropdown-item small" href="#">Delivery Time: Fastest</a></li>
+            <li><a class="dropdown-item small" href="#">Rating: High to Low</a></li>
+            <li><a class="dropdown-item small" href="#">Cost: Low to High</a></li>
+            <li><a class="dropdown-item small" href="#">Cost: High to Low</a></li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       RESTAURANTS WITH ONLINE FOOD DELIVERY (MAIN GRID)
+       ========================================================================= -->
+  <section class="py-2">
+    <div class="container-xl">
+      <div class="section-title-wrap mb-4">
+        <div>
+          <h3 class="section-title">Restaurants with online food delivery in Bangalore</h3>
+          <p class="section-subtitle">Showing 12 popular restaurants nearby</p>
+        </div>
+      </div>
+
+      <div class="row g-4" id="restaurantCardsGrid">
+        
+        <!-- Restaurant 1: Meghana Foods -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.5" data-veg="false" data-fast="true" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=600&q=80" alt="Meghana Foods">
+              <div class="res-offer-tag">₹125 OFF ABOVE ₹349</div>
+              <span class="res-promoted-tag">Promoted</span>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Meghana Foods</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.5</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">20-25 mins</span>
+              </div>
+              <p class="res-cuisines">Biryani, Andhra, South Indian, Seafood</p>
+              <div class="res-footer-info">
+                <span>₹400 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 2: Truffles -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.6" data-veg="false" data-fast="false" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80" alt="Truffles">
+              <div class="res-offer-tag">20% OFF UPTO ₹50</div>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Truffles Burgers & Cafe</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.6</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">30-35 mins</span>
+              </div>
+              <p class="res-cuisines">American, Burgers, Pasta, Desserts</p>
+              <div class="res-footer-info">
+                <span>₹450 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 3: A2B Pure Veg -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.4" data-veg="true" data-fast="true" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80" alt="A2B">
+              <div class="res-offer-tag">10% OFF ON ALL ORDERS</div>
+              <span class="res-promoted-tag" style="background-color: var(--food-veg);">Pure Veg</span>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">A2B - Adyar Ananda Bhavan</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.4</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">15-20 mins</span>
+              </div>
+              <p class="res-cuisines">South Indian, Masala Dosa, Sweets</p>
+              <div class="res-footer-info">
+                <span>₹250 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 4: Glen's Bakehouse -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.7" data-veg="false" data-fast="false" data-offer="false">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=600&q=80" alt="Glen's Bakehouse">
+              <div class="res-offer-tag">FREE CUPCAKE ON ₹399</div>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Glen's Bakehouse</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.7</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">25-30 mins</span>
+              </div>
+              <p class="res-cuisines">Bakery, Red Velvet, Pastries, Shakes</p>
+              <div class="res-footer-info">
+                <span>₹500 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 5: Punjab Grill -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.5" data-veg="false" data-fast="false" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=600&q=80" alt="Punjab Grill">
+              <div class="res-offer-tag">₹100 OFF ABOVE ₹499</div>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Punjab Grill Gourmet</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.5</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">35-40 mins</span>
+              </div>
+              <p class="res-cuisines">North Indian, Dal Makhani, Paneer Tikka</p>
+              <div class="res-footer-info">
+                <span>₹800 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 6: Nagarjuna -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.4" data-veg="false" data-fast="true" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1610192244261-3f33de3f55e4?auto=format&fit=crop&w=600&q=80" alt="Nagarjuna">
+              <div class="res-offer-tag">ITEMS AT ₹179</div>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Nagarjuna Andhra Meals</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.4</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">20-25 mins</span>
+              </div>
+              <p class="res-cuisines">Andhra, South Indian Meals, Biryani</p>
+              <div class="res-footer-info">
+                <span>₹400 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 7: Leon's Burgers -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.3" data-veg="false" data-fast="true" data-offer="true">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80" alt="Leon's Burgers">
+              <div class="res-offer-tag">50% OFF UPTO ₹100</div>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Leon's Burgers & Wings</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.3</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">20-25 mins</span>
+              </div>
+              <p class="res-cuisines">Fast Food, Wings, Peri Peri Fries</p>
+              <div class="res-footer-info">
+                <span>₹350 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant 8: Chai Point -->
+        <div class="col-12 col-md-6 col-lg-4 col-xl-3 restaurant-card-col" data-rating="4.5" data-veg="true" data-fast="true" data-offer="false">
+          <div class="restaurant-card">
+            <div class="res-img-wrap">
+              <img src="https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=600&q=80" alt="Chai Point">
+              <div class="res-offer-tag">MIN 20% OFF</div>
+              <span class="res-promoted-tag" style="background-color: var(--food-veg);">Pure Veg</span>
+              <button class="res-bookmark-btn"><i class="bi bi-heart"></i></button>
+            </div>
+            <div class="res-card-body">
+              <h5 class="res-title">Chai Point Express</h5>
+              <div class="meta-row">
+                <span class="rating-badge"><i class="bi bi-star-fill"></i> 4.5</span>
+                <span class="meta-dot"></span>
+                <span class="text-pine">15-20 mins</span>
+              </div>
+              <p class="res-cuisines">Ginger Tea, Samosa, Poha, Snacks</p>
+              <div class="res-footer-info">
+                <span>₹180 for two</span>
+                <a href="restaurant.html" class="quick-view-btn">View Menu</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       APP DOWNLOAD BANNER (ZIPPY STYLE)
+       ========================================================================= -->
+  <section class="py-5 mt-4" style="background: linear-gradient(135deg, var(--lush-mint-soft), #FFFFFF); border-top: 1px solid var(--lush-border); border-bottom: 1px solid var(--lush-border);">
+    <div class="container-xl">
+      <div class="row align-items-center">
+        <div class="col-lg-7">
+          <span class="badge bg-success bg-opacity-25 text-success fw-bold px-3 py-2 rounded-pill mb-3">EXPERIENCE ON THE GO</span>
+          <h2 class="display-6 fw-bold text-pine mb-3">For better experience, download the Zippy app now</h2>
+          <p class="text-muted mb-4">Track live orders with real-time GPS maps, earn Zippy One points, and enjoy exclusive app-only promo codes.</p>
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            <a href="#" class="btn btn-dark rounded-pill px-4 py-2 d-flex align-items-center gap-2">
+              <i class="fa-brands fa-google-play fs-4 text-warning"></i>
+              <div class="text-start">
+                <div style="font-size: 0.65rem; text-transform: uppercase;">GET IT ON</div>
+                <div class="fw-bold" style="font-size: 0.95rem;">Google Play</div>
+              </div>
+            </a>
+            <a href="#" class="btn btn-dark rounded-pill px-4 py-2 d-flex align-items-center gap-2">
+              <i class="fa-brands fa-apple fs-4 text-white"></i>
+              <div class="text-start">
+                <div style="font-size: 0.65rem; text-transform: uppercase;">DOWNLOAD ON THE</div>
+                <div class="fw-bold" style="font-size: 0.95rem;">App Store</div>
+              </div>
+            </a>
+          </div>
+        </div>
+        <div class="col-lg-5 text-center mt-4 mt-lg-0">
+          <div class="p-4 bg-white rounded-4 shadow-sm border d-inline-block text-center">
+            <i class="bi bi-qr-code text-pine" style="font-size: 6rem;"></i>
+            <div class="fw-bold text-pine mt-2">Scan to Download</div>
+            <div class="small text-muted">Supports Android & iOS</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="zippy-footer">
+    <div class="container-xl">
+      <div class="row g-4">
+        
+        <!-- Col 1: Brand Info -->
+        <div class="col-lg-3 col-md-6">
+          <div class="footer-brand-title mb-2">
+            <i class="fa-solid fa-leaf text-mint me-2"></i>Zippy Lush
+          </div>
+          <p class="small text-white-50">
+            A high-performance online food delivery clone engineered for Pooja JP's MCA Project (MCSP-232). Designed with the Figma "Lush Forest" palette and structured for seamless PHP MVC backend integration.
+          </p>
+          <div class="d-flex gap-3 mt-3">
+            <a href="#" class="text-mint fs-5"><i class="fa-brands fa-facebook"></i></a>
+            <a href="#" class="text-mint fs-5"><i class="fa-brands fa-instagram"></i></a>
+            <a href="#" class="text-mint fs-5"><i class="fa-brands fa-twitter"></i></a>
+            <a href="#" class="text-mint fs-5"><i class="fa-brands fa-linkedin"></i></a>
+          </div>
+        </div>
+
+        <!-- Col 2: Company -->
+        <div class="col-lg-3 col-md-6">
+          <h6 class="footer-heading">Company</h6>
+          <ul class="footer-links-list">
+            <li><a href="#">About Us</a></li>
+            <li><a href="#">Zippy Corporate</a></li>
+            <li><a href="#">Careers</a></li>
+            <li><a href="#">Team & Architecture</a></li>
+            <li><a href="#">Zippy One Membership</a></li>
+            <li><a href="#">Zippy Instamart</a></li>
+          </ul>
+        </div>
+
+        <!-- Col 3: Contact & Legal -->
+        <div class="col-lg-3 col-md-6">
+          <h6 class="footer-heading">Contact & Legal</h6>
+          <ul class="footer-links-list">
+            <li><a href="help.html">Help & Support</a></li>
+            <li><a href="kitchen-display.html">Kitchen Display (KDS)</a></li>
+            <li><a href="delivery-partner.html">Delivery Partner Portal</a></li>
+            <li><a href="terms.html">Terms & Conditions</a></li>
+            <li><a href="privacy.html">Cookie & Privacy Policy</a></li>
+            <li><a href="404.html">404 Error Page</a></li>
+          </ul>
+        </div>
+
+        <!-- Col 4: Top Delivery Cities -->
+        <div class="col-lg-3 col-md-6">
+          <h6 class="footer-heading">We deliver to:</h6>
+          <ul class="footer-links-list">
+            <li><a href="#">Bangalore</a></li>
+            <li><a href="#">Hyderabad</a></li>
+            <li><a href="#">Delhi NCR</a></li>
+            <li><a href="#">Mumbai</a></li>
+            <li><a href="#">Pune</a></li>
+            <li><a href="#">Chennai & 500+ cities</a></li>
+          </ul>
+        </div>
+
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="footer-bottom-bar">
+        <div>
+          © 2026 Zippy Limited Clone • Built with HTML5, Bootstrap 5 & Figma "Lush Forest" Palette.
+        </div>
+        <div>
+          MCA Project: MCSP-232 • Student: Pooja JP
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- =========================================================================
+       OFFCANVAS CART DRAWER
+       ========================================================================= -->
+  <div class="offcanvas offcanvas-end cart-drawer" tabindex="-1" id="cartOffcanvas">
+    <div class="cart-drawer-header d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-bag-check-fill text-success fs-4"></i>
+        <h5 class="mb-0 fw-bold text-pine">My Food Cart</h5>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    
+    <div class="offcanvas-body cart-drawer-body" id="cartDrawerItems">
+      <!-- Items dynamically populated via js/app.js -->
+    </div>
+
+    <div class="p-3 bg-white border-top shadow-lg" id="cartDrawerFooter" style="display: none;">
+      <a href="checkout.html" class="btn btn-place-order">
+        <span>Proceed to Checkout</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODALS: Location, Profile, Help
+       ========================================================================= -->
+  <!-- Location Modal -->
+  <div class="modal fade" id="locationModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-pine">Select Your Delivery Location</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="input-group mb-3">
+            <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" class="form-control" placeholder="Search for area, street name...">
+          </div>
+          <div class="d-flex align-items-center gap-3 p-3 rounded-3 bg-light border mb-3 cursor-pointer" data-bs-dismiss="modal">
+            <i class="bi bi-crosshair text-success fs-4"></i>
+            <div>
+              <div class="fw-bold text-pine">Detect Current Location</div>
+              <div class="small text-muted">Using GPS / High Accuracy</div>
+            </div>
+          </div>
+          <div class="list-group">
+            <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2" data-bs-dismiss="modal">
+              <i class="bi bi-house-door text-success"></i>
+              <div>
+                <strong>Home</strong>
+                <div class="small text-muted">100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru</div>
+              </div>
+            </button>
+            <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2" data-bs-dismiss="modal">
+              <i class="bi bi-briefcase text-success"></i>
+              <div>
+                <strong>Office</strong>
+                <div class="small text-muted">Embassy Golf Links Business Park, Domlur, Bengaluru</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div class="modal fade" id="profileModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-pine">User Profile</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4 text-center">
+          <div class="spec-icon mx-auto mb-3" style="width: 70px; height: 70px; font-size: 2rem;">
+            <i class="bi bi-person-fill"></i>
+          </div>
+          <h5 class="fw-bold text-pine">Pooja JP</h5>
+          <p class="text-muted small mb-2">pooja.mca2026@ignou.ac.in • +91 98765 43210</p>
+          <span class="badge bg-success bg-opacity-25 text-success fw-bold px-3 py-1 rounded-pill mb-4">MCA Student • Gold Member</span>
+          <div class="list-group text-start">
+            <a href="profile.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-person-circle me-2 text-success"></i> My Profile & Account</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="manage-addresses.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-geo-alt me-2 text-success"></i> Manage Delivery Addresses</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="order-history.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-clock-history me-2 text-success"></i> My Orders & History</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="order-status.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="fa-solid fa-location-crosshairs me-2 text-success"></i> Live Order Tracking</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="offers.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="fa-solid fa-percent me-2 text-success"></i> Offers & Coupons</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="help.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-question-circle me-2 text-success"></i> Help & Support</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+            <a href="login.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center text-danger">
+              <span><i class="bi bi-box-arrow-right me-2"></i> Switch Account / Sign In</span>
+              <i class="bi bi-chevron-right text-muted small"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help Modal -->
+  <div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-pine">Zippy Help & Support</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="text-muted small">Need help with an ongoing order, payment dispute, or restaurant menu?</p>
+          <div class="list-group">
+            <a href="#" class="list-group-item list-group-item-action fw-bold"><i class="bi bi-chat-dots me-2 text-success"></i> Chat with Zippy Bot</a>
+            <a href="#" class="list-group-item list-group-item-action fw-bold"><i class="bi bi-telephone me-2 text-success"></i> Call Customer Support (24x7)</a>
+            <a href="#" class="list-group-item list-group-item-action fw-bold"><i class="bi bi-question-circle me-2 text-success"></i> FAQ & Order Policies</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Mobile Cart Bar -->
+  <a href="checkout.html" class="mobile-cart-bar" id="mobileCartBar">
+    <div>
+      <div class="fw-bold" id="mobileCartItemsCount">0 ITEMS</div>
+      <div class="small text-white-50" id="mobileCartTotal">₹0</div>
+    </div>
+    <div class="d-flex align-items-center gap-2 fw-bold">
+      <span>VIEW CART</span>
+      <i class="bi bi-arrow-right"></i>
+    </div>
+  </a>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Confirmed & Placed! - Zippy | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2 d-flex align-items-center justify-content-between">
+      <a href="index.html" class="brand-logo">
+        <div class="brand-icon-box"><i class="fa-solid fa-utensils"></i></div>
+        <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+        <span class="brand-badge">Lush</span>
+      </a>
+
+      <div class="d-flex align-items-center gap-3">
+        <a href="order-history.html" class="nav-link-custom"><i class="bi bi-clock-history text-success"></i><span>Orders</span></a>
+        <a href="help.html" class="nav-link-custom"><i class="bi bi-question-circle text-success"></i><span>Help</span></a>
+        <a href="profile.html" class="nav-link-custom"><i class="bi bi-person-circle text-success"></i><span>Pooja JP</span></a>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       SUCCESS CONFIRMATION CONTAINER
+       ========================================================================= -->
+  <main class="container-xl py-5" style="max-width: 780px;">
+    
+    <!-- Success Celebration Card -->
+    <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white text-center mb-4">
+      
+      <!-- Animated Checkmark Circle -->
+      <div class="success-checkmark-circle">
+        <i class="bi bi-check-lg"></i>
+      </div>
+
+      <span class="badge bg-success bg-opacity-20 text-success fw-bold px-3 py-1 rounded-pill mb-2">
+        <i class="bi bi-shield-check me-1"></i> PAYMENT CONFIRMED & IN KITCHEN
+      </span>
+      <h2 class="fw-bold text-pine mb-1">Order Placed Successfully!</h2>
+      <p class="text-muted mb-3">
+        Hang tight! <strong>Meghana Foods</strong> has accepted your ticket and started culinary preparation.
+      </p>
+
+      <!-- Key Order Meta Highlights -->
+      <div class="d-flex justify-content-center align-items-center flex-wrap gap-3 py-3 border-top border-bottom my-3">
+        <div class="text-center px-3">
+          <div class="small text-muted text-uppercase fw-bold">Order ID</div>
+          <div class="fs-5 fw-bold text-pine font-monospace">#SWG-849201</div>
+        </div>
+        <div class="vr d-none d-sm-block"></div>
+        <div class="text-center px-3">
+          <div class="small text-muted text-uppercase fw-bold">Estimated Delivery</div>
+          <div class="fs-5 fw-bold text-success font-monospace" id="liveEtaSuccess">~24 mins</div>
+        </div>
+        <div class="vr d-none d-sm-block"></div>
+        <div class="text-center px-3">
+          <div class="small text-muted text-uppercase fw-bold">Delivery OTP</div>
+          <div class="fs-5 fw-bold text-primary font-monospace">5821</div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="d-flex justify-content-center flex-wrap gap-3 mt-4">
+        <a href="order-status.html" class="btn btn-success btn-lg rounded-pill px-4 fw-bold shadow" style="background-color: var(--lush-forest);">
+          <i class="fa-solid fa-location-crosshairs me-2"></i> Track Live Courier
+        </a>
+        <a href="invoice.html" class="btn btn-outline-secondary btn-lg rounded-pill px-4 fw-bold">
+          <i class="bi bi-file-earmark-pdf me-2"></i> View Tax Invoice
+        </a>
+        <a href="rate-order.html" class="btn btn-outline-success btn-lg rounded-pill px-4 fw-bold">
+          <i class="bi bi-star me-2"></i> Rate Experience
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Order Summary Breakdown -->
+    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+        <div>
+          <h5 class="fw-bold text-pine mb-0">Meghana Foods (Indiranagar)</h5>
+          <span class="small text-muted">Delivery Address: #402, Green Meadows Apt, 100 Feet Rd</span>
+        </div>
+        <span class="badge bg-light text-dark border">Paid via Google Pay UPI</span>
+      </div>
+
+      <div class="list-group list-group-flush mb-3">
+        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <span class="food-type-icon non-veg"></span>
+            <span class="fw-bold text-pine">1x Meghana Special Chicken Biryani</span>
+          </div>
+          <span class="fw-semibold">₹340</span>
+        </div>
+        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <span class="food-type-icon veg"></span>
+            <span class="fw-bold text-pine">1x Clay Oven Butter Garlic Naan</span>
+          </div>
+          <span class="fw-semibold">₹65</span>
+        </div>
+        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <span class="food-type-icon veg"></span>
+            <span class="fw-bold text-pine">1x Shahi Gulab Jamun (2 Pcs)</span>
+          </div>
+          <span class="fw-semibold">₹90</span>
+        </div>
+      </div>
+
+      <div class="p-3 rounded-3 bg-light d-flex justify-content-between align-items-center">
+        <div>
+          <span class="text-muted small">Total Paid (Inclusive of Taxes & Packaging)</span>
+          <div class="fw-bold text-pine fs-5">₹510</div>
+        </div>
+        <span class="badge bg-success bg-opacity-25 text-success fw-bold px-3 py-2 rounded-pill">
+          <i class="bi bi-check-circle-fill me-1"></i> Instant Receipt Generated
+        </span>
+      </div>
+    </div>
+
+    <!-- Apriori Smart Add-on (Academic Rigor from improve.txt) -->
+    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white" style="border-left: 5px solid var(--lush-sage) !important;">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-magic text-success fs-4"></i>
+          <h6 class="fw-bold text-pine mb-0">Frequently Added With Biryani (Apriori Recommendation)</h6>
+        </div>
+        <span class="badge bg-danger text-white small">ZERO Extra Delivery Fee (Next 3 Mins)</span>
+      </div>
+      <p class="small text-muted mb-3">Our association rule engine suggests these cooling accompaniments for your spicy Andhra meal:</p>
+      
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+            <div class="d-flex align-items-center gap-2">
+              <span class="food-type-icon veg"></span>
+              <div>
+                <div class="small fw-bold text-pine">Chilled Sweet Lassi (300ml)</div>
+                <div class="small text-muted">₹60</div>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-success rounded-pill fw-bold" onclick="showToast('Added Lassi to ongoing order! Free delivery applied 🎉')">+ ADD</button>
+          </div>
+        </div>
+        <div class="col-sm-6">
+          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+            <div class="d-flex align-items-center gap-2">
+              <span class="food-type-icon veg"></span>
+              <div>
+                <div class="small fw-bold text-pine">Extra Cucumber Onion Raita</div>
+                <div class="small text-muted">₹40</div>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-success rounded-pill fw-bold" onclick="showToast('Added Extra Raita to order kitchen queue!')">+ ADD</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="zippy-footer mt-5 py-4 border-top">
+    <div class="container-xl text-center small text-white-50">
+      MCA Project MCSP-232: E-Commerce Platform for Food Order • Student: Pooja JP • Styled with Figma Lush Forest Palette
+      <div class="mt-2">
+        <a href="terms.html" class="text-white-50 me-3">Terms & Conditions</a>
+        <a href="privacy.html" class="text-white-50 me-3">Privacy Policy</a>
+        <a href="help.html" class="text-white-50 me-3">Help Center</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Portal Gateway - 4 Standalone Web Apps | Zippy Food Network</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    .portal-hero {
+      background: linear-gradient(135deg, #1C3322 0%, #243E2C 50%, #2E6F40 100%);
+      color: #FFFFFF;
+      padding: 60px 0 45px 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .portal-hero::after {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(206, 255, 220, 0.12) 0%, rgba(206, 255, 220, 0) 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .portal-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      border: 1px solid rgba(46, 111, 64, 0.15);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+    .portal-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 40px rgba(46, 111, 64, 0.15);
+      border-color: var(--lush-forest);
+    }
+    .portal-card-header {
+      padding: 24px 24px 16px 24px;
+      border-bottom: 1px solid #F0FDF4;
+    }
+    .portal-icon-box {
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      margin-bottom: 16px;
+    }
+    .portal-card-body {
+      padding: 20px 24px;
+      flex-grow: 1;
+    }
+    .portal-card-footer {
+      padding: 16px 24px 24px 24px;
+      background: #F9FCFA;
+      border-top: 1px solid #EEF5F1;
+    }
+    .device-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #F0F4F2;
+      color: #3C5A44;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .feature-check-list {
+      list-style: none;
+      padding-left: 0;
+      margin-bottom: 0;
+    }
+    .feature-check-list li {
+      font-size: 0.84rem;
+      color: #4A6352;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .feature-check-list li i {
+      color: var(--lush-forest);
+      font-size: 0.95rem;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .role-credentials-box {
+      background: #FFFFFF;
+      border: 1px dashed #CBD5E1;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-top: 14px;
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- Global Multi-Portal Header -->
+  <header class="bg-white border-bottom sticky-top py-3 shadow-xs">
+    <div class="container-xl d-flex align-items-center justify-content-between">
+      <a href="portals.html" class="brand-logo text-decoration-none">
+        <div class="brand-icon-box">
+          <i class="fa-solid fa-utensils"></i>
+        </div>
+        <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+        <span class="brand-badge">Multi-Portal Hub</span>
+      </a>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-light text-forest border px-3 py-2 rounded-pill small fw-bold d-none d-md-inline-block">
+          <i class="bi bi-mortarboard-fill me-1 text-success"></i> MCSP-232 • Pooja JP
+        </span>
+        <a href="login.html" class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background-color: var(--lush-forest);">
+          <i class="bi bi-box-arrow-in-right me-1"></i> Multi-Role Login
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="portal-hero">
+    <div class="container-xl position-relative" style="z-index: 2;">
+      <div class="row align-items-center">
+        <div class="col-lg-8">
+          <div class="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-pill bg-white bg-opacity-15 text-mint small fw-bold mb-3 border border-white border-opacity-25">
+            <i class="bi bi-layers-fill"></i> 4 Separate Role-Based Web Applications • 1 Relational Database
+          </div>
+          <h1 class="display-5 fw-extrabold mb-3">Zippy Food Network Platform</h1>
+          <p class="lead text-white-50 mb-4" style="max-width: 680px;">
+            Engineered for IGNOU MCA Major Project (MCSP-232). A complete decoupled ecosystem featuring dedicated, standalone web applications for <strong>Customers</strong>, <strong>Kitchen Cooks (KDS)</strong>, <strong>Delivery Couriers</strong>, and <strong>Restaurant Administrators</strong>.
+          </p>
+          <div class="d-flex flex-wrap gap-2">
+            <a href="#portalCards" class="btn btn-light rounded-pill px-4 py-2 fw-bold text-pine shadow-sm">
+              <i class="bi bi-grid-3x3-gap-fill me-2 text-success"></i> Explore 4 Portals
+            </a>
+            <a href="login.html" class="btn btn-outline-light rounded-pill px-4 py-2 fw-bold">
+              <i class="bi bi-key-fill me-2"></i> Universal Login
+            </a>
+            <a href="SYSTEM_ANALYSIS_AND_DESIGN.md" target="_blank" class="btn btn-link text-mint text-decoration-none fw-bold align-self-center ms-2">
+              <i class="bi bi-file-earmark-code me-1"></i> System Design Specs <i class="bi bi-box-arrow-up-right small"></i>
+            </a>
+          </div>
+        </div>
+        <div class="col-lg-4 d-none d-lg-block text-end">
+          <div class="p-3 bg-white bg-opacity-10 rounded-4 border border-white border-opacity-25 backdrop-blur text-start">
+            <div class="small fw-bold text-mint text-uppercase mb-2" style="letter-spacing: 0.5px;">Ecosystem Topology:</div>
+            <div class="small text-white-50 mb-1"><i class="bi bi-check2-circle text-mint me-1"></i> <strong>Customer:</strong> Browsing, Cart & Tracking</div>
+            <div class="small text-white-50 mb-1"><i class="bi bi-check2-circle text-warning me-1"></i> <strong>Kitchen KDS:</strong> WSJF Dynamic Priority Queue</div>
+            <div class="small text-white-50 mb-1"><i class="bi bi-check2-circle text-info me-1"></i> <strong>Delivery Partner:</strong> GPS Route & OTP Auth</div>
+            <div class="small text-white-50"><i class="bi bi-check2-circle text-danger me-1"></i> <strong>Admin Console:</strong> BI Reports & SES Demand</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 Portal Cards Section -->
+  <section class="py-5" id="portalCards">
+    <div class="container-xl">
+      
+      <div class="text-center mb-5">
+        <h2 class="fw-bold text-pine">Select a Dedicated Website Portal</h2>
+        <p class="text-muted">Each portal operates as an independent web application with tailored layouts and role authorization</p>
+      </div>
+
+      <div class="row g-4">
+        
+        <!-- ===================================================================
+             PORTAL 1: CUSTOMER ORDERING WEB APPLICATION
+             =================================================================== -->
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="portal-card">
+            <div class="portal-card-header">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="device-pill"><i class="bi bi-phone"></i> Mobile & Desktop</span>
+                <span class="badge bg-success bg-opacity-10 text-success fw-bold">PORTAL 01</span>
+              </div>
+              <div class="portal-icon-box bg-success bg-opacity-10 text-success">
+                <i class="fa-solid fa-utensils"></i>
+              </div>
+              <h4 class="fw-bold text-pine mb-1">Customer Storefront</h4>
+              <p class="small text-muted mb-0">Food Ordering & Tracking Web App</p>
+            </div>
+
+            <div class="portal-card-body">
+              <p class="small text-muted mb-3">
+                Full-featured Swiggy-style consumer application for discovering restaurants, browsing menus, and managing orders.
+              </p>
+              
+              <div class="small fw-bold text-pine mb-2">Key Modules:</div>
+              <ul class="feature-check-list mb-3">
+                <li><i class="bi bi-check2"></i> Multi-cuisine catalog & sticky filters</li>
+                <li><i class="bi bi-check2"></i> Apriori "Frequently Ordered Together"</li>
+                <li><i class="bi bi-check2"></i> Persistent cart with 5% GST breakdown</li>
+                <li><i class="bi bi-check2"></i> Real-time animated order tracker</li>
+                <li><i class="bi bi-check2"></i> Address book & printable GST invoice</li>
+              </ul>
+
+              <div class="role-credentials-box">
+                <div class="text-muted fw-bold mb-1"><i class="bi bi-person-circle me-1"></i> Demo Credentials:</div>
+                <div>User: <code>pooja.mca2026@ignou.ac.in</code></div>
+                <div>Pass: <code>pooja123</code></div>
+              </div>
+            </div>
+
+            <div class="portal-card-footer">
+              <a href="index.html" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs mb-2" style="background-color: var(--lush-forest);">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Launch Customer App
+              </a>
+              <a href="kitchen/../index.html" target="_blank" class="btn btn-sm btn-outline-secondary w-100 rounded-pill">
+                Open in New Tab <i class="bi bi-arrow-up-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================================================================
+             PORTAL 2: KITCHEN DISPLAY SYSTEM (KDS)
+             =================================================================== -->
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="portal-card">
+            <div class="portal-card-header">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="device-pill"><i class="bi bi-tablet"></i> Kitchen Tablet / Screen</span>
+                <span class="badge bg-warning bg-opacity-10 text-warning fw-bold">PORTAL 02</span>
+              </div>
+              <div class="portal-icon-box bg-warning bg-opacity-10 text-warning">
+                <i class="fa-solid fa-fire-burner"></i>
+              </div>
+              <h4 class="fw-bold text-pine mb-1">Kitchen Display (KDS)</h4>
+              <p class="small text-muted mb-0">Cook & Expeditor Queue Station</p>
+            </div>
+
+            <div class="portal-card-body">
+              <p class="small text-muted mb-3">
+                Dedicated high-visibility interface designed for kitchen wall screens and tablets with dynamic order ticket priority.
+              </p>
+              
+              <div class="small fw-bold text-pine mb-2">Key Modules:</div>
+              <ul class="feature-check-list mb-3">
+                <li><i class="bi bi-check2"></i> 3-Stage Workflow (Orders &rarr; Preparation &rarr; Ready to Dispatch)</li>
+                <li><i class="bi bi-check2"></i> Interactive item prep check-off & live timers</li>
+                <li><i class="bi bi-check2"></i> 1-Click courier dispatch handover</li>
+                <li><i class="bi bi-check2"></i> Secure staff Login & Logout controls</li>
+              </ul>
+
+              <div class="role-credentials-box">
+                <div class="text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i> Demo Credentials:</div>
+                <div>User: <code>kitchen.chef@zippylush.com</code></div>
+                <div>Pass: <code>cook123</code></div>
+              </div>
+            </div>
+
+            <div class="portal-card-footer">
+              <a href="kitchen-display.html" class="btn btn-warning text-dark w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Launch Kitchen KDS
+              </a>
+              <a href="kitchen-display.html" target="_blank" class="btn btn-sm btn-outline-secondary w-100 rounded-pill">
+                Open in New Tab <i class="bi bi-arrow-up-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================================================================
+             PORTAL 3: DELIVERY PARTNER FLEET WEB APP
+             =================================================================== -->
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="portal-card">
+            <div class="portal-card-header">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="device-pill"><i class="bi bi-phone"></i> Mobile Smartphone</span>
+                <span class="badge bg-primary bg-opacity-10 text-primary fw-bold">PORTAL 03</span>
+              </div>
+              <div class="portal-icon-box bg-primary bg-opacity-10 text-primary">
+                <i class="fa-solid fa-bicycle"></i>
+              </div>
+              <h4 class="fw-bold text-pine mb-1">Delivery Partner App</h4>
+              <p class="small text-muted mb-0">Courier Fleet Logistics Portal</p>
+            </div>
+
+            <div class="portal-card-body">
+              <p class="small text-muted mb-3">
+                Mobile-first web application for delivery executives on motorcycles to manage assignments, routes, and verifications.
+              </p>
+              
+              <div class="small fw-bold text-pine mb-2">Key Modules:</div>
+              <ul class="feature-check-list mb-3">
+                <li><i class="bi bi-check2"></i> Online / Offline duty availability switch</li>
+                <li><i class="bi bi-check2"></i> Active pickup & dispatch workflow</li>
+                <li><i class="bi bi-check2"></i> Turn-by-turn route navigator simulation</li>
+                <li><i class="bi bi-check2"></i> Secret 6-digit Customer OTP check</li>
+                <li><i class="bi bi-check2"></i> Daily shift earnings & order ledger</li>
+              </ul>
+
+              <div class="role-credentials-box">
+                <div class="text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i> Demo Credentials:</div>
+                <div>User: <code>rider.prakash@zippylush.com</code></div>
+                <div>Pass: <code>rider123</code></div>
+              </div>
+            </div>
+
+            <div class="portal-card-footer">
+              <a href="delivery-partner.html" class="btn btn-primary w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Launch Delivery App
+              </a>
+              <a href="delivery-partner.html" target="_blank" class="btn btn-sm btn-outline-secondary w-100 rounded-pill">
+                Open in New Tab <i class="bi bi-arrow-up-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================================================================
+             PORTAL 4: RESTAURANT ADMINISTRATOR CONSOLE
+             =================================================================== -->
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="portal-card">
+            <div class="portal-card-header">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="device-pill"><i class="bi bi-laptop"></i> Desktop / Laptop</span>
+                <span class="badge bg-danger bg-opacity-10 text-danger fw-bold">PORTAL 04</span>
+              </div>
+              <div class="portal-icon-box bg-danger bg-opacity-10 text-danger">
+                <i class="bi bi-speedometer2"></i>
+              </div>
+              <h4 class="fw-bold text-pine mb-1">Admin Console</h4>
+              <p class="small text-muted mb-0">Back-Office Management & BI</p>
+            </div>
+
+            <div class="portal-card-body">
+              <p class="small text-muted mb-3">
+                Comprehensive executive control center for managing business metrics, dish catalogs, staff RBAC, and inventory forecasts.
+              </p>
+              
+              <div class="small fw-bold text-pine mb-2">Key Modules:</div>
+              <ul class="feature-check-list mb-3">
+                <li><i class="bi bi-check2"></i> Daily revenue, orders, & prep time KPIs</li>
+                <li><i class="bi bi-check2"></i> Menu items & Categories full CRUD modal</li>
+                <li><i class="bi bi-check2"></i> User & Staff Role-Based Access Control</li>
+                <li><i class="bi bi-check2"></i> SES (Single Exponential Smoothing) BI</li>
+                <li><i class="bi bi-check2"></i> Immutable order audit trail inspection</li>
+              </ul>
+
+              <div class="role-credentials-box">
+                <div class="text-muted fw-bold mb-1"><i class="bi bi-shield-lock me-1"></i> Demo Credentials:</div>
+                <div>User: <code>admin@zippylush.com</code></div>
+                <div>Pass: <code>admin2026</code></div>
+              </div>
+            </div>
+
+            <div class="portal-card-footer">
+              <a href="admin-dashboard.html" class="btn btn-danger w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Launch Admin Console
+              </a>
+              <a href="admin-dashboard.html" target="_blank" class="btn btn-sm btn-outline-secondary w-100 rounded-pill">
+                Open in New Tab <i class="bi bi-arrow-up-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Viva Demonstration Guide Banner -->
+      <div class="mt-5 p-4 rounded-4 border bg-white shadow-sm">
+        <div class="row align-items-center g-4">
+          <div class="col-lg-8">
+            <div class="d-flex align-items-center gap-2 text-success fw-bold small text-uppercase mb-1">
+              <i class="bi bi-lightbulb-fill"></i> MCA Viva Voce Demonstration Strategy
+            </div>
+            <h4 class="fw-bold text-pine mb-2">How to Demonstrate Multi-Role Portals in Your Viva:</h4>
+            <p class="text-muted small mb-0">
+              Open each of the four buttons in <strong>separate browser tabs side-by-side</strong>:
+              <br>1. In <strong>Tab 1 (Customer)</strong>: Add Biryani to cart and click "Pay & Place Order".
+              <br>2. In <strong>Tab 2 (Kitchen KDS)</strong>: Watch the ticket appear instantly sorted by WSJF score, then click "Order Ready".
+              <br>3. In <strong>Tab 3 (Delivery App)</strong>: Accept dispatch, enter the customer OTP, and click "Confirm Delivery".
+              <br>4. In <strong>Tab 4 (Admin Dashboard)</strong>: Observe the revenue metrics, audit trail, and SES demand charts update!
+            </p>
+          </div>
+          <div class="col-lg-4 text-lg-end">
+            <button class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-xs" onclick="launchAllTabs()" style="background-color: var(--lush-forest);">
+              <i class="bi bi-window-stack me-2"></i> Launch All 4 Portals Now
+            </button>
+            <div class="text-muted mt-2" style="font-size: 0.72rem;">(Opens 4 browser tabs for live evaluation)</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Global Footer -->
+  <footer class="bg-white border-top py-4 mt-5">
+    <div class="container-xl d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div>
+        <span class="fw-bold text-pine">Zippy Food Network</span> • Master of Computer Applications (MCSP-232)
+        <div class="small text-muted">Submitted to IGNOU • Candidate: Pooja JP (Enroll: 2500051247)</div>
+      </div>
+      <div class="d-flex gap-3 small">
+        <a href="terms.html" class="text-muted text-decoration-none">Terms</a>
+        <a href="privacy.html" class="text-muted text-decoration-none">Privacy Policy</a>
+        <a href="invoice.html" class="text-muted text-decoration-none">Tax Invoice Sample</a>
+        <a href="help.html" class="text-muted text-decoration-none">Help & Support</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    function launchAllTabs() {
+      window.open('index.html', '_blank');
+      window.open('kitchen-display.html', '_blank');
+      window.open('delivery-partner.html', '_blank');
+      window.open('admin-dashboard.html', '_blank');
+    }
+  </script>
+
+</body>
+</html>

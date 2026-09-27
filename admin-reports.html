@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BI Analytics & Executive Reports - Admin Portal | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Chart.js CDN for Interactive BI Visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="admin-layout">
+    
+    <!-- =========================================================================
+         ADMIN SIDEBAR
+         ========================================================================= -->
+    <aside class="admin-sidebar">
+      <div class="admin-sidebar-header">
+        <div class="brand-icon-box" style="width: 38px; height: 38px; font-size: 1.1rem;">
+          <i class="fa-solid fa-utensils"></i>
+        </div>
+        <div>
+          <div class="fw-bold text-white fs-5" style="letter-spacing: -0.5px;">zippy<span class="text-mint">.</span></div>
+          <span class="badge bg-success bg-opacity-50 text-mint" style="font-size: 0.65rem;">ADMIN PORTAL</span>
+        </div>
+      </div>
+
+      <ul class="admin-nav-list">
+        <li class="admin-nav-item">
+          <a href="admin-dashboard.html" class="admin-nav-link">
+            <i class="bi bi-speedometer2"></i>
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="kitchen-display.html" class="admin-nav-link">
+            <i class="fa-solid fa-fire-burner"></i>
+            <span>Kitchen KDS (WSJF)</span>
+            <span class="badge bg-danger rounded-pill ms-auto">LIVE</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-categories.html" class="admin-nav-link">
+            <i class="bi bi-tags"></i>
+            <span>Food Categories</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-users.html" class="admin-nav-link">
+            <i class="bi bi-people"></i>
+            <span>User & Staff RBAC</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-reports.html" class="admin-nav-link active">
+            <i class="bi bi-graph-up-arrow"></i>
+            <span>Executive Reports</span>
+          </a>
+        </li>
+        <li class="admin-nav-item mt-3 pt-3 border-top border-secondary border-opacity-25">
+          <a href="delivery-partner.html" class="admin-nav-link">
+            <i class="bi bi-bicycle"></i>
+            <span>Delivery Executive App</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="index.html" class="admin-nav-link">
+            <i class="bi bi-arrow-left-circle"></i>
+            <span>View Customer App</span>
+          </a>
+        </li>
+      </ul>
+
+      <!-- Bottom Profile Card -->
+      <div class="p-3 border-top border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <div class="rounded-circle bg-success bg-opacity-25 d-flex align-items-center justify-content-center text-mint fw-bold" style="width: 36px; height: 36px;">
+            P
+          </div>
+          <div>
+            <div class="fw-bold small text-white">Pooja JP</div>
+            <div class="text-white-50" style="font-size: 0.72rem;">MCA Store Admin</div>
+          </div>
+        </div>
+        <a href="login.html" class="text-white-50" title="Sign Out">
+          <i class="bi bi-box-arrow-right fs-5"></i>
+        </a>
+      </div>
+    </aside>
+
+    <!-- =========================================================================
+         MAIN CONTENT AREA
+         ========================================================================= -->
+    <div class="admin-main">
+      
+      <!-- Topbar -->
+      <header class="admin-topbar">
+        <div class="d-flex align-items-center gap-3">
+          <h4 class="fw-bold text-pine mb-0">BI Analytics & Operational Reports</h4>
+          <span class="badge bg-success bg-opacity-25 text-success fw-bold px-3 py-1 rounded-pill">
+            <i class="bi bi-cpu-fill me-1"></i> MySQL 8.0 Stored Procedure Connected
+          </span>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+          <div class="input-group input-group-sm" style="width: 220px;">
+            <span class="input-group-text bg-white"><i class="bi bi-calendar3"></i></span>
+            <select class="form-select" id="reportDateRange" onchange="filterReports()">
+              <option value="today">Today (Live 24h)</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="week" selected>Last 7 Days</option>
+              <option value="month">Month to Date (MTD)</option>
+            </select>
+          </div>
+          <button class="btn btn-sm btn-outline-success rounded-pill fw-bold" onclick="exportReportData('CSV')">
+            <i class="bi bi-download me-1"></i> Export CSV
+          </button>
+          <button class="btn btn-sm btn-success rounded-pill fw-bold" style="background-color: var(--lush-forest);" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i> Print PDF
+          </button>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <div class="admin-content">
+        
+        <!-- KPI Metrics Row -->
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">₹84,650</div>
+                <div class="stat-label">Gross Sales (GMV)</div>
+                <div class="small text-success mt-1 fw-bold"><i class="bi bi-arrow-up-right me-1"></i>+14.8% vs last week</div>
+              </div>
+              <div class="stat-icon-wrap green"><i class="bi bi-currency-rupee"></i></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">142</div>
+                <div class="stat-label">Total Completed Orders</div>
+                <div class="small text-success mt-1 fw-bold"><i class="bi bi-check-circle me-1"></i>1.2% cancellation</div>
+              </div>
+              <div class="stat-icon-wrap amber"><i class="bi bi-bag-check-fill"></i></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">14.2m</div>
+                <div class="stat-label">Avg Kitchen Prep Time</div>
+                <div class="small text-success mt-1 fw-bold"><i class="bi bi-lightning-charge-fill me-1"></i>WSJF Optimized</div>
+              </div>
+              <div class="stat-icon-wrap blue"><i class="bi bi-stopwatch-fill"></i></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">₹596</div>
+                <div class="stat-label">Average Order Value</div>
+                <div class="small text-muted mt-1">Cross-sell uplift +18%</div>
+              </div>
+              <div class="stat-icon-wrap pine"><i class="bi bi-receipt-cutoff"></i></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row g-4 mb-4">
+          
+          <!-- Chart 1: Hourly Sales Volume -->
+          <div class="col-lg-8">
+            <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 class="fw-bold text-pine mb-0">Hourly Revenue & Order Surge Pattern</h5>
+                  <span class="small text-muted">Peak dinner rush observed between 7:00 PM and 10:00 PM</span>
+                </div>
+                <span class="badge bg-light text-pine border">Live Hourly Telemetry</span>
+              </div>
+              <div style="height: 280px;">
+                <canvas id="hourlySalesChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chart 2: Category Revenue Share -->
+          <div class="col-lg-4">
+            <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 class="fw-bold text-pine mb-0">Category Sales Share</h5>
+                  <span class="small text-muted">Contribution to total revenue</span>
+                </div>
+              </div>
+              <div style="height: 240px;" class="d-flex align-items-center justify-content-center">
+                <canvas id="categoryShareChart"></canvas>
+              </div>
+              <div class="small text-muted text-center mt-2">
+                Biryani dominates gross sales with 42% share
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Multi-Report Tabs -->
+        <div class="card border-0 rounded-4 shadow-sm bg-white overflow-hidden mb-4">
+          
+          <div class="p-3 border-bottom bg-light">
+            <ul class="nav nav-pills gap-2" id="reportDataTabs" role="tablist">
+              <li class="nav-item">
+                <button class="nav-link active rounded-pill px-4 fw-bold" id="tab-item-velocity" data-bs-toggle="pill" data-bs-target="#content-velocity">
+                  <i class="bi bi-graph-up me-1"></i> Item Velocity & Stockout Forecast (SES)
+                </button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link rounded-pill px-4 fw-bold" id="tab-kitchen-prep" data-bs-toggle="pill" data-bs-target="#content-kitchen">
+                  <i class="bi bi-clock me-1"></i> Kitchen Preparation Analysis (WSJF)
+                </button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link rounded-pill px-4 fw-bold" id="tab-delivery-dispatch" data-bs-toggle="pill" data-bs-target="#content-dispatch">
+                  <i class="bi bi-bicycle me-1"></i> Delivery Dispatch Log
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div class="tab-content p-4">
+            
+            <!-- SUB-REPORT 1: ITEM VELOCITY & STOCKOUT -->
+            <div class="tab-pane fade show active" id="content-velocity">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold text-pine mb-0">Single Exponential Smoothing (SES) Inventory Forecast</h6>
+                <span class="small text-muted">Reorder Threshold α = 0.35</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table-lush">
+                  <thead>
+                    <tr>
+                      <th>Dish Name</th>
+                      <th>Category</th>
+                      <th>Units Sold (24h)</th>
+                      <th>Current Stock</th>
+                      <th>Velocity</th>
+                      <th>Stockout Risk</th>
+                      <th>Predicted Weekend Demand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>Meghana Special Chicken Biryani</strong></td>
+                      <td>Biryani & Rice</td>
+                      <td>78 portions</td>
+                      <td><span class="badge bg-success bg-opacity-25 text-success fw-bold">42 portions</span></td>
+                      <td>7.8 units/hr</td>
+                      <td><span class="badge bg-success text-white">LOW RISK</span></td>
+                      <td>160 portions</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Clay Oven Butter Garlic Naan</strong></td>
+                      <td>Tandoori Breads</td>
+                      <td>112 units</td>
+                      <td><span class="badge bg-warning bg-opacity-25 text-dark fw-bold">14 units</span></td>
+                      <td>11.2 units/hr</td>
+                      <td><span class="badge bg-warning text-dark">REORDER SOON</span></td>
+                      <td>240 units</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Paneer Butter Masala</strong></td>
+                      <td>Main Course</td>
+                      <td>34 portions</td>
+                      <td><span class="badge bg-danger bg-opacity-25 text-danger fw-bold">4 portions</span></td>
+                      <td>3.4 units/hr</td>
+                      <td><span class="badge bg-danger text-white">CRITICAL STOCKOUT</span></td>
+                      <td>85 portions</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Shahi Gulab Jamun (2 Pcs)</strong></td>
+                      <td>Desserts</td>
+                      <td>56 portions</td>
+                      <td><span class="badge bg-success bg-opacity-25 text-success fw-bold">38 portions</span></td>
+                      <td>5.6 units/hr</td>
+                      <td><span class="badge bg-success text-white">HEALTHY</span></td>
+                      <td>110 portions</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- SUB-REPORT 2: KITCHEN PREPARATION ANALYSIS -->
+            <div class="tab-pane fade" id="content-kitchen">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold text-pine mb-0">Weighted Shortest Job First (WSJF) Dispatch Efficiency</h6>
+                <span class="small text-muted">Benchmark target: &lt; 18 minutes</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table-lush">
+                  <thead>
+                    <tr>
+                      <th>Menu Item</th>
+                      <th>Avg Preparation Time</th>
+                      <th>Target SLA</th>
+                      <th>Variance</th>
+                      <th>Cook Station</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Meghana Chicken Biryani</td>
+                      <td>12 mins 30 secs</td>
+                      <td>15 mins</td>
+                      <td><span class="text-success fw-bold">-2.5 mins (Fast)</span></td>
+                      <td>Station 1 (Dum Biryani Pot)</td>
+                      <td><span class="badge bg-success text-white">OPTIMAL</span></td>
+                    </tr>
+                    <tr>
+                      <td>Clay Oven Garlic Naan</td>
+                      <td>5 mins 10 secs</td>
+                      <td>8 mins</td>
+                      <td><span class="text-success fw-bold">-2.9 mins</span></td>
+                      <td>Station 2 (Tandoor Oven)</td>
+                      <td><span class="badge bg-success text-white">OPTIMAL</span></td>
+                    </tr>
+                    <tr>
+                      <td>Chicken Tikka Kebab (8 Pcs)</td>
+                      <td>19 mins 20 secs</td>
+                      <td>18 mins</td>
+                      <td><span class="text-danger fw-bold">+1.3 mins (Delayed)</span></td>
+                      <td>Station 3 (Charcoal Grill)</td>
+                      <td><span class="badge bg-warning text-dark">BOTTLENECK</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- SUB-REPORT 3: DELIVERY DISPATCH LOG -->
+            <div class="tab-pane fade" id="content-dispatch">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold text-pine mb-0">Courier Route Logs & Fulfillment SLA</h6>
+                <span class="small text-muted">Average Trip: 21.4 mins</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table-lush">
+                  <thead>
+                    <tr>
+                      <th>Order ID</th>
+                      <th>Customer Area</th>
+                      <th>Rider Name</th>
+                      <th>Dispatched At</th>
+                      <th>Delivered At</th>
+                      <th>Transit Time</th>
+                      <th>SLA Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>#SWG-849201</strong></td>
+                      <td>Indiranagar 100 Feet Rd</td>
+                      <td>Prakash S.</td>
+                      <td>10:45 AM</td>
+                      <td>11:08 AM</td>
+                      <td>23 mins</td>
+                      <td><span class="badge bg-success text-white">ON-TIME</span></td>
+                    </tr>
+                    <tr>
+                      <td><strong>#SWG-849188</strong></td>
+                      <td>EGL Business Park, Domlur</td>
+                      <td>Ramesh Kumar</td>
+                      <td>10:15 AM</td>
+                      <td>10:41 AM</td>
+                      <td>26 mins</td>
+                      <td><span class="badge bg-success text-white">ON-TIME</span></td>
+                    </tr>
+                    <tr>
+                      <td><strong>#SWG-849172</strong></td>
+                      <td>Koramangala 7th Block</td>
+                      <td>Anand V.</td>
+                      <td>09:40 AM</td>
+                      <td>10:04 AM</td>
+                      <td>24 mins</td>
+                      <td><span class="badge bg-success text-white">ON-TIME</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+  <!-- Chart.js Config -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. Hourly Sales Line/Bar Chart
+      const salesCtx = document.getElementById('hourlySalesChart').getContext('2d');
+      new Chart(salesCtx, {
+        type: 'bar',
+        data: {
+          labels: ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM'],
+          datasets: [
+            {
+              label: 'Revenue (₹)',
+              data: [3200, 6800, 11400, 8900, 3100, 2400, 4100, 7200, 14800, 16200, 12400, 4250],
+              backgroundColor: 'rgba(46, 111, 64, 0.75)',
+              borderColor: '#2E6F40',
+              borderWidth: 1,
+              borderRadius: 6
+            },
+            {
+              label: 'Orders Count',
+              type: 'line',
+              data: [6, 12, 21, 15, 5, 4, 7, 13, 27, 30, 22, 8],
+              borderColor: '#E5A100',
+              backgroundColor: '#E5A100',
+              borderWidth: 2,
+              pointRadius: 4,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { callback: val => '₹' + val }
+            },
+            y1: {
+              position: 'right',
+              beginAtZero: true,
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+
+      // 2. Category Share Doughnut
+      const catCtx = document.getElementById('categoryShareChart').getContext('2d');
+      new Chart(catCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Biryani (42%)', 'Starters (24%)', 'Breads (15%)', 'Desserts (12%)', 'Beverages (7%)'],
+          datasets: [{
+            data: [42, 24, 15, 12, 7],
+            backgroundColor: [
+              '#2E6F40',
+              '#68BA7F',
+              '#CEFFDC',
+              '#243E2C',
+              '#E5A100'
+            ],
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    });
+
+    function filterReports() {
+      const range = document.getElementById('reportDateRange').value;
+      showToast(`Refreshed telemetry for: ${range.toUpperCase()} via MySQL sp_GenerateDailySalesReport`);
+    }
+
+    function exportReportData(format) {
+      showToast(`Exported BI telemetry dataset to ${format} successfully! 📊`);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Food & Restaurants - Zippy | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        
+        <!-- Left: Brand Logo & Location -->
+        <div class="d-flex align-items-center gap-3 gap-xl-4 flex-shrink-0">
+          <a href="index.html" class="brand-logo text-decoration-none">
+            <div class="brand-icon-box">
+              <i class="fa-solid fa-utensils"></i>
+            </div>
+            <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+            <span class="brand-badge d-none d-sm-inline-block">Lush Edition</span>
+          </a>
+
+          <!-- Location Selector -->
+          <div class="location-selector d-none d-md-flex" data-bs-toggle="modal" data-bs-target="#locationModal">
+            <i class="bi bi-geo-alt-fill text-success"></i>
+            <div>
+              <span class="loc-title">Indiranagar</span>
+              <span class="loc-desc d-inline-block ms-1">Bangalore, Karnataka</span>
+            </div>
+            <i class="bi bi-chevron-down text-muted small ms-1"></i>
+          </div>
+        </div>
+
+        <!-- Center: Quick Nav Links -->
+        <div class="d-none d-lg-flex align-items-center gap-1">
+          <a href="search.html" class="nav-link-custom active text-success fw-bold">
+            <i class="bi bi-search"></i>
+            <span>Search</span>
+          </a>
+          <a href="offers.html" class="nav-link-custom">
+            <i class="fa-solid fa-percent text-success"></i>
+            <span>Offers</span>
+            <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">NEW</span>
+          </a>
+          <a href="order-history.html" class="nav-link-custom">
+            <i class="bi bi-clock-history text-success"></i>
+            <span>Orders</span>
+          </a>
+          <a href="help.html" class="nav-link-custom">
+            <i class="bi bi-question-circle text-success"></i>
+            <span>Help</span>
+          </a>
+        </div>
+
+        <!-- Right: Profile & Cart -->
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <a href="profile.html" class="nav-link-custom">
+            <i class="bi bi-person-circle text-success"></i>
+            <span class="d-none d-sm-inline">Pooja JP</span>
+          </a>
+          <a href="cart.html" class="btn nav-link-custom cart-pill">
+            <i class="bi bi-cart3"></i>
+            <span class="d-none d-md-inline">Cart</span>
+            <span class="cart-count-badge">0</span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       SEARCH HERO & INPUT
+       ========================================================================= -->
+  <section class="py-4 bg-white border-bottom shadow-sm">
+    <div class="container-xl" style="max-width: 860px;">
+      
+      <!-- Big Search Input -->
+      <div class="input-group input-group-lg shadow-sm rounded-pill overflow-hidden border border-2 border-success p-1 bg-white mb-3">
+        <span class="input-group-text bg-white border-0 text-success ps-3">
+          <i class="bi bi-search fs-5"></i>
+        </span>
+        <input type="text" id="liveSearchField" class="form-control border-0 shadow-none px-2" placeholder="Search for restaurant dishes, biryani, pizza, or cuisines..." autofocus>
+        <button class="btn btn-link text-muted pe-3 text-decoration-none" id="clearSearchBtn" style="display:none;" onclick="clearSearch()"><i class="bi bi-x-circle-fill fs-5"></i></button>
+      </div>
+
+      <!-- Popular Search Chips -->
+      <div class="d-flex align-items-center gap-2 pt-1 search-chip-track">
+        <span class="small fw-bold text-muted me-1 flex-shrink-0"><i class="bi bi-fire text-danger me-1"></i>Trending:</span>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Biryani')">Biryani</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Burger')">Burgers</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Pizza')">Pizza</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Dosa')">Crispy Dosa</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Paneer')">Paneer Butter Masala</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Shawarma')">Shawarma</button>
+        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 small fw-bold search-chip flex-shrink-0" onclick="setQuery('Gulab Jamun')">Desserts</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       SEARCH FILTERS & RESULTS
+       ========================================================================= -->
+  <main class="container-xl py-4" style="max-width: 1040px;">
+    
+    <!-- Filter Pills Row -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4 pb-2 border-bottom">
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <ul class="nav nav-pills" id="searchTabs" role="tablist">
+          <li class="nav-item">
+            <button class="nav-link active rounded-pill px-3 px-sm-4 fw-bold" id="dishes-tab" data-bs-toggle="pill" data-bs-target="#tab-dishes">
+              Dishes (<span id="dishesCount">8</span>)
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link rounded-pill px-3 px-sm-4 fw-bold" id="restaurants-tab" data-bs-toggle="pill" data-bs-target="#tab-restaurants">
+              Restaurants (<span id="restaurantsCount">4</span>)
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Quick Toggles -->
+      <div class="d-flex align-items-center flex-wrap gap-2 gap-sm-3">
+        <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+          <input class="form-check-input mt-0" type="checkbox" id="vegOnlyToggle" onchange="filterResults()">
+          <label class="form-check-label small fw-bold text-success cursor-pointer" for="vegOnlyToggle">Pure Veg Only</label>
+        </div>
+        <select class="form-select form-select-sm rounded-pill border-secondary-subtle fw-semibold" id="sortBySelect" style="width: auto; min-width: 150px;" onchange="filterResults()">
+          <option value="relevance">Sort: Relevance</option>
+          <option value="rating">Rating 4.0+</option>
+          <option value="low-to-high">Price: Low to High</option>
+          <option value="high-to-low">Price: High to Low</option>
+          <option value="delivery">Fast Delivery</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="searchTabContent">
+      
+      <!-- TAB 1: DISHES -->
+      <div class="tab-pane fade show active" id="tab-dishes">
+        <div class="row g-4" id="dishesGrid">
+          
+          <!-- Dish 1 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Meghana Special Chicken Biryani" data-veg="false" data-price="340" data-rating="4.8" data-time="25">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon non-veg"></span>
+                    <span class="badge bg-danger bg-opacity-10 text-danger small fw-bold">Bestseller</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.8</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Meghana Special Chicken Biryani</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Meghana Foods • 25 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹340</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Flavourful spiced seeraga samba rice cooked with tender succulent marinated chicken cuts in authentic Andhra style.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=260&q=80" alt="Biryani" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d1', 'Meghana Special Chicken Biryani', 340, false, 'Meghana Foods')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 2 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Paneer Butter Masala" data-veg="true" data-price="260" data-rating="4.7" data-time="20">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon veg"></span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold">Pure Veg</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.7</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Paneer Butter Masala</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Punjab Grill • 20 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹260</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Fresh cottage cheese cubes simmered in a velvety, buttery cashew tomato makhani gravy seasoned with kasuri methi.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=260&q=80" alt="Paneer Butter Masala" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d2', 'Paneer Butter Masala', 260, true, 'Punjab Grill')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 3 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Crispy Ghee Roast Masala Dosa" data-veg="true" data-price="120" data-rating="4.9" data-time="15">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon veg"></span>
+                    <span class="badge bg-warning bg-opacity-25 text-dark small fw-bold">South Indian Fav</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.9</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Crispy Ghee Roast Masala Dosa</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> A2B - Adyar Ananda Bhavan • 15 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹120</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Crispy golden crepe roasted in pure desi ghee, stuffed with seasoned potato masala, served with coconut chutney & sambar.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=260&q=80" alt="Masala Dosa" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d3', 'Crispy Ghee Roast Masala Dosa', 120, true, 'A2B')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 4 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Truffles All-American Cheese Burger" data-veg="false" data-price="230" data-rating="4.6" data-time="30">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon non-veg"></span>
+                    <span class="badge bg-secondary bg-opacity-10 text-dark small fw-bold">Burger & Cafe</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.6</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Truffles All-American Cheese Burger</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Truffles Cafe • 30 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹230</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Char-grilled patty layered with melted cheddar cheese, caramelized onions, fresh lettuce, and house secret relish.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=260&q=80" alt="Burger" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d4', 'Truffles All-American Burger', 230, false, 'Truffles Cafe')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 5 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Clay Oven Butter Garlic Naan" data-veg="true" data-price="65" data-rating="4.8" data-time="20">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon veg"></span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold">Pure Veg</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.8</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Clay Oven Butter Garlic Naan</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Meghana Foods • 20 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹65</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Traditional tandoori bread baked on the clay oven wall, glazed with garlic butter and fresh coriander.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1626074353765-517a681e40be?auto=format&fit=crop&w=260&q=80" alt="Naan" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d5', 'Butter Garlic Naan', 65, true, 'Meghana Foods')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 6 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Shahi Gulab Jamun (2 Pcs)" data-veg="true" data-price="90" data-rating="4.9" data-time="15">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon veg"></span>
+                    <span class="badge bg-warning bg-opacity-25 text-dark small fw-bold">Sweet Tooth</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.9</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Shahi Gulab Jamun (2 Pcs)</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Meghana Foods • 15 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹90</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Warm, melt-in-mouth milk solids dumplings soaked in cardamom saffron sugar syrup.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=260&q=80" alt="Gulab Jamun" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d6', 'Shahi Gulab Jamun (2 Pcs)', 90, true, 'Meghana Foods')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 7 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Chicken Shawarma Roll" data-veg="false" data-price="180" data-rating="4.5" data-time="20">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon non-veg"></span>
+                    <span class="badge bg-secondary bg-opacity-10 text-dark small fw-bold">Arabic Street</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.5</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Chicken Shawarma Roll</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Empire Restaurant • 20 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹180</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Slow-roasted rotisserie chicken shreds rolled in soft rumali roti with garlic toum mayonnaise.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1529006557810-274b9b2fc783?auto=format&fit=crop&w=260&q=80" alt="Shawarma" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d7', 'Chicken Shawarma Roll', 180, false, 'Empire Restaurant')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dish 8 -->
+          <div class="col-md-6 col-lg-6 dish-search-item" data-name="Farmhouse Veggie Pizza" data-veg="true" data-price="320" data-rating="4.6" data-time="30">
+            <div class="card p-3 border-0 rounded-4 shadow-sm h-100 bg-white">
+              <div class="d-flex justify-content-between gap-3">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="food-type-icon veg"></span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold">Pure Veg</span>
+                    <span class="badge bg-success bg-opacity-10 text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.6</span>
+                  </div>
+                  <h6 class="fw-bold text-pine mb-1">Farmhouse Veggie Pizza</h6>
+                  <div class="small text-muted mb-2"><i class="fa-solid fa-store me-1 text-success"></i> Pizza Hut • 30 mins</div>
+                  <div class="fw-bold text-pine fs-6 mb-2">₹320</div>
+                  <p class="small text-muted mb-0 dish-desc-clamp">
+                    Hand-stretched crust topped with crisp bell peppers, black olives, grilled mushrooms, sweet corn, and mozzarella.
+                  </p>
+                </div>
+                <div class="position-relative text-center" style="width: 130px; flex-shrink: 0;">
+                  <img src="https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=260&q=80" alt="Pizza" class="rounded-3 w-100" style="height: 100px; object-fit: cover;">
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3 py-1 shadow-sm w-100" onclick="addToCart('d8', 'Farmhouse Veggie Pizza', 320, true, 'Pizza Hut')">
+                      ADD +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div id="noDishesFound" class="text-center py-5" style="display:none;">
+          <i class="bi bi-search display-3 text-muted"></i>
+          <h5 class="fw-bold text-pine mt-3">No matching dishes found</h5>
+          <p class="text-muted small">Try searching for Biryani, Dosa, Burger, or clear your filters.</p>
+        </div>
+      </div>
+
+      <!-- TAB 2: RESTAURANTS -->
+      <div class="tab-pane fade" id="tab-restaurants">
+        <div class="row g-4" id="restaurantsGrid">
+          
+          <!-- Restaurant 1 -->
+          <div class="col-md-6 restaurant-search-item" data-name="Meghana Foods" data-cuisines="Biryani, Andhra, North Indian, Seafood">
+            <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100">
+              <div class="d-flex gap-3">
+                <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=200&q=80" class="rounded-3" style="width: 110px; height: 110px; object-fit: cover;" alt="Meghana Foods">
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="fw-bold text-pine mb-1"><a href="restaurant.html" class="text-decoration-none text-pine">Meghana Foods</a></h5>
+                    <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.6</span>
+                  </div>
+                  <div class="text-muted small mb-1">Biryani, Andhra, North Indian</div>
+                  <div class="small text-muted mb-2"><i class="bi bi-geo-alt text-success"></i> Indiranagar • 2.4 km • 25-30 mins</div>
+                  <span class="badge bg-danger bg-opacity-10 text-danger fw-bold small"><i class="fa-solid fa-percent me-1"></i>50% OFF UPTO ₹100</span>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                <span class="small text-muted">₹400 for two</span>
+                <a href="restaurant.html" class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold">View Menu <i class="bi bi-arrow-right ms-1"></i></a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Restaurant 2 -->
+          <div class="col-md-6 restaurant-search-item" data-name="Truffles Burgers and Cafe" data-cuisines="Burgers, Cafe, American, Desserts">
+            <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100">
+              <div class="d-flex gap-3">
+                <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80" class="rounded-3" style="width: 110px; height: 110px; object-fit: cover;" alt="Truffles">
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="fw-bold text-pine mb-1"><a href="restaurant.html" class="text-decoration-none text-pine">Truffles Burgers & Cafe</a></h5>
+                    <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.5</span>
+                  </div>
+                  <div class="text-muted small mb-1">Burgers, Cafe, Desserts, Beverages</div>
+                  <div class="small text-muted mb-2"><i class="bi bi-geo-alt text-success"></i> Koramangala • 3.2 km • 30 mins</div>
+                  <span class="badge bg-danger bg-opacity-10 text-danger fw-bold small"><i class="fa-solid fa-percent me-1"></i>FLAT 20% OFF</span>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                <span class="small text-muted">₹350 for two</span>
+                <a href="restaurant.html" class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold">View Menu <i class="bi bi-arrow-right ms-1"></i></a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Restaurant 3 -->
+          <div class="col-md-6 restaurant-search-item" data-name="A2B Adyar Ananda Bhavan" data-cuisines="South Indian, Dosa, Pure Veg, Sweets">
+            <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100">
+              <div class="d-flex gap-3">
+                <img src="https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=200&q=80" class="rounded-3" style="width: 110px; height: 110px; object-fit: cover;" alt="A2B">
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="fw-bold text-pine mb-1"><a href="restaurant.html" class="text-decoration-none text-pine">A2B - Adyar Ananda Bhavan</a></h5>
+                    <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.7</span>
+                  </div>
+                  <div class="text-muted small mb-1">South Indian, Crispy Dosa, Pure Veg</div>
+                  <div class="small text-muted mb-2"><i class="bi bi-geo-alt text-success"></i> MG Road • 1.8 km • 20 mins</div>
+                  <span class="badge bg-success bg-opacity-15 text-success fw-bold small"><i class="bi bi-leaf-fill me-1"></i>100% PURE VEG</span>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                <span class="small text-muted">₹250 for two</span>
+                <a href="restaurant.html" class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold">View Menu <i class="bi bi-arrow-right ms-1"></i></a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Restaurant 4 -->
+          <div class="col-md-6 restaurant-search-item" data-name="Empire Restaurant" data-cuisines="North Indian, Kebabs, Biryani, Shawarma">
+            <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100">
+              <div class="d-flex gap-3">
+                <img src="https://images.unsplash.com/photo-1529006557810-274b9b2fc783?auto=format&fit=crop&w=200&q=80" class="rounded-3" style="width: 110px; height: 110px; object-fit: cover;" alt="Empire">
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="fw-bold text-pine mb-1"><a href="restaurant.html" class="text-decoration-none text-pine">Empire Restaurant</a></h5>
+                    <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill text-warning me-1"></i>4.4</span>
+                  </div>
+                  <div class="text-muted small mb-1">North Indian, Mughlai, Shawarma</div>
+                  <div class="small text-muted mb-2"><i class="bi bi-geo-alt text-success"></i> Church Street • 3.5 km • 25 mins</div>
+                  <span class="badge bg-danger bg-opacity-10 text-danger fw-bold small"><i class="fa-solid fa-percent me-1"></i>FREE DELIVERY</span>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                <span class="small text-muted">₹450 for two</span>
+                <a href="restaurant.html" class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold">View Menu <i class="bi bi-arrow-right ms-1"></i></a>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div id="noRestaurantsFound" class="text-center py-5" style="display:none;">
+          <i class="bi bi-shop-window display-3 text-muted"></i>
+          <h5 class="fw-bold text-pine mt-3">No matching restaurants found</h5>
+          <p class="text-muted small">Try searching by restaurant name or cuisine.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="zippy-footer mt-5 py-4 border-top">
+    <div class="container-xl text-center small text-white-50">
+      MCA Project MCSP-232: E-Commerce Platform for Food Order • Student: Pooja JP • Styled with Figma Lush Forest Palette
+      <div class="mt-2">
+        <a href="terms.html" class="text-white-50 me-3">Terms & Conditions</a>
+        <a href="privacy.html" class="text-white-50 me-3">Privacy Policy</a>
+        <a href="help.html" class="text-white-50 me-3">Help Center</a>
+        <a href="delivery-partner.html" class="text-white-50">Delivery Partner Portal</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+  <!-- Live Search & Filtering Script -->
+  <script>
+    const searchInput = document.getElementById('liveSearchField');
+    const clearBtn = document.getElementById('clearSearchBtn');
+
+    searchInput.addEventListener('input', () => {
+      clearBtn.style.display = searchInput.value.length > 0 ? 'block' : 'none';
+      filterResults();
+    });
+
+    function setQuery(query) {
+      searchInput.value = query;
+      clearBtn.style.display = 'block';
+      filterResults();
+    }
+
+    function clearSearch() {
+      searchInput.value = '';
+      clearBtn.style.display = 'none';
+      filterResults();
+    }
+
+    function filterResults() {
+      const query = searchInput.value.toLowerCase().trim();
+      const vegOnly = document.getElementById('vegOnlyToggle').checked;
+      const sortBy = document.getElementById('sortBySelect').value;
+
+      // Filter dishes
+      const dishItems = Array.from(document.querySelectorAll('.dish-search-item'));
+      let visibleDishes = 0;
+
+      dishItems.forEach(item => {
+        const name = item.getAttribute('data-name').toLowerCase();
+        const isVeg = item.getAttribute('data-veg') === 'true';
+
+        let matchesQuery = query === '' || name.includes(query);
+        let matchesVeg = !vegOnly || isVeg;
+
+        if (matchesQuery && matchesVeg) {
+          item.style.display = '';
+          visibleDishes++;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      // Sort dishes
+      const dishesContainer = document.getElementById('dishesGrid');
+      const sortedDishes = dishItems.sort((a, b) => {
+        if (sortBy === 'low-to-high') {
+          return Number(a.getAttribute('data-price')) - Number(b.getAttribute('data-price'));
+        } else if (sortBy === 'high-to-low') {
+          return Number(b.getAttribute('data-price')) - Number(a.getAttribute('data-price'));
+        } else if (sortBy === 'rating') {
+          return Number(b.getAttribute('data-rating')) - Number(a.getAttribute('data-rating'));
+        } else if (sortBy === 'delivery') {
+          return Number(a.getAttribute('data-time')) - Number(b.getAttribute('data-time'));
+        }
+        return 0;
+      });
+      sortedDishes.forEach(el => dishesContainer.appendChild(el));
+
+      document.getElementById('dishesCount').textContent = visibleDishes;
+      document.getElementById('noDishesFound').style.display = visibleDishes === 0 ? 'block' : 'none';
+
+      // Filter restaurants
+      const restaurantItems = document.querySelectorAll('.restaurant-search-item');
+      let visibleRestaurants = 0;
+      restaurantItems.forEach(item => {
+        const name = item.getAttribute('data-name').toLowerCase();
+        const cuisines = item.getAttribute('data-cuisines').toLowerCase();
+
+        let matchesQuery = query === '' || name.includes(query) || cuisines.includes(query);
+
+        if (matchesQuery) {
+          item.style.display = '';
+          visibleRestaurants++;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      document.getElementById('restaurantsCount').textContent = visibleRestaurants;
+      document.getElementById('noRestaurantsFound').style.display = visibleRestaurants === 0 ? 'block' : 'none';
+    }
+  </script>
+</body>
+</html>

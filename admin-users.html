@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User & Staff RBAC Management - Admin Portal | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="admin-layout">
+    
+    <!-- =========================================================================
+         ADMIN SIDEBAR
+         ========================================================================= -->
+    <aside class="admin-sidebar">
+      <div class="admin-sidebar-header">
+        <div class="brand-icon-box" style="width: 38px; height: 38px; font-size: 1.1rem;">
+          <i class="fa-solid fa-utensils"></i>
+        </div>
+        <div>
+          <div class="fw-bold text-white fs-5" style="letter-spacing: -0.5px;">zippy<span class="text-mint">.</span></div>
+          <span class="badge bg-success bg-opacity-50 text-mint" style="font-size: 0.65rem;">ADMIN PORTAL</span>
+        </div>
+      </div>
+
+      <ul class="admin-nav-list">
+        <li class="admin-nav-item">
+          <a href="admin-dashboard.html" class="admin-nav-link">
+            <i class="bi bi-speedometer2"></i>
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="kitchen-display.html" class="admin-nav-link">
+            <i class="fa-solid fa-fire-burner"></i>
+            <span>Kitchen KDS (WSJF)</span>
+            <span class="badge bg-danger rounded-pill ms-auto">LIVE</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-categories.html" class="admin-nav-link">
+            <i class="bi bi-tags"></i>
+            <span>Food Categories</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-users.html" class="admin-nav-link active">
+            <i class="bi bi-people"></i>
+            <span>User & Staff RBAC</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="admin-reports.html" class="admin-nav-link">
+            <i class="bi bi-graph-up-arrow"></i>
+            <span>Executive Reports</span>
+          </a>
+        </li>
+        <li class="admin-nav-item mt-3 pt-3 border-top border-secondary border-opacity-25">
+          <a href="delivery-partner.html" class="admin-nav-link">
+            <i class="bi bi-bicycle"></i>
+            <span>Delivery Executive App</span>
+          </a>
+        </li>
+        <li class="admin-nav-item">
+          <a href="index.html" class="admin-nav-link">
+            <i class="bi bi-arrow-left-circle"></i>
+            <span>View Customer App</span>
+          </a>
+        </li>
+      </ul>
+
+      <!-- Bottom Profile Card -->
+      <div class="p-3 border-top border-secondary border-opacity-25 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <div class="rounded-circle bg-success bg-opacity-25 d-flex align-items-center justify-content-center text-mint fw-bold" style="width: 36px; height: 36px;">
+            P
+          </div>
+          <div>
+            <div class="fw-bold small text-white">Pooja JP</div>
+            <div class="text-white-50" style="font-size: 0.72rem;">MCA Store Admin</div>
+          </div>
+        </div>
+        <a href="login.html" class="text-white-50" title="Sign Out">
+          <i class="bi bi-box-arrow-right fs-5"></i>
+        </a>
+      </div>
+    </aside>
+
+    <!-- =========================================================================
+         MAIN CONTENT AREA
+         ========================================================================= -->
+    <div class="admin-main">
+      
+      <!-- Topbar -->
+      <header class="admin-topbar">
+        <div class="d-flex align-items-center gap-3">
+          <h4 class="fw-bold text-pine mb-0">Role-Based Access Control (RBAC)</h4>
+          <span class="badge bg-success bg-opacity-25 text-success fw-bold px-3 py-1 rounded-pill">
+            <i class="bi bi-shield-lock-fill me-1"></i> Argon2id Password Encryption
+          </span>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+          <button class="btn btn-sm btn-success rounded-pill fw-bold px-3" style="background-color: var(--lush-forest);" data-bs-toggle="modal" data-bs-target="#addUserModal">
+            <i class="bi bi-person-plus-fill me-1"></i> Add New User / Staff
+          </button>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <div class="admin-content">
+        
+        <!-- RBAC Stats Row -->
+        <div class="row g-3 mb-4">
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">1,248</div>
+                <div class="stat-label">Total Registered Users</div>
+              </div>
+              <div class="stat-icon-wrap green"><i class="bi bi-people-fill"></i></div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">1,180</div>
+                <div class="stat-label">Customers</div>
+              </div>
+              <div class="stat-icon-wrap blue"><i class="bi bi-person-check-fill"></i></div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">50</div>
+                <div class="stat-label">Delivery Fleet</div>
+              </div>
+              <div class="stat-icon-wrap amber"><i class="bi bi-bicycle"></i></div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div>
+                <div class="stat-number">18</div>
+                <div class="stat-label">Admins & Chefs</div>
+              </div>
+              <div class="stat-icon-wrap pine"><i class="bi bi-shield-shaded"></i></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Card -->
+        <div class="card border-0 rounded-4 shadow-sm p-3 bg-white mb-4">
+          <div class="row g-3 align-items-center">
+            <div class="col-md-5">
+              <div class="input-group">
+                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" id="userSearchInput" class="form-control border-start-0" placeholder="Search by name, email, or mobile..." onkeyup="filterUsersTable()">
+              </div>
+            </div>
+            <div class="col-md-7 text-md-end">
+              <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-success active" onclick="filterUserRole('all')">All Roles</button>
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="filterUserRole('Customer')">Customers</button>
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="filterUserRole('Kitchen')">Kitchen Staff</button>
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="filterUserRole('Delivery')">Delivery</button>
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="filterUserRole('Admin')">Admins</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="card border-0 rounded-4 shadow-sm bg-white overflow-hidden">
+          <div class="table-responsive">
+            <table class="table-lush" id="usersTable">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Full Name</th>
+                  <th>Email & Phone</th>
+                  <th>Assigned Role</th>
+                  <th>Activity / Orders</th>
+                  <th>Account Status</th>
+                  <th>Joined Date</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                
+                <!-- User 1: Admin -->
+                <tr data-role="Admin">
+                  <td><span class="font-monospace text-pine fw-bold">#USR-001</span></td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-mint text-forest d-flex align-items-center justify-content-center fw-bold" style="width: 34px; height: 34px; background-color: var(--lush-mint); color: var(--lush-forest);">
+                        P
+                      </div>
+                      <div>
+                        <strong>Pooja JP</strong>
+                        <div class="small text-muted">Primary Super Admin</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>pooja.mca2026@ignou.ac.in</div>
+                    <div class="small text-muted">+91 98765 43210</div>
+                  </td>
+                  <td><span class="badge bg-dark text-white fw-bold px-3 py-1 rounded-pill">SUPER ADMIN</span></td>
+                  <td><span class="badge bg-light text-pine border">Full Access</span></td>
+                  <td><span class="badge bg-success text-white">ACTIVE</span></td>
+                  <td class="small text-muted">01 Jul 2026</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill me-1" onclick="editUserRole('Pooja JP', 'Admin')"><i class="bi bi-shield-check"></i></button>
+                  </td>
+                </tr>
+
+                <!-- User 2: Head Chef (Kitchen) -->
+                <tr data-role="Kitchen">
+                  <td><span class="font-monospace text-pine fw-bold">#USR-014</span></td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-light text-danger d-flex align-items-center justify-content-center fw-bold" style="width: 34px; height: 34px;">
+                        M
+                      </div>
+                      <div>
+                        <strong>Chef Murugan K.</strong>
+                        <div class="small text-muted">Indiranagar Outlet Cook</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>murugan.chef@meghanafoods.in</div>
+                    <div class="small text-muted">+91 98450 11223</div>
+                  </td>
+                  <td><span class="badge bg-danger text-white fw-bold px-3 py-1 rounded-pill">KITCHEN STAFF</span></td>
+                  <td><span class="badge bg-light text-pine border">142 tickets today</span></td>
+                  <td><span class="badge bg-success text-white">ACTIVE</span></td>
+                  <td class="small text-muted">10 Jul 2026</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill me-1" onclick="editUserRole('Chef Murugan', 'Kitchen')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger rounded-pill" onclick="toggleUserStatus(this)"><i class="bi bi-slash-circle"></i></button>
+                  </td>
+                </tr>
+
+                <!-- User 3: Delivery Executive -->
+                <tr data-role="Delivery">
+                  <td><span class="font-monospace text-pine fw-bold">#USR-088</span></td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-light text-warning d-flex align-items-center justify-content-center fw-bold" style="width: 34px; height: 34px;">
+                        P
+                      </div>
+                      <div>
+                        <strong>Prakash S.</strong>
+                        <div class="small text-muted">Zone: Indiranagar Hub</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>prakash.rider@zippy.partner</div>
+                    <div class="small text-muted">+91 97412 88990</div>
+                  </td>
+                  <td><span class="badge bg-warning text-dark fw-bold px-3 py-1 rounded-pill">DELIVERY RIDER</span></td>
+                  <td><span class="badge bg-light text-pine border">1,420 Deliveries</span></td>
+                  <td><span class="badge bg-success text-white">ON DUTY</span></td>
+                  <td class="small text-muted">15 Jul 2026</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill me-1" onclick="editUserRole('Prakash S.', 'Delivery')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger rounded-pill" onclick="toggleUserStatus(this)"><i class="bi bi-slash-circle"></i></button>
+                  </td>
+                </tr>
+
+                <!-- User 4: Customer -->
+                <tr data-role="Customer">
+                  <td><span class="font-monospace text-pine fw-bold">#USR-204</span></td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-light text-primary d-flex align-items-center justify-content-center fw-bold" style="width: 34px; height: 34px;">
+                        R
+                      </div>
+                      <div>
+                        <strong>Rahul Sharma</strong>
+                        <div class="small text-muted">Verified Customer</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>rahul.sharma@gmail.com</div>
+                    <div class="small text-muted">+91 98860 12345</div>
+                  </td>
+                  <td><span class="badge bg-primary text-white fw-bold px-3 py-1 rounded-pill">CUSTOMER</span></td>
+                  <td><span class="badge bg-light text-pine border">19 Orders</span></td>
+                  <td><span class="badge bg-success text-white">ACTIVE</span></td>
+                  <td class="small text-muted">22 Aug 2026</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill me-1" onclick="editUserRole('Rahul Sharma', 'Customer')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger rounded-pill" onclick="toggleUserStatus(this)"><i class="bi bi-slash-circle"></i></button>
+                  </td>
+                </tr>
+
+                <!-- User 5: Customer -->
+                <tr data-role="Customer">
+                  <td><span class="font-monospace text-pine fw-bold">#USR-312</span></td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="rounded-circle bg-light text-info d-flex align-items-center justify-content-center fw-bold" style="width: 34px; height: 34px;">
+                        A
+                      </div>
+                      <div>
+                        <strong>Ananya Iyer</strong>
+                        <div class="small text-muted">Gold Member</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div>ananya.iyer@yahoo.com</div>
+                    <div class="small text-muted">+91 99001 54321</div>
+                  </td>
+                  <td><span class="badge bg-primary text-white fw-bold px-3 py-1 rounded-pill">CUSTOMER</span></td>
+                  <td><span class="badge bg-light text-pine border">24 Orders</span></td>
+                  <td><span class="badge bg-success text-white">ACTIVE</span></td>
+                  <td class="small text-muted">05 Sep 2026</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill me-1" onclick="editUserRole('Ananya Iyer', 'Customer')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger rounded-pill" onclick="toggleUserStatus(this)"><i class="bi bi-slash-circle"></i></button>
+                  </td>
+                </tr>
+
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- =========================================================================
+       ADD NEW USER MODAL
+       ========================================================================= -->
+  <div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-pine" id="userModalTitle">Register New User / Staff</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="userForm" onsubmit="handleSaveUser(event)">
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Full Name</label>
+              <input type="text" class="form-control" id="formUserName" placeholder="e.g. Ramesh Kumar" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Email Address (Unique)</label>
+              <input type="email" class="form-control" id="formUserEmail" placeholder="e.g. ramesh@zippy.partner" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Phone Number (Unique)</label>
+              <input type="tel" class="form-control" id="formUserPhone" placeholder="e.g. +91 98765 00000" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Assign RBAC Role</label>
+              <select class="form-select" id="formUserRole" required>
+                <option value="Customer">Customer</option>
+                <option value="Kitchen">Kitchen Staff / KDS</option>
+                <option value="Delivery">Delivery Executive</option>
+                <option value="Admin">Administrator</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Initial Password</label>
+              <input type="password" class="form-control" id="formUserPass" placeholder="••••••••" required>
+              <div class="form-text small text-muted"><i class="bi bi-shield-check text-success"></i> Will be hashed via Argon2id (Cost: Memory=64MB, Iterations=4)</div>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+              <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background-color: var(--lush-forest);">Save Account</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+  <script>
+    function filterUsersTable() {
+      const q = document.getElementById('userSearchInput').value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#usersTable tbody tr');
+      rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        r.style.display = q === '' || text.includes(q) ? '' : 'none';
+      });
+    }
+
+    function filterUserRole(role) {
+      const rows = document.querySelectorAll('#usersTable tbody tr');
+      rows.forEach(r => {
+        if (role === 'all' || r.getAttribute('data-role') === role) {
+          r.style.display = '';
+        } else {
+          r.style.display = 'none';
+        }
+      });
+    }
+
+    function editUserRole(name, currentRole) {
+      const newRole = prompt(`Update role for ${name}: (Admin, Kitchen, Delivery, Customer)`, currentRole);
+      if (newRole) {
+        showToast(`Role for ${name} updated to "${newRole}". RBAC permissions refreshed!`);
+      }
+    }
+
+    function toggleUserStatus(btn) {
+      const row = btn.closest('tr');
+      const badge = row.querySelector('td:nth-child(6) span');
+      if (badge.textContent.includes('ACTIVE') || badge.textContent.includes('ON DUTY')) {
+        badge.className = 'badge bg-danger text-white';
+        badge.textContent = 'SUSPENDED';
+        showToast('User account suspended from platform');
+      } else {
+        badge.className = 'badge bg-success text-white';
+        badge.textContent = 'ACTIVE';
+        showToast('User account activated');
+      }
+    }
+
+    function handleSaveUser(e) {
+      e.preventDefault();
+      const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
+      modal.hide();
+      showToast('User registered successfully! Linked with MySQL `roles` & `users` tables.');
+    }
+  </script>
+</body>
+</html>

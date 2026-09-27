@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Kitchen Display - Orders, Preparation & Dispatch | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans, Outfit, JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    /* =========================================================================
+       DYNAMIC THEME PALETTES (DARK & LIGHT)
+       ========================================================================= */
+    :root, body.theme-dark {
+      --kds-bg: #0D1612;
+      --kds-header-bg: #122119;
+      --kds-header-border: #1E3827;
+      --kds-surface: #15241C;
+      --kds-surface-border: rgba(104, 186, 127, 0.16);
+      --kds-card-bg: #1C3025;
+      --kds-card-border: rgba(255, 255, 255, 0.08);
+      --kds-card-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+
+      --kds-text-main: #F2F7F4;
+      --kds-text-dim: #9EB5A7;
+      --kds-text-subtle: #6D8777;
+      --kds-border-divider: rgba(255, 255, 255, 0.08);
+
+      /* Column 1: Orders (Rose Coral Theme) */
+      --col-orders-header-bg: linear-gradient(135deg, #2D1418 0%, #200E12 100%);
+      --col-orders-border: #F43F5E;
+      --col-orders-title: #FDA4AF;
+      --col-orders-badge-bg: #E11D48;
+      --col-orders-badge-text: #FFFFFF;
+      --col-orders-card-accent: #F43F5E;
+      --btn-orders-bg: linear-gradient(135deg, #E11D48 0%, #BE123C 100%);
+      --btn-orders-text: #FFFFFF;
+      --btn-orders-shadow: rgba(225, 29, 72, 0.4);
+
+      /* Column 2: Preparation (Warm Amber Theme) */
+      --col-prep-header-bg: linear-gradient(135deg, #2E2210 0%, #1F170B 100%);
+      --col-prep-border: #F59E0B;
+      --col-prep-title: #FDE68A;
+      --col-prep-badge-bg: #D97706;
+      --col-prep-badge-text: #FFFFFF;
+      --col-prep-card-accent: #F59E0B;
+      --btn-prep-bg: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      --btn-prep-text: #132219;
+      --btn-prep-shadow: rgba(245, 158, 11, 0.35);
+
+      /* Column 3: Ready to Dispatch (Emerald Mint Theme) */
+      --col-ready-header-bg: linear-gradient(135deg, #11291C 0%, #0A1B12 100%);
+      --col-ready-border: #10B981;
+      --col-ready-title: #A7F3D0;
+      --col-ready-badge-bg: #059669;
+      --col-ready-badge-text: #FFFFFF;
+      --col-ready-card-accent: #10B981;
+      --btn-ready-bg: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      --btn-ready-text: #FFFFFF;
+      --btn-ready-shadow: rgba(16, 185, 129, 0.4);
+
+      /* Element Accents */
+      --note-bg: #292013;
+      --note-border: #D97706;
+      --note-text: #FDE68A;
+
+      --courier-bg: #142B1E;
+      --courier-border: #1E462F;
+      --courier-text: #6EE7B7;
+
+      --dish-qty-bg: #274333;
+      --dish-qty-text: #A7F3D0;
+      --dish-hover-bg: rgba(255, 255, 255, 0.04);
+      --dish-done-text: #6B8575;
+
+      --channel-deliv-bg: rgba(56, 189, 248, 0.15);
+      --channel-deliv-text: #7DD3FC;
+      --channel-deliv-border: rgba(56, 189, 248, 0.3);
+
+      --channel-take-bg: rgba(251, 146, 60, 0.15);
+      --channel-take-text: #FDBA74;
+      --channel-take-border: rgba(251, 146, 60, 0.3);
+
+      --timer-urgent-bg: #40141B;
+      --timer-urgent-text: #FDA4AF;
+      --timer-urgent-border: #E11D48;
+
+      --timer-normal-bg: #172D20;
+      --timer-normal-text: #A7F3D0;
+      --timer-normal-border: #2E6F40;
+
+      --scroll-thumb: #2E6F40;
+    }
+
+    body.theme-light {
+      --kds-bg: #F0F5F2;
+      --kds-header-bg: #173320;
+      --kds-header-border: #112617;
+      --kds-surface: #E2ECE5;
+      --kds-surface-border: #D0E0D5;
+      --kds-card-bg: #FFFFFF;
+      --kds-card-border: rgba(0, 0, 0, 0.06);
+      --kds-card-shadow: 0 4px 14px rgba(23, 51, 32, 0.08);
+
+      --kds-text-main: #14281B;
+      --kds-text-dim: #4B6554;
+      --kds-text-subtle: #799483;
+      --kds-border-divider: #E6EEE8;
+
+      /* Column 1: Orders (Rose Coral Theme) */
+      --col-orders-header-bg: #FFE8EC;
+      --col-orders-border: #F43F5E;
+      --col-orders-title: #9F1239;
+      --col-orders-badge-bg: #E11D48;
+      --col-orders-badge-text: #FFFFFF;
+      --col-orders-card-accent: #F43F5E;
+      --btn-orders-bg: linear-gradient(135deg, #E11D48 0%, #BE123C 100%);
+      --btn-orders-text: #FFFFFF;
+      --btn-orders-shadow: rgba(225, 29, 72, 0.25);
+
+      /* Column 2: Preparation (Warm Amber Theme) */
+      --col-prep-header-bg: #FEF3C7;
+      --col-prep-border: #F59E0B;
+      --col-prep-title: #92400E;
+      --col-prep-badge-bg: #D97706;
+      --col-prep-badge-text: #FFFFFF;
+      --col-prep-card-accent: #F59E0B;
+      --btn-prep-bg: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      --btn-prep-text: #FFFFFF;
+      --btn-prep-shadow: rgba(245, 158, 11, 0.25);
+
+      /* Column 3: Ready to Dispatch (Emerald Mint Theme) */
+      --col-ready-header-bg: #D1FAE5;
+      --col-ready-border: #10B981;
+      --col-ready-title: #065F46;
+      --col-ready-badge-bg: #059669;
+      --col-ready-badge-text: #FFFFFF;
+      --col-ready-card-accent: #10B981;
+      --btn-ready-bg: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      --btn-ready-text: #FFFFFF;
+      --btn-ready-shadow: rgba(16, 185, 129, 0.25);
+
+      /* Element Accents */
+      --note-bg: #FEF9C3;
+      --note-border: #EAB308;
+      --note-text: #854D0E;
+
+      --courier-bg: #ECFDF5;
+      --courier-border: #A7F3D0;
+      --courier-text: #065F46;
+
+      --dish-qty-bg: #E3F2E8;
+      --dish-qty-text: #174229;
+      --dish-hover-bg: #F6FAF7;
+      --dish-done-text: #92A69A;
+
+      --channel-deliv-bg: #E0F2FE;
+      --channel-deliv-text: #0369A1;
+      --channel-deliv-border: #BAE6FD;
+
+      --channel-take-bg: #FFEDD5;
+      --channel-take-text: #C2410C;
+      --channel-take-border: #FED7AA;
+
+      --timer-urgent-bg: #FFE4E6;
+      --timer-urgent-text: #BE123C;
+      --timer-urgent-border: #F43F5E;
+
+      --timer-normal-bg: #E2ECE5;
+      --timer-normal-text: #1D4A2F;
+      --timer-normal-border: #68BA7F;
+
+      --scroll-thumb: #68BA7F;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+    }
+
+    body {
+      background-color: var(--kds-bg);
+      color: var(--kds-text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* KDS TOPBAR */
+    .kds-header {
+      background-color: var(--kds-header-bg);
+      border-bottom: 2px solid var(--kds-header-border);
+      padding: 12px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 1020;
+    }
+
+    .kds-brand-logo {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #2E6F40 0%, #164024 100%);
+      border: 1px solid #68BA7F;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #CEFFDC;
+    }
+
+    .status-pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #10B981;
+      display: inline-block;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse-green 2s infinite;
+    }
+
+    @keyframes pulse-green {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* KANBAN BOARD */
+    .kds-board {
+      padding: 16px 20px;
+      height: calc(100vh - 66px);
+    }
+
+    .kds-board > .row {
+      height: 100%;
+    }
+
+    .kds-swimlane {
+      background: var(--kds-surface);
+      border-radius: 14px;
+      border: 1px solid var(--kds-surface-border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+    }
+
+    .kds-swimlane-header {
+      padding: 14px 18px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+      font-family: 'Outfit', sans-serif;
+      text-transform: uppercase;
+      font-size: 0.95rem;
+    }
+
+    .lane-orders .kds-swimlane-header {
+      background: var(--col-orders-header-bg);
+      color: var(--col-orders-title);
+      border-bottom-color: var(--col-orders-border);
+    }
+
+    .lane-prep .kds-swimlane-header {
+      background: var(--col-prep-header-bg);
+      color: var(--col-prep-title);
+      border-bottom-color: var(--col-prep-border);
+    }
+
+    .lane-ready .kds-swimlane-header {
+      background: var(--col-ready-header-bg);
+      color: var(--col-ready-title);
+      border-bottom-color: var(--col-ready-border);
+    }
+
+    .badge-lane-orders {
+      background-color: var(--col-orders-badge-bg);
+      color: var(--col-orders-badge-text);
+    }
+
+    .badge-lane-prep {
+      background-color: var(--col-prep-badge-bg);
+      color: var(--col-prep-badge-text);
+    }
+
+    .badge-lane-ready {
+      background-color: var(--col-ready-badge-bg);
+      color: var(--col-ready-badge-text);
+    }
+
+    .kds-swimlane-body {
+      padding: 14px;
+      overflow-y: auto;
+      flex-grow: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scroll-thumb) var(--kds-surface);
+    }
+
+    /* KDS ORDER CARDS */
+    .kds-card {
+      background: var(--kds-card-bg);
+      color: var(--kds-text-main);
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 14px;
+      box-shadow: var(--kds-card-shadow);
+      border: 1px solid var(--kds-card-border);
+      border-left: 5px solid #2E6F40;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .kds-card.card-orders {
+      border-left-color: var(--col-orders-card-accent);
+    }
+
+    .kds-card.card-prep {
+      border-left-color: var(--col-prep-card-accent);
+    }
+
+    .kds-card.card-ready {
+      border-left-color: var(--col-ready-card-accent);
+    }
+
+    /* CARD HEADER & METRICS */
+    .kds-order-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .kds-order-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--kds-text-main);
+    }
+
+    .kds-order-meta {
+      font-size: 0.82rem;
+      color: var(--kds-text-dim);
+    }
+
+    .kds-order-meta strong {
+      color: var(--kds-text-main);
+    }
+
+    .badge-channel-delivery {
+      background-color: var(--channel-deliv-bg);
+      color: var(--channel-deliv-text);
+      border: 1px solid var(--channel-deliv-border);
+    }
+
+    .badge-channel-takeaway {
+      background-color: var(--channel-take-bg);
+      color: var(--channel-take-text);
+      border: 1px solid var(--channel-take-border);
+    }
+
+    .kds-timer-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .timer-urgent {
+      background-color: var(--timer-urgent-bg);
+      color: var(--timer-urgent-text);
+      border: 1px solid var(--timer-urgent-border);
+    }
+
+    .timer-normal {
+      background-color: var(--timer-normal-bg);
+      color: var(--timer-normal-text);
+      border: 1px solid var(--timer-normal-border);
+    }
+
+    /* CHEF NOTE CALLOUT */
+    .kds-chef-note {
+      background: var(--note-bg);
+      border-left: 3px solid var(--note-border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      color: var(--note-text);
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* DISH CHECKLIST */
+    .dish-items-list {
+      border-top: 1px solid var(--kds-border-divider);
+      border-bottom: 1px solid var(--kds-border-divider);
+      padding: 6px 0;
+      margin-bottom: 12px;
+    }
+
+    .dish-check-item {
+      padding: 7px 6px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease;
+    }
+
+    .dish-check-item:hover {
+      background: var(--dish-hover-bg);
+    }
+
+    .dish-check-item.done {
+      text-decoration: line-through;
+      color: var(--dish-done-text);
+    }
+
+    .dish-check-item.done .dish-name {
+      color: var(--dish-done-text);
+    }
+
+    .dish-qty {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      color: var(--dish-qty-text);
+      background: var(--dish-qty-bg);
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-right: 6px;
+    }
+
+    /* CARD PROGRESS BAR */
+    .kds-prep-progress {
+      height: 6px;
+      background: var(--kds-border-divider);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .kds-prep-progress-bar {
+      height: 100%;
+      background: var(--btn-prep-bg);
+      transition: width 0.3s ease;
+    }
+
+    /* TOUCH ACTION BUTTONS */
+    .btn-kds-touch {
+      min-height: 44px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn-action-orders {
+      background: var(--btn-orders-bg);
+      color: var(--btn-orders-text);
+      box-shadow: 0 4px 14px var(--btn-orders-shadow);
+    }
+
+    .btn-action-orders:hover {
+      filter: brightness(1.08);
+      color: #FFFFFF;
+    }
+
+    .btn-action-prep {
+      background: var(--btn-prep-bg);
+      color: var(--btn-prep-text);
+      box-shadow: 0 4px 14px var(--btn-prep-shadow);
+    }
+
+    .btn-action-prep:hover {
+      filter: brightness(1.08);
+      color: var(--btn-prep-text);
+    }
+
+    .btn-action-ready {
+      background: var(--btn-ready-bg);
+      color: var(--btn-ready-text);
+      box-shadow: 0 4px 14px var(--btn-ready-shadow);
+    }
+
+    .btn-action-ready:hover {
+      filter: brightness(1.08);
+      color: #FFFFFF;
+    }
+
+    .btn-kds-touch:active {
+      transform: scale(0.98);
+    }
+
+    /* RIDER COURIER BADGE */
+    .kds-courier-box {
+      background: var(--courier-bg);
+      border: 1px solid var(--courier-border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .courier-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #2E6F40;
+      color: white;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+    }
+
+    .courier-title {
+      font-weight: 700;
+      color: var(--courier-text);
+    }
+
+    .dishes-summary-box {
+      background: var(--dish-hover-bg);
+      border: 1px solid var(--kds-border-divider);
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+    }
+
+    /* EMPTY LANE PLACEHOLDER */
+    .kds-empty-lane {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--kds-text-subtle);
+    }
+
+    .kds-empty-lane i {
+      font-size: 2.4rem;
+      margin-bottom: 8px;
+      opacity: 0.4;
+    }
+
+    /* RESPONSIVE SCROLLBAR */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--kds-bg);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--scroll-thumb);
+      border-radius: 4px;
+    }
+
+    @media (max-width: 991.98px) {
+      .kds-board {
+        height: auto;
+      }
+      .kds-swimlane {
+        height: 550px;
+        margin-bottom: 20px;
+      }
+    }
+  </style>
+</head>
+<body class="theme-dark">
+
+  <!-- =========================================================================
+       CLEAN HEADER: BRAND, THEME TOGGLE, LOGIN & LOGOUT ONLY
+       ========================================================================= -->
+  <header class="kds-header">
+    <div class="d-flex align-items-center justify-content-between">
+      
+      <!-- Brand & Status -->
+      <div class="d-flex align-items-center gap-3">
+        <div class="kds-brand-logo">
+          <i class="fa-solid fa-fire-burner fs-5"></i>
+        </div>
+        <div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="fs-5 fw-bold text-white font-monospace" style="letter-spacing: -0.5px;">ZIPPY KDS</span>
+            <span class="badge bg-success bg-opacity-25 text-mint border border-success border-opacity-50 rounded-pill px-2 py-1 small">
+              <span class="status-pulse-dot me-1"></span> Live
+            </span>
+          </div>
+          <div class="small text-white-50">Kitchen Order Management</div>
+        </div>
+      </div>
+
+      <!-- Controls: Theme Toggle, Staff Name, Login & Logout -->
+      <div class="d-flex align-items-center gap-2 gap-sm-3">
+        
+        <!-- Theme Toggle Button (Dark / Light) -->
+        <button id="themeToggleBtn" onclick="toggleKdsTheme()" class="btn btn-sm btn-outline-light rounded-pill px-3 fw-bold d-flex align-items-center gap-1" title="Switch Theme">
+          <i class="bi bi-moon-stars-fill" id="themeIcon"></i>
+          <span class="d-none d-md-inline" id="themeLabel">Dark Mode</span>
+        </button>
+
+        <!-- Logged In Staff Badge -->
+        <div class="d-none d-sm-flex align-items-center gap-2 text-white-50">
+          <i class="bi bi-person-circle text-mint fs-5"></i>
+          <span id="staffName" class="text-white fw-bold">Chef Suresh</span>
+        </div>
+
+        <div class="vr bg-secondary opacity-50 d-none d-sm-block" style="height: 24px;"></div>
+
+        <!-- Login Button -->
+        <a href="login.html" class="btn btn-sm btn-outline-light rounded-pill px-3 fw-bold d-flex align-items-center gap-1" id="loginBtn" title="Switch Account or Login">
+          <i class="bi bi-box-arrow-in-right"></i>
+          <span>Login</span>
+        </a>
+
+        <!-- Logout Button -->
+        <button onclick="handleLogout()" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold d-flex align-items-center gap-1" id="logoutBtn" style="background: linear-gradient(135deg, #E11D48 0%, #BE123C 100%); border: none;" title="Logout from Kitchen">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </button>
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       3 WORK LANES: ORDERS, PREPARATION, READY TO DISPATCH
+       ========================================================================= -->
+  <main class="container-fluid kds-board">
+    <div class="row g-3">
+      
+      <!-- ===================================================================
+           LANE 1: ORDERS (NEW / QUEUED ORDERS)
+           =================================================================== -->
+      <div class="col-12 col-lg-4">
+        <div class="kds-swimlane lane-orders">
+          <div class="kds-swimlane-header">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-bell-fill fs-5"></i>
+              <span>Orders</span>
+              <span class="badge badge-lane-orders rounded-pill px-2 py-1 font-monospace" id="ordersCount">2</span>
+            </div>
+            <button class="btn btn-sm btn-outline-light rounded-pill px-2 py-0 small" onclick="simulateNewOrder()" title="Simulate incoming order" style="font-size: 0.75rem;">
+              <i class="bi bi-plus-lg"></i> Add
+            </button>
+          </div>
+          
+          <div class="kds-swimlane-body" id="ordersLane">
+            
+            <!-- Order Ticket: #SWG-849206 -->
+            <div class="kds-card card-orders" id="ticket-849206">
+              <div class="kds-order-header">
+                <div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="kds-order-id">#SWG-849206</span>
+                    <span class="badge badge-channel-delivery rounded-pill px-2 small">
+                      <i class="bi bi-bicycle me-1"></i> Delivery
+                    </span>
+                  </div>
+                  <div class="kds-order-meta">
+                    Customer: <strong>Vikram Rao</strong> • Indiranagar
+                  </div>
+                </div>
+                <div class="text-end">
+                  <span class="kds-timer-badge timer-urgent" id="timer-849206">
+                    <i class="bi bi-stopwatch"></i> 02:45
+                  </span>
+                </div>
+              </div>
+
+              <!-- Chef Note -->
+              <div class="kds-chef-note">
+                <i class="bi bi-chat-left-dots-fill"></i>
+                <span>Note: Make it spicy! Extra sliced lemons and green chilies.</span>
+              </div>
+
+              <!-- Dish Items -->
+              <div class="dish-items-list">
+                <div class="dish-check-item">
+                  <div class="d-flex align-items-center">
+                    <span class="dish-qty">1x</span>
+                    <span class="dish-name fw-bold">Chicken 65 Andhra Starter</span>
+                  </div>
+                </div>
+                <div class="dish-check-item">
+                  <div class="d-flex align-items-center">
+                    <span class="dish-qty">2x</span>
+                    <span class="dish-name fw-bold">Special Mutton Dum Biryani</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action: Start Preparation -->
+              <button class="btn btn-kds-touch btn-action-orders w-100" onclick="advanceTicket('849206', 'preparation')">
+                <i class="fa-solid fa-fire me-1"></i> Start Preparation
+              </button>
+            </div>
+
+            <!-- Order Ticket: #TKW-849210 -->
+            <div class="kds-card card-orders" id="ticket-849210">
+              <div class="kds-order-header">
+                <div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="kds-order-id">#TKW-849210</span>
+                    <span class="badge badge-channel-takeaway rounded-pill px-2 small">
+                      <i class="bi bi-bag-fill me-1"></i> Takeaway
+                    </span>
+                  </div>
+                  <div class="kds-order-meta">
+                    Customer: <strong>Ananya Sharma</strong> • Counter Pickup
+                  </div>
+                </div>
+                <div class="text-end">
+                  <span class="kds-timer-badge timer-normal" id="timer-849210">
+                    <i class="bi bi-stopwatch"></i> 01:10
+                  </span>
+                </div>
+              </div>
+
+              <!-- Dish Items -->
+              <div class="dish-items-list">
+                <div class="dish-check-item">
+                  <div class="d-flex align-items-center">
+                    <span class="dish-qty">2x</span>
+                    <span class="dish-name fw-bold">Clay Oven Paneer Tikka</span>
+                  </div>
+                </div>
+                <div class="dish-check-item">
+                  <div class="d-flex align-items-center">
+                    <span class="dish-qty">2x</span>
+                    <span class="dish-name fw-bold">Cold Sweet Mango Lassi</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action: Start Preparation -->
+              <button class="btn btn-kds-touch btn-action-orders w-100" onclick="advanceTicket('849210', 'preparation')">
+                <i class="fa-solid fa-fire me-1"></i> Start Preparation
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================================================================
+           LANE 2: PREPARATION (ACTIVE COOKING & PLATING)
+           =================================================================== -->
+      <div class="col-12 col-lg-4">
+        <div class="kds-swimlane lane-prep">
+          <div class="kds-swimlane-header">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fa-solid fa-fire-burner fs-5"></i>
+              <span>Preparation</span>
+              <span class="badge badge-lane-prep rounded-pill px-2 py-1 font-monospace" id="prepCount">1</span>
+            </div>
+          </div>
+          
+          <div class="kds-swimlane-body" id="prepLane">
+            
+            <!-- In Preparation: #SWG-849201 -->
+            <div class="kds-card card-prep" id="ticket-849201">
+              <div class="kds-order-header">
+                <div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="kds-order-id">#SWG-849201</span>
+                    <span class="badge badge-channel-delivery rounded-pill px-2 small">
+                      <i class="bi bi-bicycle me-1"></i> Delivery
+                    </span>
+                  </div>
+                  <div class="kds-order-meta">
+                    Customer: <strong>Pooja JP</strong> • HAL 2nd Stage
+                  </div>
+                </div>
+                <div class="text-end">
+                  <span class="kds-timer-badge timer-normal" id="timer-849201">
+                    <i class="bi bi-stopwatch"></i> 08:40
+                  </span>
+                </div>
+              </div>
+
+              <!-- Chef Note -->
+              <div class="kds-chef-note">
+                <i class="bi bi-info-circle-fill"></i>
+                <span>Note: Pack mint raita & salan in separate containers.</span>
+              </div>
+
+              <!-- Dish Checklist with Interactive Toggles -->
+              <div class="dish-items-list">
+                <div class="dish-check-item done" onclick="toggleItemDone(this, '849201')">
+                  <div class="d-flex align-items-center">
+                    <i class="bi bi-check-square-fill me-2 text-success check-icon"></i>
+                    <span class="dish-qty">1x</span>
+                    <span class="dish-name fw-bold">Meghana Chicken Biryani</span>
+                  </div>
+                </div>
+
+                <div class="dish-check-item" onclick="toggleItemDone(this, '849201')">
+                  <div class="d-flex align-items-center">
+                    <i class="bi bi-square me-2 text-muted check-icon"></i>
+                    <span class="dish-qty">2x</span>
+                    <span class="dish-name fw-bold">Clay Oven Butter Garlic Naan</span>
+                  </div>
+                </div>
+
+                <div class="dish-check-item" onclick="toggleItemDone(this, '849201')">
+                  <div class="d-flex align-items-center">
+                    <i class="bi bi-square me-2 text-muted check-icon"></i>
+                    <span class="dish-qty">1x</span>
+                    <span class="dish-name fw-bold">Shahi Gulab Jamun (2 Pcs)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="d-flex justify-content-between align-items-center small text-dim mb-1" style="color: var(--kds-text-dim);">
+                <span>Items Prepared</span>
+                <span class="fw-bold font-monospace progress-text" style="color: var(--kds-text-main);">1 / 3 (33%)</span>
+              </div>
+              <div class="kds-prep-progress">
+                <div class="kds-prep-progress-bar" style="width: 33%;"></div>
+              </div>
+
+              <!-- Action: Mark Ready -->
+              <button class="btn btn-kds-touch btn-action-prep w-100 fw-bold" onclick="advanceTicket('849201', 'ready')">
+                <i class="bi bi-check-circle-fill me-1"></i> Ready to Dispatch
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================================================================
+           LANE 3: READY TO DISPATCH (EXPEDITE / PICKUP)
+           =================================================================== -->
+      <div class="col-12 col-lg-4">
+        <div class="kds-swimlane lane-ready">
+          <div class="kds-swimlane-header">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-bag-check-fill fs-5"></i>
+              <span>Ready to Dispatch</span>
+              <span class="badge badge-lane-ready rounded-pill px-2 py-1 font-monospace" id="readyCount">1</span>
+            </div>
+          </div>
+          
+          <div class="kds-swimlane-body" id="readyLane">
+            
+            <!-- Ready Ticket: #SWG-849195 -->
+            <div class="kds-card card-ready" id="ticket-849195">
+              <div class="kds-order-header">
+                <div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="kds-order-id">#SWG-849195</span>
+                    <span class="badge badge-channel-delivery rounded-pill px-2 small">
+                      <i class="bi bi-check2-all me-1"></i> Ready
+                    </span>
+                  </div>
+                  <div class="kds-order-meta">
+                    Customer: <strong>Sneha Rao</strong> • 100ft Road
+                  </div>
+                </div>
+                <div class="text-end">
+                  <span class="kds-timer-badge timer-normal">
+                    <i class="bi bi-check-circle-fill"></i> Cooked in 11m
+                  </span>
+                </div>
+              </div>
+
+              <!-- Courier Rider Details -->
+              <div class="kds-courier-box">
+                <div class="courier-avatar">P</div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="small courier-title">Prakash S. (#RDR-88)</span>
+                    <span class="badge bg-success text-white small">ARRIVED</span>
+                  </div>
+                  <div class="small" style="color: var(--kds-text-dim);">
+                    <i class="bi bi-geo-alt-fill text-success me-1"></i> Waiting at Dispatch Bay 2
+                  </div>
+                </div>
+              </div>
+
+              <!-- Dishes Summary -->
+              <div class="dishes-summary-box small mb-3">
+                <div class="d-flex justify-content-between" style="color: var(--kds-text-dim);">
+                  <span><i class="bi bi-check2 text-success me-1"></i> 2x Paneer Butter Masala</span>
+                  <span class="font-monospace" style="color: var(--kds-text-main);">Plated</span>
+                </div>
+                <div class="d-flex justify-content-between" style="color: var(--kds-text-dim);">
+                  <span><i class="bi bi-check2 text-success me-1"></i> 4x Butter Naan</span>
+                  <span class="font-monospace" style="color: var(--kds-text-main);">Plated</span>
+                </div>
+              </div>
+
+              <!-- Action: Dispatch Handover -->
+              <button class="btn btn-kds-touch btn-action-ready w-100 fw-bold" onclick="dispatchOrder('849195')">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Dispatch Order
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+    <div id="kdsToast" class="toast align-items-center text-white bg-dark border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body d-flex align-items-center gap-2">
+          <i class="bi bi-info-circle-fill text-mint fs-5" id="toastIcon"></i>
+          <span id="toastMsg" class="fw-bold">Notification</span>
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- =========================================================================
+       CORE KITCHEN SCRIPT: WORKFLOW, THEME & AUTH
+       ========================================================================= -->
+  <script>
+    // Ticket Elapsed Timers (seconds)
+    const ticketElapsedTimers = {
+      '849206': 165,
+      '849210': 70,
+      '849201': 520,
+      '849195': 660
+    };
+
+    // Initialize System
+    document.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      loadUserInfo();
+      startTicketTimers();
+      updateCounts();
+    });
+
+    // Theme Switcher (Dark / Light)
+    function initTheme() {
+      const savedTheme = localStorage.getItem('kds_color_theme') || 'dark';
+      applyTheme(savedTheme);
+    }
+
+    function toggleKdsTheme() {
+      const isDark = document.body.classList.contains('theme-dark');
+      const targetTheme = isDark ? 'light' : 'dark';
+      applyTheme(targetTheme);
+      localStorage.setItem('kds_color_theme', targetTheme);
+      showToast(`Switched to ${targetTheme === 'dark' ? 'Dark Kitchen Station' : 'Lush Light'} theme! 🎨`);
+    }
+
+    function applyTheme(theme) {
+      const icon = document.getElementById('themeIcon');
+      const label = document.getElementById('themeLabel');
+      if (theme === 'light') {
+        document.body.classList.remove('theme-dark');
+        document.body.classList.add('theme-light');
+        if (icon) icon.className = 'bi bi-sun-fill text-warning';
+        if (label) label.textContent = 'Light Mode';
+      } else {
+        document.body.classList.remove('theme-light');
+        document.body.classList.add('theme-dark');
+        if (icon) icon.className = 'bi bi-moon-stars-fill text-mint';
+        if (label) label.textContent = 'Dark Mode';
+      }
+    }
+
+    // Load Logged-in Kitchen User
+    function loadUserInfo() {
+      const userJson = localStorage.getItem('pooja_zippy_user');
+      if (userJson) {
+        try {
+          const user = JSON.parse(userJson);
+          if (user && user.name) {
+            const staffEl = document.getElementById('staffName');
+            if (staffEl) staffEl.textContent = user.name;
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Handle Logout
+    function handleLogout() {
+      localStorage.removeItem('pooja_zippy_user');
+      window.location.href = 'login.html';
+    }
+
+    // Run Elapsed Timers
+    function startTicketTimers() {
+      setInterval(() => {
+        for (const [id, secs] of Object.entries(ticketElapsedTimers)) {
+          ticketElapsedTimers[id] = secs + 1;
+          const timerBadge = document.getElementById(`timer-${id}`);
+          if (timerBadge) {
+            const m = Math.floor(ticketElapsedTimers[id] / 60);
+            const s = ticketElapsedTimers[id] % 60;
+            const formatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            
+            const card = document.getElementById(`ticket-${id}`);
+            if (card) {
+              const inPrep = card.closest('#prepLane');
+              const inOrders = card.closest('#ordersLane');
+              if (inOrders || inPrep) {
+                timerBadge.innerHTML = `<i class="bi bi-stopwatch"></i> ${formatted}`;
+                if (m >= 15) {
+                  timerBadge.className = 'kds-timer-badge timer-urgent';
+                }
+              }
+            }
+          }
+        }
+      }, 1000);
+    }
+
+    // Interactive Item Done Checklist
+    function toggleItemDone(itemEl, ticketId) {
+      itemEl.classList.toggle('done');
+      const icon = itemEl.querySelector('.check-icon');
+      if (itemEl.classList.contains('done')) {
+        if (icon) icon.className = 'bi bi-check-square-fill me-2 text-success check-icon';
+      } else {
+        if (icon) icon.className = 'bi bi-square me-2 text-muted check-icon';
+      }
+
+      // Recalculate progress for this card
+      const card = document.getElementById(`ticket-${ticketId}`);
+      if (!card) return;
+
+      const totalItems = card.querySelectorAll('.dish-check-item').length;
+      const doneItems = card.querySelectorAll('.dish-check-item.done').length;
+      const pct = Math.round((doneItems / totalItems) * 100);
+
+      const bar = card.querySelector('.kds-prep-progress-bar');
+      const text = card.querySelector('.progress-text');
+      if (bar) bar.style.width = `${pct}%`;
+      if (text) text.textContent = `${doneItems} / ${totalItems} (${pct}%)`;
+
+      if (pct === 100) {
+        showToast(`All items prepared for #${ticketId}! Ready for dispatch.`);
+      }
+    }
+
+    // Advance Tickets between Workflow Stages
+    function advanceTicket(id, targetStage) {
+      const card = document.getElementById(`ticket-${id}`);
+      if (!card) return;
+
+      if (targetStage === 'preparation') {
+        const prepLane = document.getElementById('prepLane');
+        prepLane.appendChild(card);
+        card.className = 'kds-card card-prep';
+
+        // Add interactive checklist checkboxes to items
+        const items = card.querySelectorAll('.dish-check-item');
+        items.forEach(it => {
+          it.setAttribute('onclick', `toggleItemDone(this, '${id}')`);
+          const inner = it.querySelector('.d-flex');
+          if (inner && !inner.querySelector('.check-icon')) {
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-square me-2 text-muted check-icon';
+            inner.insertBefore(icon, inner.firstChild);
+          }
+        });
+
+        // Add progress bar if not already present
+        if (!card.querySelector('.kds-prep-progress')) {
+          const total = items.length;
+          const progressDiv = document.createElement('div');
+          progressDiv.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center small mb-1" style="color: var(--kds-text-dim);">
+              <span>Items Prepared</span>
+              <span class="fw-bold font-monospace progress-text" style="color: var(--kds-text-main);">0 / ${total} (0%)</span>
+            </div>
+            <div class="kds-prep-progress">
+              <div class="kds-prep-progress-bar" style="width: 0%;"></div>
+            </div>
+          `;
+          const btn = card.querySelector('.btn-kds-touch');
+          card.insertBefore(progressDiv, btn);
+        }
+
+        // Update Action Button
+        const btn = card.querySelector('.btn-kds-touch');
+        if (btn) {
+          btn.className = 'btn btn-kds-touch btn-action-prep w-100 fw-bold';
+          btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Ready to Dispatch';
+          btn.setAttribute('onclick', `advanceTicket('${id}', 'ready')`);
+        }
+
+        showToast(`Ticket #${id} moved to Preparation! 🍳`);
+      } 
+      else if (targetStage === 'ready') {
+        const readyLane = document.getElementById('readyLane');
+        readyLane.appendChild(card);
+        card.className = 'kds-card card-ready';
+
+        // Auto mark all items done
+        card.querySelectorAll('.dish-check-item').forEach(it => {
+          it.classList.add('done');
+          const icon = it.querySelector('.check-icon');
+          if (icon) icon.className = 'bi bi-check-square-fill me-2 text-success check-icon';
+        });
+
+        // Set progress to 100%
+        const bar = card.querySelector('.kds-prep-progress-bar');
+        const text = card.querySelector('.progress-text');
+        if (bar) bar.style.width = '100%';
+        if (text) text.textContent = 'All Prepared (100%)';
+
+        // Update timer badge
+        const timerBadge = document.getElementById(`timer-${id}`);
+        if (timerBadge) {
+          const totalMins = Math.max(1, Math.round((ticketElapsedTimers[id] || 300) / 60));
+          timerBadge.className = 'kds-timer-badge timer-normal';
+          timerBadge.innerHTML = `<i class="bi bi-check-circle-fill"></i> Cooked in ${totalMins}m`;
+        }
+
+        // Update Action Button
+        const btn = card.querySelector('.btn-kds-touch');
+        if (btn) {
+          btn.className = 'btn btn-kds-touch btn-action-ready w-100 fw-bold';
+          btn.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i> Dispatch Order';
+          btn.setAttribute('onclick', `dispatchOrder('${id}')`);
+        }
+
+        showToast(`Ticket #${id} is Ready for Dispatch! 📦`);
+      }
+
+      updateCounts();
+    }
+
+    // Complete / Dispatch Order
+    function dispatchOrder(id) {
+      const card = document.getElementById(`ticket-${id}`);
+      if (!card) return;
+
+      const orderIdText = card.querySelector('.kds-order-id')?.textContent || `#${id}`;
+      card.remove();
+      showToast(`Order ${orderIdText} dispatched successfully! 🚀`);
+      updateCounts();
+    }
+
+    // Update Counts on Column Headers
+    function updateCounts() {
+      const ordersLane = document.getElementById('ordersLane');
+      const prepLane = document.getElementById('prepLane');
+      const readyLane = document.getElementById('readyLane');
+
+      const oCount = ordersLane ? ordersLane.querySelectorAll('.kds-card').length : 0;
+      const pCount = prepLane ? prepLane.querySelectorAll('.kds-card').length : 0;
+      const rCount = readyLane ? readyLane.querySelectorAll('.kds-card').length : 0;
+
+      document.getElementById('ordersCount').textContent = oCount;
+      document.getElementById('prepCount').textContent = pCount;
+      document.getElementById('readyCount').textContent = rCount;
+
+      checkEmpty(ordersLane, 'No new orders waiting');
+      checkEmpty(prepLane, 'No orders currently cooking');
+      checkEmpty(readyLane, 'No orders waiting for dispatch');
+    }
+
+    function checkEmpty(lane, message) {
+      if (!lane) return;
+      const cards = lane.querySelectorAll('.kds-card');
+      let emptyPlaceholder = lane.querySelector('.kds-empty-lane');
+      
+      if (cards.length === 0) {
+        if (!emptyPlaceholder) {
+          emptyPlaceholder = document.createElement('div');
+          emptyPlaceholder.className = 'kds-empty-lane';
+          emptyPlaceholder.innerHTML = `
+            <i class="bi bi-inbox"></i>
+            <div class="small fw-semibold">${message}</div>
+          `;
+          lane.appendChild(emptyPlaceholder);
+        }
+      } else {
+        if (emptyPlaceholder) emptyPlaceholder.remove();
+      }
+    }
+
+    // Simulate New Incoming Order
+    let simulatedSeq = 849220;
+    function simulateNewOrder() {
+      simulatedSeq++;
+      const id = String(simulatedSeq);
+      ticketElapsedTimers[id] = 5;
+
+      const card = document.createElement('div');
+      card.className = 'kds-card card-orders';
+      card.id = `ticket-${id}`;
+
+      card.innerHTML = `
+        <div class="kds-order-header">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="kds-order-id">#SWG-${id}</span>
+              <span class="badge badge-channel-delivery rounded-pill px-2 small">
+                <i class="bi bi-bicycle me-1"></i> Delivery
+              </span>
+            </div>
+            <div class="kds-order-meta">
+              Customer: <strong>Arjun K.</strong> • Koramangala
+            </div>
+          </div>
+          <div class="text-end">
+            <span class="kds-timer-badge timer-urgent" id="timer-${id}">
+              <i class="bi bi-stopwatch"></i> 00:05
+            </span>
+          </div>
+        </div>
+
+        <div class="dish-items-list">
+          <div class="dish-check-item">
+            <div class="d-flex align-items-center">
+              <span class="dish-qty">1x</span>
+              <span class="dish-name fw-bold">Special Chicken Boneless Biryani</span>
+            </div>
+          </div>
+          <div class="dish-check-item">
+            <div class="d-flex align-items-center">
+              <span class="dish-qty">2x</span>
+              <span class="dish-name fw-bold">Clay Oven Butter Roti (2 Pcs)</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-kds-touch btn-action-orders w-100" onclick="advanceTicket('${id}', 'preparation')">
+          <i class="fa-solid fa-fire me-1"></i> Start Preparation
+        </button>
+      `;
+
+      const ordersLane = document.getElementById('ordersLane');
+      const emptyPlaceholder = ordersLane.querySelector('.kds-empty-lane');
+      if (emptyPlaceholder) emptyPlaceholder.remove();
+      ordersLane.insertBefore(card, ordersLane.firstChild);
+
+      showToast(`New Order #SWG-${id} received! 🔔`);
+      updateCounts();
+    }
+
+    // Toast Notification
+    function showToast(msg) {
+      const toastEl = document.getElementById('kdsToast');
+      const toastMsg = document.getElementById('toastMsg');
+      if (toastEl && toastMsg) {
+        toastMsg.textContent = msg;
+        const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+        toast.show();
+      }
+    }
+  </script>
+</body>
+</html>

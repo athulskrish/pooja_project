@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unified Login Gateway - Zippy Food Network | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    .auth-tab-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 20px;
+      background: rgba(46, 111, 64, 0.08);
+      padding: 6px;
+      border-radius: 12px;
+    }
+    .auth-tab-btn-mini {
+      border: none;
+      background: transparent;
+      padding: 8px 4px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--lush-pine);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .auth-tab-btn-mini i {
+      font-size: 1.1rem;
+    }
+    .auth-tab-btn-mini.active {
+      background: #FFFFFF;
+      color: var(--lush-forest);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .role-banner-badge {
+      font-size: 0.75rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- Minimal Header -->
+  <header class="bg-white border-bottom py-3 shadow-sm">
+    <div class="container-xl d-flex align-items-center justify-content-between">
+      <a href="portals.html" class="brand-logo text-decoration-none">
+        <div class="brand-icon-box">
+          <i class="fa-solid fa-utensils"></i>
+        </div>
+        <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+        <span class="brand-badge">Multi-Portal Hub</span>
+      </a>
+      <div class="d-flex align-items-center gap-2">
+        <a href="portals.html" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold">
+          <i class="bi bi-grid-fill me-1 text-success"></i> All 4 Portals
+        </a>
+        <a href="signup.html" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">Sign Up</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Auth Content Wrapper -->
+  <div class="auth-wrapper py-5">
+    <div class="auth-card" style="max-width: 520px;">
+      
+      <!-- Card Header -->
+      <div class="auth-header text-center">
+        <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white bg-opacity-25 mb-2">
+          <i class="bi bi-shield-lock-fill fs-3 text-mint"></i>
+        </div>
+        <h2 class="auth-title">Role-Based Access Login</h2>
+        <p class="small text-white-50 mb-0">Select your role to access the dedicated website portal</p>
+      </div>
+
+      <!-- Card Body -->
+      <div class="auth-body p-4">
+        
+        <!-- 4 Role Tabs -->
+        <label class="form-label small fw-bold text-muted mb-2 text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Select Portal / Website Role:</label>
+        <div class="auth-tab-grid">
+          <button type="button" class="auth-tab-btn-mini active" id="tabCustomer" onclick="switchLoginRole('customer')">
+            <i class="bi bi-person-fill"></i>
+            <span>Customer</span>
+          </button>
+          <button type="button" class="auth-tab-btn-mini" id="tabKitchen" onclick="switchLoginRole('kitchen')">
+            <i class="fa-solid fa-fire-burner"></i>
+            <span>Kitchen</span>
+          </button>
+          <button type="button" class="auth-tab-btn-mini" id="tabRider" onclick="switchLoginRole('rider')">
+            <i class="fa-solid fa-bicycle"></i>
+            <span>Rider</span>
+          </button>
+          <button type="button" class="auth-tab-btn-mini" id="tabAdmin" onclick="switchLoginRole('admin')">
+            <i class="bi bi-speedometer2"></i>
+            <span>Admin</span>
+          </button>
+        </div>
+
+        <!-- Role Destination Indicator -->
+        <div class="alert border d-flex align-items-center gap-3 py-2 px-3 mb-3 rounded-3" id="roleDestinationAlert" style="background-color: #F0FDF4; border-color: #BBF7D0;">
+          <div class="fs-4 text-success" id="roleIconBox"><i class="bi bi-shop"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-bold small text-dark" id="rolePortalTitle">Customer Ordering Storefront</div>
+            <div class="small text-muted" id="rolePortalSubtitle" style="font-size: 0.78rem;">Redirects to: <code>index.html</code> (or <code>/customer/</code>)</div>
+          </div>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+          
+          <!-- Email / Phone Input -->
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-pine" id="loginIdentifierLabel">Email Address or Username</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light border-end-0 text-muted">
+                <i class="bi bi-envelope"></i>
+              </span>
+              <input type="text" id="loginIdentifier" class="form-control border-start-0" placeholder="pooja.mca2026@ignou.ac.in" required>
+            </div>
+          </div>
+
+          <!-- Password Input -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label small fw-bold text-pine">Password</label>
+              <a href="#" class="small text-success text-decoration-none fw-bold" onclick="alert('Demo Mode: Pre-filled with valid credentials')">Forgot Password?</a>
+            </div>
+            <div class="input-group">
+              <span class="input-group-text bg-light border-end-0 text-muted">
+                <i class="bi bi-key"></i>
+              </span>
+              <input type="password" id="loginPassword" class="form-control border-start-0 border-end-0" placeholder="••••••••" value="pooja123" required>
+              <button class="btn btn-outline-secondary border-start-0" type="button" onclick="togglePasswordVisibility('loginPassword', this)">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Remember Me Checkbox -->
+          <div class="form-check mb-4">
+            <input class="form-check-input cursor-pointer" type="checkbox" id="rememberMe" checked>
+            <label class="form-check-label small text-muted cursor-pointer" for="rememberMe">
+              Remember role authorization on this device
+            </label>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="btn btn-auth-submit w-100 py-2 fw-bold" id="loginSubmitBtn">
+            <span>Launch Customer Storefront</span>
+            <i class="bi bi-arrow-right ms-2"></i>
+          </button>
+
+          <!-- 4 Quick Demo Credential Pills -->
+          <div class="p-3 bg-light rounded-3 mt-4 border">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="small fw-bold text-pine"><i class="bi bi-lightning-charge-fill text-warning me-1"></i> Quick 1-Click Role Login:</div>
+              <span class="badge bg-secondary" style="font-size: 0.65rem;">Auto-fills Credentials</span>
+            </div>
+            <div class="row g-2">
+              <div class="col-6">
+                <button type="button" class="btn btn-sm btn-white border w-100 text-start d-flex align-items-center gap-2 p-2 rounded-2 shadow-xs" onclick="fillRoleCredentials('customer')">
+                  <i class="bi bi-person-fill text-success fs-5"></i>
+                  <div>
+                    <div class="fw-bold" style="font-size: 0.78rem;">Customer</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Pooja JP</div>
+                  </div>
+                </button>
+              </div>
+              <div class="col-6">
+                <button type="button" class="btn btn-sm btn-white border w-100 text-start d-flex align-items-center gap-2 p-2 rounded-2 shadow-xs" onclick="fillRoleCredentials('kitchen')">
+                  <i class="fa-solid fa-fire-burner text-warning fs-5"></i>
+                  <div>
+                    <div class="fw-bold" style="font-size: 0.78rem;">Kitchen KDS</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Chef Raman</div>
+                  </div>
+                </button>
+              </div>
+              <div class="col-6">
+                <button type="button" class="btn btn-sm btn-white border w-100 text-start d-flex align-items-center gap-2 p-2 rounded-2 shadow-xs" onclick="fillRoleCredentials('rider')">
+                  <i class="fa-solid fa-bicycle text-primary fs-5"></i>
+                  <div>
+                    <div class="fw-bold" style="font-size: 0.78rem;">Delivery Rider</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Prakash S.</div>
+                  </div>
+                </button>
+              </div>
+              <div class="col-6">
+                <button type="button" class="btn btn-sm btn-white border w-100 text-start d-flex align-items-center gap-2 p-2 rounded-2 shadow-xs" onclick="fillRoleCredentials('admin')">
+                  <i class="bi bi-shield-check text-danger fs-5"></i>
+                  <div>
+                    <div class="fw-bold" style="font-size: 0.78rem;">Administrator</div>
+                    <div class="text-muted" style="font-size: 0.7rem;">Store Director</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="text-center py-3 small text-muted border-top bg-white">
+    © 2026 Zippy Food Network • IGNOU MCA Major Project (MCSP-232) • Student: Pooja JP (Enroll: 2500051247)
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    let currentRole = 'customer';
+
+    const roleConfigs = {
+      customer: {
+        title: 'Customer Ordering Storefront',
+        subtitle: 'Redirects to: index.html (or /customer/)',
+        icon: '<i class="bi bi-shop text-success"></i>',
+        identifier: 'pooja.mca2026@ignou.ac.in',
+        password: 'pooja123',
+        btnText: 'Launch Customer Storefront',
+        redirect: 'index.html',
+        name: 'Pooja JP'
+      },
+      kitchen: {
+        title: 'Kitchen Display System (KDS Terminal)',
+        subtitle: 'Redirects to: kitchen-display.html (or /kitchen/)',
+        icon: '<i class="fa-solid fa-fire-burner text-warning"></i>',
+        identifier: 'kitchen.chef@zippylush.com',
+        password: 'cook123',
+        btnText: 'Launch Kitchen KDS Terminal',
+        redirect: 'kitchen-display.html',
+        name: 'Chef Raman'
+      },
+      rider: {
+        title: 'Delivery Partner Fleet Web App',
+        subtitle: 'Redirects to: delivery-partner.html (or /delivery/)',
+        icon: '<i class="fa-solid fa-bicycle text-primary"></i>',
+        identifier: 'rider.prakash@zippylush.com',
+        password: 'rider123',
+        btnText: 'Launch Delivery Partner App',
+        redirect: 'delivery-partner.html',
+        name: 'Prakash S. (#RDR-88)'
+      },
+      admin: {
+        title: 'Restaurant Management Console',
+        subtitle: 'Redirects to: admin-dashboard.html (or /admin/)',
+        icon: '<i class="bi bi-speedometer2 text-danger"></i>',
+        identifier: 'admin@zippylush.com',
+        password: 'admin2026',
+        btnText: 'Launch Admin Console',
+        redirect: 'admin-dashboard.html',
+        name: 'Executive Administrator'
+      }
+    };
+
+    function switchLoginRole(role) {
+      currentRole = role;
+      
+      // Update tab active classes
+      ['Customer', 'Kitchen', 'Rider', 'Admin'].forEach(r => {
+        const btn = document.getElementById('tab' + r);
+        if (r.toLowerCase() === role) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      const config = roleConfigs[role];
+      document.getElementById('rolePortalTitle').textContent = config.title;
+      document.getElementById('rolePortalSubtitle').innerHTML = config.subtitle;
+      document.getElementById('roleIconBox').innerHTML = config.icon;
+      document.getElementById('loginSubmitBtn').innerHTML = `<span>${config.btnText}</span> <i class="bi bi-arrow-right ms-2"></i>`;
+      
+      fillRoleCredentials(role);
+    }
+
+    function fillRoleCredentials(role) {
+      if (currentRole !== role) {
+        switchLoginRole(role);
+        return;
+      }
+      const config = roleConfigs[role];
+      document.getElementById('loginIdentifier').value = config.identifier;
+      document.getElementById('loginPassword').value = config.password;
+    }
+
+    function togglePasswordVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const icon = btn.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+      } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+      }
+    }
+
+    function handleLoginSubmit(e) {
+      e.preventDefault();
+      const identifier = document.getElementById('loginIdentifier').value;
+      const config = roleConfigs[currentRole];
+      
+      // Save authenticated role to browser session
+      localStorage.setItem('pooja_zippy_user', JSON.stringify({
+        email: identifier,
+        role: currentRole,
+        name: config.name,
+        portalTitle: config.title
+      }));
+
+      // Redirect directly to the dedicated website
+      window.location.href = config.redirect;
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meghana Foods - Menu & Online Ordering | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        
+        <!-- Left: Brand Logo & Location -->
+        <div class="d-flex align-items-center gap-3 gap-xl-4 flex-shrink-0">
+          <a href="index.html" class="brand-logo text-decoration-none">
+            <div class="brand-icon-box">
+              <i class="fa-solid fa-utensils"></i>
+            </div>
+            <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+            <span class="brand-badge d-none d-sm-inline-block">Lush Edition</span>
+          </a>
+
+          <!-- Location Selector -->
+          <div class="location-selector d-none d-md-flex">
+            <i class="bi bi-geo-alt-fill text-success"></i>
+            <div>
+              <span class="loc-title">Indiranagar</span>
+              <span class="loc-desc d-inline-block ms-1">Bangalore, Karnataka</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Search Dish in Menu -->
+        <div class="d-none d-lg-block flex-grow-1 mx-4" style="max-width: 420px;">
+          <div class="input-group">
+            <span class="input-group-text bg-white border-end-0 rounded-start-pill text-muted ps-3">
+              <i class="bi bi-search"></i>
+            </span>
+            <input type="text" id="menuSearchInput" class="form-control border-start-0 rounded-end-pill py-2" placeholder="Search for dishes inside Meghana Foods...">
+          </div>
+        </div>
+
+        <!-- Right: Nav Actions -->
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <a href="order-history.html" class="nav-link-custom d-none d-sm-flex">
+            <i class="bi bi-clock-history text-success"></i>
+            <span>Orders</span>
+          </a>
+
+          <a href="index.html" class="nav-link-custom d-none d-md-flex">
+            <i class="bi bi-house"></i>
+            <span>Home</span>
+          </a>
+
+          <!-- Cart Trigger Button -->
+          <a href="cart.html" class="btn nav-link-custom cart-pill">
+            <i class="bi bi-cart3"></i>
+            <span class="d-none d-md-inline">Cart</span>
+            <span class="cart-count-badge">0</span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       MAIN RESTAURANT CONTENT
+       ========================================================================= -->
+  <main class="container-xl py-4" style="max-width: 980px;">
+    
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="index.html" class="text-success text-decoration-none">Home</a></li>
+        <li class="breadcrumb-item"><a href="index.html" class="text-success text-decoration-none">Bangalore</a></li>
+        <li class="breadcrumb-item"><a href="index.html" class="text-success text-decoration-none">Indiranagar</a></li>
+        <li class="breadcrumb-item active text-muted fw-bold" aria-current="page">Meghana Foods</li>
+      </ol>
+    </nav>
+
+    <!-- Restaurant Hero Header Card -->
+    <section class="res-detail-header">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h1 class="res-main-title mb-1">Meghana Foods</h1>
+          <p class="text-muted mb-2">Biryani, Andhra, South Indian, North Indian, Seafood</p>
+          <div class="d-flex align-items-center gap-2 small text-muted">
+            <i class="bi bi-geo-alt text-success"></i>
+            <span>100 Feet Road, HAL 2nd Stage, Indiranagar • 2.4 km</span>
+          </div>
+        </div>
+        
+        <!-- Outlet Star Rating Card -->
+        <div class="p-3 bg-light rounded-3 border text-center" style="min-width: 100px;">
+          <div class="d-flex align-items-center justify-content-center gap-1 text-success fw-bold fs-5">
+            <i class="bi bi-star-fill"></i>
+            <span>4.5</span>
+          </div>
+          <div class="border-top mt-1 pt-1 text-muted" style="font-size: 0.72rem; font-weight: 700;">
+            15K+ RATINGS
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Specs / Meta Ribbon -->
+      <div class="res-specs-card">
+        <div class="spec-item">
+          <div class="spec-icon">
+            <i class="bi bi-clock-history"></i>
+          </div>
+          <div>
+            <div class="spec-title">DELIVERY TIME</div>
+            <div class="spec-val">20-25 MINS</div>
+          </div>
+        </div>
+
+        <div class="vr opacity-25 d-none d-sm-block"></div>
+
+        <div class="spec-item">
+          <div class="spec-icon">
+            <i class="bi bi-wallet2"></i>
+          </div>
+          <div>
+            <div class="spec-title">AVERAGE COST</div>
+            <div class="spec-val">₹400 FOR TWO</div>
+          </div>
+        </div>
+
+        <div class="vr opacity-25 d-none d-sm-block"></div>
+
+        <div class="spec-item">
+          <div class="spec-icon" style="background-color: var(--lush-mint);">
+            <i class="bi bi-shield-check text-success"></i>
+          </div>
+          <div>
+            <div class="spec-title">HYGIENE RATING</div>
+            <div class="spec-val text-success">4.8 / 5.0 (FSSAI)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Offers Carousel -->
+      <div class="mt-4 pt-3 border-top">
+        <h6 class="fw-bold text-pine small text-uppercase mb-2"><i class="fa-solid fa-gift text-success me-1"></i> Available Discounts & Offers</h6>
+        <div class="d-flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+          <div class="p-2 px-3 border rounded-3 bg-white shadow-sm flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-forest) !important;">
+            <div class="fw-bold text-pine small"><i class="fa-solid fa-percent text-success me-1"></i> FLAT ₹125 OFF</div>
+            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>STEALDEAL</strong> | Above ₹349</div>
+          </div>
+          <div class="p-2 px-3 border rounded-3 bg-white shadow-sm flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-sage) !important;">
+            <div class="fw-bold text-pine small"><i class="fa-solid fa-tag text-success me-1"></i> 20% OFF UPTO ₹100</div>
+            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>LUSHFOREST</strong> | No minimum</div>
+          </div>
+          <div class="p-2 px-3 border rounded-3 bg-white shadow-sm flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-pine) !important;">
+            <div class="fw-bold text-pine small"><i class="fa-solid fa-bolt text-warning me-1"></i> 50% OFF ON FIRST ORDER</div>
+            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>ZIPPY50</strong> | Max ₹100</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         ALGORITHMIC SPOTLIGHT (MCA PROJECT REQUIREMENT)
+         Apriori Market Basket Association Rule Recommendation
+         ========================================================================= -->
+    <section class="algo-recommendation-box">
+      <span class="algo-badge">
+        <i class="fa-solid fa-network-wired"></i> Algorithmic Feature: Market Basket Analysis (Apriori)
+      </span>
+      <h4 class="fw-bold text-white mb-1">Frequently Ordered Together with Biryani</h4>
+      <p class="small text-white-50 mb-0">Based on transaction association mining (Confidence: 84%, Support: 0.42), customers love pairing these side dishes:</p>
+      
+      <div class="algo-items-grid">
+        <!-- Item 1: Garlic Naan -->
+        <div class="algo-item-card">
+          <img src="https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=150&q=80" class="algo-item-img" alt="Garlic Naan">
+          <div class="flex-grow-1">
+            <span class="food-type-icon veg"></span>
+            <div class="algo-item-title">Butter Garlic Naan</div>
+            <div class="algo-item-price">₹65</div>
+          </div>
+          <button class="btn btn-sm btn-light rounded-pill fw-bold text-success px-3" onclick="addToCart('algo-naan', 'Butter Garlic Naan', 65, true)">+ Add</button>
+        </div>
+
+        <!-- Item 2: Cucumber Raita -->
+        <div class="algo-item-card">
+          <img src="https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80" class="algo-item-img" alt="Raita">
+          <div class="flex-grow-1">
+            <span class="food-type-icon veg"></span>
+            <div class="algo-item-title">Special Boondi Raita</div>
+            <div class="algo-item-price">₹50</div>
+          </div>
+          <button class="btn btn-sm btn-light rounded-pill fw-bold text-success px-3" onclick="addToCart('algo-raita', 'Special Boondi Raita', 50, true)">+ Add</button>
+        </div>
+
+        <!-- Item 3: Fresh Lime Soda -->
+        <div class="algo-item-card">
+          <img src="https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=150&q=80" class="algo-item-img" alt="Lime Soda">
+          <div class="flex-grow-1">
+            <span class="food-type-icon veg"></span>
+            <div class="algo-item-title">Fresh Mint Lime Soda</div>
+            <div class="algo-item-price">₹55</div>
+          </div>
+          <button class="btn btn-sm btn-light rounded-pill fw-bold text-success px-3" onclick="addToCart('algo-soda', 'Fresh Mint Lime Soda', 55, true)">+ Add</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         FILTER CONTROLS & MENU NAVIGATION
+         ========================================================================= -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 py-3 border-bottom mb-4">
+      <!-- Veg Only Toggle -->
+      <div class="form-check form-switch d-flex align-items-center gap-2 p-0 m-0">
+        <label class="form-check-label fw-bold small text-pine cursor-pointer" for="vegOnlySwitch">
+          <span class="food-type-icon veg me-1"></span> VEG ONLY
+        </label>
+        <input class="form-check-input ms-2 cursor-pointer" type="checkbox" role="switch" id="vegOnlySwitch" style="width: 2.8em; height: 1.4em;">
+      </div>
+
+      <!-- Category Filter Pills -->
+      <div class="d-flex align-items-center gap-2 overflow-x-auto scrollbar-none">
+        <a href="#category-bestsellers" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Recommended</a>
+        <a href="#category-biryani" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Biryani</a>
+        <a href="#category-starters" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Starters</a>
+        <a href="#category-curries" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Curries</a>
+        <a href="#category-desserts" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Desserts</a>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+         MENU CATEGORY 1: BESTSELLERS & RECOMMENDED
+         ========================================================================= -->
+    <div class="menu-category-card" id="category-bestsellers">
+      <div class="menu-category-header">
+        <h4 class="menu-category-title">Recommended Bestsellers (5)</h4>
+        <i class="bi bi-chevron-up text-muted"></i>
+      </div>
+      
+      <div class="menu-items-list">
+        
+        <!-- Dish 1: Meghana Special Chicken Biryani -->
+        <div class="dish-item-row" data-is-veg="false">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon non-veg"></span>
+              <span class="bestseller-badge"><i class="bi bi-star-fill"></i> BESTSELLER</span>
+            </div>
+            <h5 class="dish-title">Meghana Special Chicken Biryani</h5>
+            <div class="dish-price">₹360</div>
+            <div class="d-flex align-items-center gap-1 small text-success fw-bold mb-2">
+              <i class="bi bi-star-fill"></i>
+              <span>4.6 (4.2K ratings)</span>
+            </div>
+            <p class="dish-desc">Signature spicy boneless chicken cooked with fragrant aged basmati rice, layered with fried onions, aromatic Andhra spices, and served with rich salan and raita.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Chicken Biryani">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-1" data-dish-name="Meghana Special Chicken Biryani" data-dish-price="360" data-dish-veg="false">
+              <!-- Loaded via app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Dish 2: Paneer Special Biryani -->
+        <div class="dish-item-row" data-is-veg="true">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon veg"></span>
+              <span class="bestseller-badge"><i class="bi bi-star-fill"></i> MUST TRY</span>
+            </div>
+            <h5 class="dish-title">Paneer Special Biryani</h5>
+            <div class="dish-price">₹310</div>
+            <div class="d-flex align-items-center gap-1 small text-success fw-bold mb-2">
+              <i class="bi bi-star-fill"></i>
+              <span>4.4 (1.8K ratings)</span>
+            </div>
+            <p class="dish-desc">Fresh cottage cheese cubes marinated in authentic herbs, combined with long grain basmati rice and slow cooked in a traditional clay pot.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1645177628172-a94c1f96e6db?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Paneer Biryani">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-2" data-dish-name="Paneer Special Biryani" data-dish-price="310" data-dish-veg="true"></div>
+          </div>
+        </div>
+
+        <!-- Dish 3: Andhra Chilli Chicken -->
+        <div class="dish-item-row" data-is-veg="false">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon non-veg"></span>
+              <span class="bestseller-badge"><i class="bi bi-fire"></i> SPICY</span>
+            </div>
+            <h5 class="dish-title">Andhra Chilli Chicken Gravy</h5>
+            <div class="dish-price">₹340</div>
+            <div class="d-flex align-items-center gap-1 small text-success fw-bold mb-2">
+              <i class="bi bi-star-fill"></i>
+              <span>4.5 (2.9K ratings)</span>
+            </div>
+            <p class="dish-desc">Tender chicken pieces tossed with green chilies, curry leaves, crushed garlic, and a tangy authentic Andhra spice blend.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Chilli Chicken">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-3" data-dish-name="Andhra Chilli Chicken Gravy" data-dish-price="340" data-dish-veg="false"></div>
+          </div>
+        </div>
+
+        <!-- Dish 4: Butter Chicken Masala -->
+        <div class="dish-item-row" data-is-veg="false">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon non-veg"></span>
+            </div>
+            <h5 class="dish-title">Murgh Butter Masala</h5>
+            <div class="dish-price">₹330</div>
+            <div class="d-flex align-items-center gap-1 small text-success fw-bold mb-2">
+              <i class="bi bi-star-fill"></i>
+              <span>4.5 (3.1K ratings)</span>
+            </div>
+            <p class="dish-desc">Juicy roasted chicken chunks simmered in a velvety smooth makhani tomato butter gravy, garnished with fresh cream and dried fenugreek.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1588166524941-3bf61a9c41db?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Butter Chicken">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-4" data-dish-name="Murgh Butter Masala" data-dish-price="330" data-dish-veg="false"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =========================================================================
+         MENU CATEGORY 2: BREADS, SIDES & DESSERTS
+         ========================================================================= -->
+    <div class="menu-category-card" id="category-starters">
+      <div class="menu-category-header">
+        <h4 class="menu-category-title">Breads & Desserts (3)</h4>
+        <i class="bi bi-chevron-up text-muted"></i>
+      </div>
+      
+      <div class="menu-items-list">
+        
+        <!-- Dish 5: Butter Garlic Naan -->
+        <div class="dish-item-row" data-is-veg="true">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon veg"></span>
+            </div>
+            <h5 class="dish-title">Clay Oven Butter Garlic Naan</h5>
+            <div class="dish-price">₹65</div>
+            <p class="dish-desc">Traditional tandoor baked leavened flatbread brushed with butter and minced roasted garlic.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Garlic Naan">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-5" data-dish-name="Clay Oven Butter Garlic Naan" data-dish-price="65" data-dish-veg="true"></div>
+          </div>
+        </div>
+
+        <!-- Dish 6: Gulab Jamun -->
+        <div class="dish-item-row" data-is-veg="true">
+          <div class="dish-details">
+            <div class="dish-badge-row">
+              <span class="food-type-icon veg"></span>
+              <span class="bestseller-badge">DESSERT</span>
+            </div>
+            <h5 class="dish-title">Shahi Gulab Jamun (2 Pcs)</h5>
+            <div class="dish-price">₹85</div>
+            <p class="dish-desc">Warm melt-in-the-mouth milk solid dumplings dipped in cardamom and saffron infused sugar syrup.</p>
+          </div>
+          <div class="dish-media-wrap">
+            <img src="https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?auto=format&fit=crop&w=400&q=80" class="dish-img" alt="Gulab Jamun">
+            <div class="dish-add-btn-wrap" data-dish-id="mgh-6" data-dish-name="Shahi Gulab Jamun (2 Pcs)" data-dish-price="85" data-dish-veg="true"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+       OFFCANVAS CART DRAWER
+       ========================================================================= -->
+  <div class="offcanvas offcanvas-end cart-drawer" tabindex="-1" id="cartOffcanvas">
+    <div class="cart-drawer-header d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-bag-check-fill text-success fs-4"></i>
+        <h5 class="mb-0 fw-bold text-pine">My Food Cart</h5>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    
+    <div class="offcanvas-body cart-drawer-body" id="cartDrawerItems">
+      <!-- Items dynamically populated via js/app.js -->
+    </div>
+
+    <div class="p-3 bg-white border-top shadow-lg" id="cartDrawerFooter" style="display: none;">
+      <a href="checkout.html" class="btn btn-place-order">
+        <span>Proceed to Checkout</span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+  </div>
+
+  <!-- Floating Mobile Cart Bar -->
+  <a href="checkout.html" class="mobile-cart-bar" id="mobileCartBar">
+    <div>
+      <div class="fw-bold" id="mobileCartItemsCount">0 ITEMS</div>
+      <div class="small text-white-50" id="mobileCartTotal">₹0</div>
+    </div>
+    <div class="d-flex align-items-center gap-2 fw-bold">
+      <span>VIEW CART</span>
+      <i class="bi bi-arrow-right"></i>
+    </div>
+  </a>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="zippy-footer">
+    <div class="container-xl">
+      <div class="row g-4">
+        <div class="col-lg-4">
+          <div class="footer-brand-title mb-2">
+            <i class="fa-solid fa-leaf text-mint me-2"></i>Zippy Lush
+          </div>
+          <p class="small text-white-50">
+            E-Commerce Platform for Food Order • MCA Level Project (MCSP-232)
+            Developed by Pooja JP with modern HTML5, Bootstrap 5 & Figma Lush Forest color system.
+          </p>
+        </div>
+        <div class="col-lg-4 text-center">
+          <h6 class="footer-heading">Quick Links</h6>
+          <div class="d-flex justify-content-center gap-3">
+            <a href="index.html" class="text-white-50 text-decoration-none">Home</a>
+            <a href="restaurant.html" class="text-white-50 text-decoration-none">Menu</a>
+            <a href="checkout.html" class="text-white-50 text-decoration-none">Checkout</a>
+            <a href="order-status.html" class="text-white-50 text-decoration-none">Order Tracker</a>
+          </div>
+        </div>
+        <div class="col-lg-4 text-end">
+          <div class="small text-white-50">
+            © 2026 Zippy Clone. All rights reserved.
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+</body>
+</html>

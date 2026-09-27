@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Zippy | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2 d-flex align-items-center justify-content-between">
+      <a href="index.html" class="brand-logo">
+        <div class="brand-icon-box"><i class="fa-solid fa-utensils"></i></div>
+        <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+        <span class="brand-badge">Lush</span>
+      </a>
+
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="nav-link-custom"><i class="bi bi-house"></i><span>Home</span></a>
+        <a href="terms.html" class="nav-link-custom"><i class="bi bi-file-earmark-text"></i><span>Terms of Service</span></a>
+        <a href="help.html" class="nav-link-custom"><i class="bi bi-question-circle"></i><span>Help</span></a>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       PRIVACY BANNER
+       ========================================================================= -->
+  <section class="py-5" style="background: linear-gradient(135deg, var(--lush-pine) 0%, #16271A 100%); color: #FFFFFF;">
+    <div class="container-xl" style="max-width: 960px;">
+      <span class="badge bg-success bg-opacity-50 text-mint px-3 py-1 rounded-pill fw-bold mb-2">
+        <i class="bi bi-shield-lock-fill me-1"></i> DPDPA 2023 & GDPR COMPLIANT
+      </span>
+      <h1 class="display-6 fw-bold text-white mb-2">Privacy & Data Protection Policy</h1>
+      <p class="text-white-50 mb-0">Learn how Zippy safeguards personal identifiers, GPS coordinates, and payment metadata.</p>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       PRIVACY CONTENT WITH STICKY SIDEBAR
+       ========================================================================= -->
+  <main class="container-xl py-5" style="max-width: 960px;">
+    <div class="row g-4">
+      
+      <!-- Left: Sticky Table of Contents -->
+      <div class="col-lg-4 d-none d-lg-block">
+        <div class="card border-0 rounded-4 shadow-sm p-3 bg-white sticky-top" style="top: 90px;">
+          <h6 class="fw-bold text-pine mb-3 pb-2 border-bottom">Privacy Topics</h6>
+          <nav class="d-flex flex-column gap-1">
+            <a href="#priv-1" class="legal-nav-link active">1. Data We Collect</a>
+            <a href="#priv-2" class="legal-nav-link">2. How We Use Information</a>
+            <a href="#priv-3" class="legal-nav-link">3. Sharing with Partners</a>
+            <a href="#priv-4" class="legal-nav-link">4. Enterprise Cryptography</a>
+            <a href="#priv-5" class="legal-nav-link">5. Cookies & Local Storage</a>
+            <a href="#priv-6" class="legal-nav-link">6. Your Data Rights</a>
+            <a href="#priv-7" class="legal-nav-link">7. Grievance Redressal</a>
+          </nav>
+        </div>
+      </div>
+
+      <!-- Right: Main Privacy Text -->
+      <div class="col-lg-8">
+        <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white">
+          
+          <!-- Section 1 -->
+          <section id="priv-1" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">1. Information We Collect</h4>
+            <p class="text-muted small">
+              To facilitate seamless food ordering and courier dispatch, we collect:
+            </p>
+            <ul class="text-muted small">
+              <li><strong>User Profile Data:</strong> Full name, phone number, email address, encrypted login passwords.</li>
+              <li><strong>Delivery Coordinates:</strong> Precise GPS latitude/longitude, delivery address line, landmark, and postal pincode.</li>
+              <li><strong>Transactional History:</strong> Items ordered, payment mode, invoice amounts, discount coupons applied.</li>
+              <li><strong>Telemetry & Diagnostics:</strong> Browser user agent, device model, and IP address for fraud detection.</li>
+            </ul>
+          </section>
+
+          <!-- Section 2 -->
+          <section id="priv-2" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">2. How We Use Your Information</h4>
+            <p class="text-muted small">
+              Your data is processed strictly for legitimate operational purposes:
+            </p>
+            <ul class="text-muted small">
+              <li><strong>Order Fulfillment:</strong> Transmitting ticket items to the restaurant Kitchen Display System (KDS).</li>
+              <li><strong>Algorithmic Dispatch:</strong> Computing optimal travel routes and live countdown ETAs for delivery executives.</li>
+              <li><strong>Smart Recommendation (Apriori Mining):</strong> Analyzing basket items to suggest complementary sides and beverages.</li>
+              <li><strong>Customer Support:</strong> Assisting in refund disputes and order status investigations.</li>
+            </ul>
+          </section>
+
+          <!-- Section 3 -->
+          <section id="priv-3" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">3. Sharing with Restaurants & Logistics Partners</h4>
+            <p class="text-muted small">
+              We respect data minimization principles. We only share essential delivery information:
+            </p>
+            <div class="p-3 rounded-3 bg-light border small text-muted mb-3">
+              • <strong>Kitchen Staff:</strong> See order item quantities, dish customizations, and first name only.<br>
+              • <strong>Delivery Partner:</strong> Receives customer address and an in-app masked telephone proxy number to safeguard personal contact numbers.
+            </div>
+            <p class="text-muted small">
+              We never sell or lease customer browsing datasets to third-party telemarketers or external advertising exchanges.
+            </p>
+          </section>
+
+          <!-- Section 4 -->
+          <section id="priv-4" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">4. Enterprise Cryptography & Database Security</h4>
+            <p class="text-muted small">
+              As documented in the MCA Project Technical Specifications (MCSP-232):
+            </p>
+            <ul class="text-muted small">
+              <li><strong>Password Hashing:</strong> Passwords are never stored in plain text. Hashed using modern <code>Argon2id</code> with memory hardness.</li>
+              <li><strong>SQL Injection Immunity:</strong> All database queries are 100% parameterized using PHP Data Objects (PDO) prepared statements.</li>
+              <li><strong>Data in Transit:</strong> Encrypted using TLS 1.3 cryptographic protocols with modern cipher suites.</li>
+              <li><strong>Payment Security:</strong> Card details are handled solely by PCI-DSS Level 1 certified payment switches.</li>
+            </ul>
+          </section>
+
+          <!-- Section 5 -->
+          <section id="priv-5" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">5. Cookies & Local Storage</h4>
+            <p class="text-muted small">
+              We use client-side <code>localStorage</code> to maintain your active food cart items (<code>pooja_zippy_cart</code>) and active coupon discount codes across page reloads without requiring server round-trips.
+            </p>
+          </section>
+
+          <!-- Section 6 -->
+          <section id="priv-6" class="mb-5">
+            <h4 class="fw-bold text-pine mb-3">6. Your Data Rights & Erasure</h4>
+            <p class="text-muted small">
+              Under India's Digital Personal Data Protection Act (DPDPA 2023), you hold the right to:
+            </p>
+            <ul class="text-muted small">
+              <li>Access a portable summary of all past orders and invoices.</li>
+              <li>Update or correct outdated address and profile information.</li>
+              <li>Request full account deletion and personal identifier erasure from our active database.</li>
+            </ul>
+          </section>
+
+          <!-- Section 7 -->
+          <section id="priv-7">
+            <h4 class="fw-bold text-pine mb-3">7. Grievance Redressal Officer</h4>
+            <p class="text-muted small mb-3">
+              If you have inquiries regarding privacy practices or wish to exercise your data rights, please contact our designated Grievance Officer:
+            </p>
+            <div class="p-3 rounded-3 bg-light border small text-pine">
+              <strong>Grievance Officer:</strong> Pooja JP<br>
+              <strong>Email:</strong> privacy.officer@zippy.clone<br>
+              <strong>Address:</strong> Zippy Technologies, Indiranagar Hub, Bengaluru, Karnataka - 560038<br>
+              <strong>Response SLA:</strong> Within 48 hours.
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="zippy-footer mt-5 py-4 border-top">
+    <div class="container-xl text-center small text-white-50">
+      MCA Project MCSP-232: E-Commerce Platform for Food Order • Student: Pooja JP • Styled with Figma Lush Forest Palette
+      <div class="mt-2">
+        <a href="terms.html" class="text-white-50 me-3">Terms & Conditions</a>
+        <a href="privacy.html" class="text-white fw-bold me-3">Privacy Policy</a>
+        <a href="help.html" class="text-white-50">Customer Support</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+</body>
+</html>

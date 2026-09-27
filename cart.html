@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Food Cart - Zippy | Pooja Project</title>
+  
+  <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap 5.3.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Bootstrap Icons & FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  
+  <!-- Custom Figma Lush Forest Palette Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background-color: var(--lush-bg);">
+
+  <!-- =========================================================================
+       HEADER / NAVBAR
+       ========================================================================= -->
+  <header class="zippy-navbar">
+    <div class="container-xl py-2">
+      <div class="d-flex align-items-center justify-content-between">
+        
+        <!-- Left: Brand Logo & Location -->
+        <div class="d-flex align-items-center gap-4">
+          <a href="index.html" class="brand-logo">
+            <div class="brand-icon-box">
+              <i class="fa-solid fa-utensils"></i>
+            </div>
+            <span class="brand-name">zippy<span class="brand-highlight">.</span></span>
+            <span class="brand-badge d-none d-sm-inline-block">Lush</span>
+          </a>
+
+          <div class="location-selector d-none d-md-flex">
+            <i class="bi bi-geo-alt-fill text-success"></i>
+            <div>
+              <span class="loc-title">Indiranagar</span>
+              <span class="loc-desc d-inline-block ms-1">Bangalore</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Step Progress Breadcrumb -->
+        <div class="d-none d-lg-flex align-items-center gap-3">
+          <span class="fw-bold text-success"><i class="bi bi-bag-check-fill me-1"></i> 1. Cart Review</span>
+          <i class="bi bi-chevron-right text-muted small"></i>
+          <span class="text-muted small">2. Address & Payment</span>
+          <i class="bi bi-chevron-right text-muted small"></i>
+          <span class="text-muted small">3. Live Tracking</span>
+        </div>
+
+        <!-- Right: Nav Actions -->
+        <div class="d-flex align-items-center gap-2">
+          <a href="restaurant.html" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">
+            <i class="bi bi-plus-circle me-1"></i> Add More Food
+          </a>
+          <a href="order-history.html" class="nav-link-custom d-none d-sm-flex">
+            <i class="bi bi-clock-history"></i>
+            <span>Orders</span>
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       MAIN CART BODY
+       ========================================================================= -->
+  <main class="container-xl py-4" style="max-width: 1080px;">
+    
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="fw-bold text-pine mb-1">Your Shopping Cart</h2>
+        <p class="text-muted small mb-0">Review items, customize cooking preferences, and apply coupons</p>
+      </div>
+      <button class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold" onclick="clearCart(); location.reload();">
+        <i class="bi bi-trash3 me-1"></i> Clear Cart
+      </button>
+    </div>
+
+    <div class="row g-4">
+      
+      <!-- LEFT COLUMN: Cart Items & Customizations -->
+      <div class="col-lg-7 col-xl-8">
+        
+        <!-- Cart Items Box -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 mb-4 bg-white">
+          <div class="d-flex align-items-center gap-3 pb-3 border-bottom mb-3">
+            <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=120&q=80" class="rounded-3" style="width: 54px; height: 54px; object-fit: cover;" alt="Meghana Foods">
+            <div>
+              <h5 class="fw-bold text-pine mb-0">Meghana Foods</h5>
+              <span class="small text-muted">100 Feet Road, Indiranagar • Delivery in 20-25 mins</span>
+            </div>
+          </div>
+
+          <div id="full-cart-items-list">
+            <!-- Rendered dynamically by JS -->
+          </div>
+
+          <!-- Free Delivery Progress Bar -->
+          <div class="p-3 rounded-3 mt-3 border" style="background-color: var(--lush-mint-soft);">
+            <div class="d-flex justify-content-between small fw-bold text-pine mb-1">
+              <span><i class="fa-solid fa-motorcycle text-success me-1"></i> Free Delivery Progress</span>
+              <span id="free-delivery-text">Eligible for FREE Delivery!</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+              <div class="progress-bar bg-success" role="progressbar" id="free-delivery-bar" style="width: 100%;"></div>
+            </div>
+          </div>
+
+          <!-- Cooking Instructions Input -->
+          <div class="mt-4">
+            <label class="form-label small fw-bold text-pine"><i class="bi bi-chat-left-text text-success me-1"></i> Cooking or Packaging Instructions</label>
+            <textarea class="form-control rounded-3" rows="2" placeholder="e.g. Please send extra salan and make biryani less spicy, don't include plastic cutlery..."></textarea>
+          </div>
+        </div>
+
+        <!-- Cross-Selling Suggestions (Apriori Algorithm Feature) -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <span class="algo-badge mb-1">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> AI Recommender (Apriori)
+              </span>
+              <h6 class="fw-bold text-pine mb-0">Complete Your Meal with Popular Add-ons</h6>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="p-3 border rounded-3 text-center h-100 d-flex flex-direction-column justify-content-between">
+                <div>
+                  <img src="https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=150&q=80" class="rounded-3 mb-2" style="width: 70px; height: 60px; object-fit: cover;" alt="Garlic Naan">
+                  <div class="fw-bold small text-pine">Butter Garlic Naan</div>
+                  <div class="text-success fw-bold small">₹65</div>
+                </div>
+                <button class="btn btn-sm btn-outline-success rounded-pill w-100 fw-bold mt-2" onclick="addToCart('algo-naan', 'Butter Garlic Naan', 65, true); location.reload();">+ Add</button>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <div class="p-3 border rounded-3 text-center h-100 d-flex flex-direction-column justify-content-between">
+                <div>
+                  <img src="https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80" class="rounded-3 mb-2" style="width: 70px; height: 60px; object-fit: cover;" alt="Boondi Raita">
+                  <div class="fw-bold small text-pine">Boondi Raita</div>
+                  <div class="text-success fw-bold small">₹50</div>
+                </div>
+                <button class="btn btn-sm btn-outline-success rounded-pill w-100 fw-bold mt-2" onclick="addToCart('algo-raita', 'Boondi Raita', 50, true); location.reload();">+ Add</button>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <div class="p-3 border rounded-3 text-center h-100 d-flex flex-direction-column justify-content-between">
+                <div>
+                  <img src="https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?auto=format&fit=crop&w=150&q=80" class="rounded-3 mb-2" style="width: 70px; height: 60px; object-fit: cover;" alt="Gulab Jamun">
+                  <div class="fw-bold small text-pine">Gulab Jamun (2 pcs)</div>
+                  <div class="text-success fw-bold small">₹85</div>
+                </div>
+                <button class="btn btn-sm btn-outline-success rounded-pill w-100 fw-bold mt-2" onclick="addToCart('algo-jamun', 'Gulab Jamun (2 pcs)', 85, true); location.reload();">+ Add</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Bill Breakdown & Checkout CTA -->
+      <div class="col-lg-5 col-xl-4">
+        
+        <!-- Coupon Card -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-3">
+          <label class="form-label small fw-bold text-pine mb-2"><i class="fa-solid fa-percent text-success me-1"></i> Apply Coupon Code</label>
+          <div class="input-group mb-2">
+            <input type="text" id="cartCouponInput" class="form-control text-uppercase fw-bold" placeholder="LUSHFOREST">
+            <button class="btn btn-success fw-bold px-3" onclick="applyCartPageCoupon()" style="background-color: var(--lush-forest);">APPLY</button>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <span class="badge bg-light text-success border cursor-pointer font-monospace" onclick="document.getElementById('cartCouponInput').value='LUSHFOREST'; applyCartPageCoupon();">LUSHFOREST (20% OFF)</span>
+            <span class="badge bg-light text-success border cursor-pointer font-monospace" onclick="document.getElementById('cartCouponInput').value='ZIPPY50'; applyCartPageCoupon();">ZIPPY50 (50% OFF)</span>
+          </div>
+        </div>
+
+        <!-- Bill Details Card -->
+        <div class="bill-summary-card">
+          <h5 class="fw-bold text-pine mb-3">Bill Details</h5>
+          
+          <div class="bill-item-row">
+            <span>Item Total</span>
+            <span id="cart-item-total">₹0</span>
+          </div>
+          
+          <div class="bill-item-row">
+            <span>Delivery Fee (2.4 km)</span>
+            <span id="cart-delivery-fee">FREE</span>
+          </div>
+          
+          <div class="bill-item-row">
+            <span>Platform Fee</span>
+            <span id="cart-platform-fee">₹5</span>
+          </div>
+          
+          <div class="bill-item-row">
+            <span>GST & Restaurant Charges (5%)</span>
+            <span id="cart-taxes">₹0</span>
+          </div>
+
+          <div class="bill-item-row text-success fw-bold" id="cart-discount-row" style="display: none;">
+            <span>Coupon Discount</span>
+            <span id="cart-discount-val">-₹0</span>
+          </div>
+
+          <div class="bill-total-row">
+            <span>TO PAY</span>
+            <span class="text-success" id="cart-final-total">₹0</span>
+          </div>
+
+          <!-- Delivery Address Preview -->
+          <div class="p-3 rounded-3 bg-light border mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="fw-bold text-pine small"><i class="bi bi-geo-alt-fill text-success me-1"></i> Deliver To: Home</span>
+              <a href="checkout.html" class="small text-success text-decoration-none fw-bold">Change</a>
+            </div>
+            <p class="small text-muted mb-0">#402 Green Meadows, 100ft Rd, Indiranagar, Bengaluru</p>
+          </div>
+
+          <!-- Checkout CTA -->
+          <div class="mt-4">
+            <a href="checkout.html" class="btn btn-place-order text-decoration-none">
+              <span>PROCEED TO CHECKOUT</span>
+              <i class="bi bi-arrow-right"></i>
+            </a>
+          </div>
+
+          <div class="text-center mt-3">
+            <span class="small text-muted" style="font-size: 0.75rem;">
+              <i class="bi bi-shield-check text-success me-1"></i> Safe & Contactless Delivery Verified
+            </span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="zippy-footer mt-5 py-4">
+    <div class="container-xl text-center small text-white-50">
+      MCA Project MCSP-232: E-Commerce Food Ordering Platform • Student: Pooja JP • Styled with Figma Lush Forest Palette
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Zippy Core JS -->
+  <script src="js/app.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      renderFullCartPage();
+    });
+
+    function renderFullCartPage() {
+      const container = document.getElementById('full-cart-items-list');
+      if (!container) return;
+
+      if (!cart || cart.length === 0) {
+        // Preload default delicious items if empty so the cart page looks great on first view!
+        cart = [
+          { id: 'mgh-1', name: 'Meghana Special Chicken Biryani', price: 360, isVeg: false, restaurant: 'Meghana Foods', qty: 1 },
+          { id: 'mgh-5', name: 'Clay Oven Butter Garlic Naan', price: 65, isVeg: true, restaurant: 'Meghana Foods', qty: 2 },
+          { id: 'mgh-6', name: 'Shahi Gulab Jamun (2 Pcs)', price: 85, isVeg: true, restaurant: 'Meghana Foods', qty: 1 }
+        ];
+        saveCart();
+      }
+
+      let html = '';
+      cart.forEach(item => {
+        html += `
+          <div class="d-flex align-items-center justify-content-between py-3 border-bottom">
+            <div class="d-flex align-items-center gap-3">
+              <span class="food-type-icon ${item.isVeg ? 'veg' : 'non-veg'}"></span>
+              <div>
+                <h6 class="fw-bold text-pine mb-1">${item.name}</h6>
+                <span class="text-muted small">₹${item.price} each</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+              <div class="dish-qty-control" style="width: 85px;">
+                <button onclick="decrementCartItem('${item.id}'); renderFullCartPage();">-</button>
+                <span class="qty-number">${item.qty}</span>
+                <button onclick="addToCart('${item.id}', '${item.name}', ${item.price}, ${item.isVeg}); renderFullCartPage();">+</button>
+              </div>
+              <span class="fw-bold text-pine" style="min-width: 65px; text-align: right;">₹${item.price * item.qty}</span>
+              <button class="btn btn-sm text-danger p-0 ms-2" onclick="removeCartItem('${item.id}'); renderFullCartPage();" title="Remove">
+                <i class="bi bi-x-circle"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+
+      const totals = calculateCartTotals();
+      document.getElementById('cart-item-total').textContent = `₹${totals.itemTotal}`;
+      document.getElementById('cart-delivery-fee').innerHTML = totals.deliveryFee === 0 ? '<span class="text-success fw-bold">FREE</span>' : `₹${totals.deliveryFee}`;
+      document.getElementById('cart-platform-fee').textContent = `₹${totals.platformFee}`;
+      document.getElementById('cart-taxes').textContent = `₹${totals.taxes}`;
+      
+      const discRow = document.getElementById('cart-discount-row');
+      if (totals.discount > 0) {
+        discRow.style.display = 'flex';
+        document.getElementById('cart-discount-val').textContent = `-₹${totals.discount}`;
+      } else {
+        discRow.style.display = 'none';
+      }
+
+      document.getElementById('cart-final-total').textContent = `₹${totals.finalTotal}`;
+
+      // Free delivery progress bar
+      const bar = document.getElementById('free-delivery-bar');
+      const text = document.getElementById('free-delivery-text');
+      if (totals.itemTotal >= 500) {
+        bar.style.width = '100%';
+        bar.className = 'progress-bar bg-success';
+        text.textContent = 'Free Delivery Unlocked! 🎉';
+      } else {
+        const pct = Math.round((totals.itemTotal / 500) * 100);
+        bar.style.width = `${pct}%`;
+        bar.className = 'progress-bar bg-warning';
+        text.textContent = `Add ₹${500 - totals.itemTotal} more for FREE Delivery`;
+      }
+    }
+
+    function applyCartPageCoupon() {
+      const code = document.getElementById('cartCouponInput').value.trim().toUpperCase();
+      if (code === 'LUSHFOREST' || code === 'ZIPPY50') {
+        activeCoupon = code;
+        localStorage.setItem('pooja_active_coupon', activeCoupon);
+        renderFullCartPage();
+        showToast(`Coupon ${code} applied successfully! 🎉`);
+      } else {
+        showToast('Invalid Coupon. Try LUSHFOREST or ZIPPY50', 'danger');
+      }
+    }
+  </script>
+
+</body>
+</html>
