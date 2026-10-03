@@ -1,235 +1,246 @@
 <?php
 /**
  * Restaurant Menu & Ordering Page
- * MCSP-232: E-Commerce Platform for Food Order
- * Features: Apriori Cross-sell Engine, Veg Toggle, Category Navigation, Live Cart Sync
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Meghana Foods - Menu & Online Ordering';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/controllers/MenuController.php';
 
-$data = MenuController::getRestaurantPageData();
-$categories  = $data['categories'];
-$menuGrouped = $data['menuGrouped'];
-$aprioriRecs = $data['aprioriRecs'];
-$vegOnly     = $data['vegOnly'];
-$search      = $data['search'];
+$pageTitle = 'Meghana Foods - Menu & Online Ordering';
+$activePage = 'restaurant';
+
+require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/../includes/AprioriEngine.php';
+
+// Fetch Categories and Menu Items
+$categories = db_fetch_all("
+    SELECT c.*, COUNT(m.item_id) AS total_items
+    FROM `categories` c
+    JOIN `menu_items` m ON c.category_id = m.category_id
+    WHERE c.is_active = 1 AND m.is_available = 1
+    GROUP BY c.category_id
+    ORDER BY c.display_order ASC
+");
+
+// Group menu items by category
+$itemsByCategory = [];
+foreach ($categories as $cat) {
+    $itemsByCategory[$cat['category_id']] = db_fetch_all("
+        SELECT * FROM `menu_items` 
+        WHERE `category_id` = :cid AND `is_available` = 1 
+        ORDER BY `price` ASC
+    ", [':cid' => $cat['category_id']]);
+}
+
+$recommendations = AprioriEngine::getRecommendations([], 3);
 ?>
 
-  <!-- =========================================================================
-       MAIN RESTAURANT CONTENT
-       ========================================================================= -->
-  <main class="container-xl py-4" style="max-width: 980px;">
-    
-    <!-- Breadcrumb -->
-    <nav aria-label="breadcrumb" class="mb-3">
-      <ol class="breadcrumb small">
-        <li class="breadcrumb-item"><a href="index.php" class="text-success text-decoration-none">Home</a></li>
-        <li class="breadcrumb-item"><a href="index.php" class="text-success text-decoration-none">Bangalore</a></li>
-        <li class="breadcrumb-item"><a href="index.php" class="text-success text-decoration-none">Indiranagar</a></li>
-        <li class="breadcrumb-item active text-muted fw-bold" aria-current="page">Meghana Foods</li>
-      </ol>
-    </nav>
+<main class="py-4">
+  <div class="container-xl">
 
-    <!-- Restaurant Hero Header Card -->
-    <section class="res-detail-header p-4 bg-white rounded-4 border shadow-sm mb-4">
-      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-        <div>
-          <h1 class="res-main-title mb-1 fw-bold text-pine">Meghana Foods</h1>
-          <p class="text-muted mb-2">Biryani, Andhra Special, South Indian, North Indian, Seafood</p>
-          <div class="d-flex align-items-center gap-2 small text-muted">
-            <i class="bi bi-geo-alt text-success"></i>
-            <span>100 Feet Road, HAL 2nd Stage, Indiranagar • 2.4 km away</span>
-          </div>
-        </div>
+    <!-- =======================================================================
+         RESTAURANT HERO HEADER
+         ======================================================================= -->
+    <div class="card border-0 rounded-4 shadow-sm p-4 mb-4 bg-white">
+      <div class="row align-items-center g-4">
         
-        <!-- Outlet Star Rating Card -->
-        <div class="p-3 bg-light rounded-3 border text-center" style="min-width: 100px;">
-          <div class="d-flex align-items-center justify-content-center gap-1 text-success fw-bold fs-5">
-            <i class="bi bi-star-fill text-warning"></i>
-            <span>4.5</span>
+        <div class="col-md-8">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge bg-success bg-opacity-25 text-success fw-bold px-2 py-1">OPEN NOW</span>
+            <span class="badge bg-light text-dark border small"><i class="bi bi-shield-check text-success"></i> FSSAI Lic #112233440055</span>
           </div>
-          <div class="border-top mt-1 pt-1 text-muted" style="font-size: 0.72rem; font-weight: 700;">
-            15K+ RATINGS
-          </div>
-        </div>
-      </div>
 
-      <!-- Quick Specs / Meta Ribbon -->
-      <div class="res-specs-card mt-3 pt-3 border-top d-flex flex-wrap gap-4 align-items-center">
-        <div class="spec-item d-flex align-items-center gap-2">
-          <div class="spec-icon bg-light text-success p-2 rounded-circle">
-            <i class="bi bi-clock-history fs-5"></i>
+          <h2 class="fw-bold mb-1 font-outfit text-dark">Meghana Foods</h2>
+          <p class="text-muted small mb-2">Authentic Andhra Dum Biryani, North Indian Curries, Tandoori Starters</p>
+          <div class="text-muted small mb-3">
+            <i class="bi bi-geo-alt-fill text-danger me-1"></i> 100 Feet Road, Indiranagar, Bangalore (1.8 km away)
           </div>
-          <div>
-            <div class="spec-title small text-muted fw-bold">DELIVERY TIME</div>
-            <div class="spec-val fw-bold text-pine">20-25 MINS</div>
-          </div>
-        </div>
 
-        <div class="vr opacity-25 d-none d-sm-block"></div>
-
-        <div class="spec-item d-flex align-items-center gap-2">
-          <div class="spec-icon bg-light text-success p-2 rounded-circle">
-            <i class="bi bi-wallet2 fs-5"></i>
-          </div>
-          <div>
-            <div class="spec-title small text-muted fw-bold">AVERAGE COST</div>
-            <div class="spec-val fw-bold text-pine">₹400 FOR TWO</div>
-          </div>
-        </div>
-
-        <div class="vr opacity-25 d-none d-sm-block"></div>
-
-        <div class="spec-item d-flex align-items-center gap-2">
-          <div class="spec-icon p-2 rounded-circle" style="background-color: var(--lush-mint);">
-            <i class="bi bi-shield-check text-success fs-5"></i>
-          </div>
-          <div>
-            <div class="spec-title small text-muted fw-bold">HYGIENE RATING</div>
-            <div class="spec-val text-success fw-bold">4.8 / 5.0 (FSSAI)</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Offers Carousel -->
-      <div class="mt-4 pt-3 border-top">
-        <h6 class="fw-bold text-pine small text-uppercase mb-2"><i class="fa-solid fa-gift text-success me-1"></i> Available Discounts & Offers</h6>
-        <div class="d-flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-          <div class="p-2 px-3 border rounded-3 bg-white shadow-xs flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-forest) !important;">
-            <div class="fw-bold text-pine small"><i class="fa-solid fa-percent text-success me-1"></i> FLAT ₹125 OFF</div>
-            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>STEALDEAL</strong> | Above ₹349</div>
-          </div>
-          <div class="p-2 px-3 border rounded-3 bg-white shadow-xs flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-sage) !important;">
-            <div class="fw-bold text-pine small"><i class="fa-solid fa-tag text-success me-1"></i> 20% OFF UPTO ₹100</div>
-            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>LUSHFOREST</strong> | No minimum</div>
-          </div>
-          <div class="p-2 px-3 border rounded-3 bg-white shadow-xs flex-shrink-0" style="min-width: 220px; border-left: 4px solid var(--lush-pine) !important;">
-            <div class="fw-bold text-pine small"><i class="fa-solid fa-bolt text-warning me-1"></i> 50% OFF ON FIRST ORDER</div>
-            <div class="text-muted" style="font-size: 0.75rem;">USE CODE: <strong>ZIPPY50</strong> | Max ₹100</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- =========================================================================
-         ALGORITHMIC SPOTLIGHT (MCA PROJECT REQUIREMENT)
-         Apriori Market Basket Association Rule Recommendation
-         ========================================================================= -->
-    <section class="algo-recommendation-box p-4 rounded-4 shadow-sm mb-4" style="background: linear-gradient(135deg, #1C3322 0%, #243E2C 100%); color: white;">
-      <span class="badge bg-mint text-pine fw-bold mb-2">
-        <i class="fa-solid fa-network-wired me-1"></i> Algorithmic Feature: Market Basket Analysis (Apriori)
-      </span>
-      <h4 class="fw-bold mb-1">Frequently Ordered Together with Biryani</h4>
-      <p class="small text-white-50 mb-3">Derived from historical association rule mining (Confidence: 84%, Support: 0.42):</p>
-      
-      <div class="row g-3">
-        <?php foreach ($aprioriRecs as $rec): ?>
-          <div class="col-md-4">
-            <div class="p-3 rounded-3 bg-white bg-opacity-10 border border-white border-opacity-15 h-100 d-flex flex-column justify-content-between">
-              <div class="d-flex align-items-center gap-3 mb-2">
-                <img src="<?= sanitize($rec['image_url']) ?>" class="rounded-3 object-fit-cover shadow-xs" style="width: 55px; height: 55px;" alt="<?= sanitize($rec['name']) ?>">
-                <div>
-                  <span class="food-type-icon <?= !empty($rec['is_veg']) ? 'veg' : 'non-veg' ?>"></span>
-                  <div class="fw-bold text-white small"><?= sanitize($rec['name']) ?></div>
-                  <div class="text-mint fw-bold small"><?= formatPrice($rec['price']) ?></div>
-                </div>
-              </div>
-              <div class="d-flex align-items-center justify-content-between pt-2 border-top border-white border-opacity-10">
-                <span class="badge bg-white bg-opacity-10 text-white-50" style="font-size: 0.7rem;">Conf: <?= round($rec['confidence'] * 100) ?>%</span>
-                <button class="btn btn-sm btn-light rounded-pill fw-bold text-success px-3" onclick="addToCart(<?= $rec['item_id'] ?>, '<?= addslashes($rec['name']) ?>', <?= $rec['price'] ?>, <?= !empty($rec['is_veg']) ? 'true' : 'false' ?>)">
-                  + Add
-                </button>
-              </div>
+          <!-- Quick Metrics Bar -->
+          <div class="d-flex flex-wrap align-items-center gap-3 pt-3 border-top">
+            <div class="d-flex align-items-center gap-1">
+              <span class="badge bg-success rounded-pill px-2 py-1 fs-6"><i class="bi bi-star-fill text-warning me-1"></i> 4.5</span>
+              <span class="small text-muted ms-1">(1,420+ ratings)</span>
+            </div>
+            <div class="border-start ps-3 small text-muted">
+              <i class="bi bi-clock-history text-success me-1"></i> <strong>25-30 mins</strong> ETA
+            </div>
+            <div class="border-start ps-3 small text-muted">
+              <i class="bi bi-currency-rupee text-success"></i> <strong>₹400</strong> for two
             </div>
           </div>
-        <?php endforeach; ?>
-      </div>
-    </section>
-
-    <!-- =========================================================================
-         FILTER CONTROLS & MENU NAVIGATION
-         ========================================================================= -->
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 py-3 border-bottom mb-4 bg-white px-3 rounded-3">
-      <!-- Veg Only Toggle -->
-      <form method="GET" action="restaurant.php" id="vegFilterForm" class="d-flex align-items-center gap-2 m-0">
-        <?php if (!empty($search)): ?>
-          <input type="hidden" name="search" value="<?= sanitize($search) ?>">
-        <?php endif; ?>
-        <div class="form-check form-switch d-flex align-items-center gap-2 p-0 m-0">
-          <label class="form-check-label fw-bold small text-pine cursor-pointer" for="vegOnlySwitch">
-            <span class="food-type-icon veg me-1"></span> VEG ONLY
-          </label>
-          <input class="form-check-input ms-2 cursor-pointer" type="checkbox" name="veg" value="1" id="vegOnlySwitch" style="width: 2.8em; height: 1.4em;" <?= $vegOnly ? 'checked' : '' ?> onchange="document.getElementById('vegFilterForm').submit()">
         </div>
-      </form>
 
-      <!-- Category Filter Pills -->
-      <div class="d-flex align-items-center gap-2 overflow-x-auto scrollbar-none">
-        <a href="#category-bestsellers" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">Recommended</a>
-        <?php foreach ($categories as $cat): ?>
-          <a href="#cat-<?= sanitize($cat['category_slug']) ?>" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3">
-            <?= sanitize($cat['category_name']) ?>
-          </a>
-        <?php endforeach; ?>
+        <div class="col-md-4">
+          <!-- Discount Offer Card inside Restaurant -->
+          <div class="p-3 rounded-4" style="background: #EDFBF2; border: 1px dashed #2E6F40;">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="badge" style="background:#2E6F40; color:#CEFFDC;">OFFER</span>
+              <strong class="text-forest small">20% OFF UP TO ₹100</strong>
+            </div>
+            <p class="small text-muted mb-2">Valid on orders above ₹299. Applied at checkout automatically.</p>
+            <div class="d-flex align-items-center justify-content-between bg-white px-3 py-1 rounded-pill border">
+              <code class="fw-bold text-forest">LUSHFOREST</code>
+              <button class="btn btn-link btn-sm text-success p-0 fw-bold text-decoration-none" onclick="navigator.clipboard.writeText('LUSHFOREST'); showToast('Coupon copied to clipboard!');">COPY</button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- =========================================================================
-         MENU CATEGORIES & DISH LISTINGS
-         ========================================================================= -->
-    <?php if (empty($menuGrouped)): ?>
-      <div class="text-center py-5 bg-white rounded-4 border">
-        <i class="bi bi-search text-muted fs-1 mb-2"></i>
-        <h5 class="fw-bold text-pine">No dishes found</h5>
-        <p class="text-muted small">Try turning off Veg Only filter or search for another item.</p>
-        <a href="restaurant.php" class="btn btn-sm btn-success rounded-pill px-4 fw-bold">Reset Filters</a>
-      </div>
-    <?php endif; ?>
-
-    <?php foreach ($menuGrouped as $categoryName => $items): ?>
-      <?php $catSlug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $categoryName)); ?>
-      <section class="menu-category-section mb-5" id="cat-<?= $catSlug ?>">
-        <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-          <h4 class="fw-bold text-pine mb-0"><?= sanitize($categoryName) ?> (<?= count($items) ?>)</h4>
-          <span class="badge bg-light text-muted border"><?= sanitize($categoryName) ?></span>
+    <!-- =======================================================================
+         MENU LAYOUT (CATEGORY NAV + DISHES + STICKY CART)
+         ======================================================================= -->
+    <div class="row g-4">
+      
+      <!-- Left Column: Menu Items by Category -->
+      <div class="col-lg-8">
+        
+        <!-- Controls Bar: Search & Veg Only Filter -->
+        <div class="card border-0 rounded-4 shadow-sm p-3 mb-4 bg-white d-flex flex-row justify-content-between align-items-center">
+          <div class="fw-bold text-dark">
+            <i class="fa-solid fa-book-open text-success me-2"></i> Menu Catalog
+          </div>
+          
+          <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" role="switch" id="vegOnlySwitch" style="cursor: pointer;">
+            <label class="form-check-label fw-bold small text-success mb-0" for="vegOnlySwitch" style="cursor: pointer;">
+              Pure Veg Only
+            </label>
+          </div>
         </div>
 
-        <div class="d-flex flex-column gap-3">
-          <?php foreach ($items as $dish): ?>
-            <div class="menu-dish-card p-3 p-md-4 bg-white rounded-4 border shadow-xs d-flex justify-content-between align-items-center gap-3">
-              <!-- Dish Details -->
-              <div class="flex-grow-1" style="max-width: 650px;">
-                <div class="d-flex align-items-center gap-2 mb-1">
-                  <span class="food-type-icon <?= $dish['is_veg'] ? 'veg' : 'non-veg' ?>"></span>
-                  <?php if (!empty($dish['is_bestseller'])): ?>
-                    <span class="badge bg-warning bg-opacity-25 text-dark fw-bold small"><i class="bi bi-star-fill text-warning me-1"></i> Bestseller</span>
-                  <?php endif; ?>
-                  <span class="badge bg-light text-muted border small"><i class="bi bi-clock me-1"></i> <?= (int)$dish['prep_time_minutes'] ?>m prep</span>
-                </div>
-                <h5 class="fw-bold text-pine mb-1"><?= sanitize($dish['item_name']) ?></h5>
-                <div class="fw-bold text-pine fs-6 mb-2"><?= formatPrice($dish['price']) ?></div>
-                <p class="small text-muted mb-0 dish-desc-clamp"><?= sanitize($dish['description']) ?></p>
-              </div>
+        <!-- Category Sections -->
+        <?php foreach ($categories as $cat): ?>
+          <?php $catItems = $itemsByCategory[$cat['category_id']] ?? []; ?>
+          <?php if (empty($catItems)) continue; ?>
 
-              <!-- Dish Image & Add Button -->
-              <div class="text-center flex-shrink-0" style="width: 140px;">
-                <div class="position-relative mb-2">
-                  <img src="<?= sanitize($dish['image_url']) ?>" class="rounded-4 object-fit-cover shadow-xs" style="width: 130px; height: 110px;" alt="<?= sanitize($dish['item_name']) ?>">
-                </div>
-                <button class="btn btn-sm btn-success rounded-pill px-4 fw-bold shadow-xs dish-add-btn" 
-                        data-dish-id="<?= $dish['item_id'] ?>"
-                        onclick="addToCart(<?= $dish['item_id'] ?>, '<?= addslashes($dish['item_name']) ?>', <?= $dish['price'] ?>, <?= $dish['is_veg'] ? 'true' : 'false' ?>)" 
-                        style="background-color: var(--lush-forest);">
-                  ADD
-                </button>
+          <div class="card border-0 rounded-4 shadow-sm p-4 mb-4 bg-white category-menu-block" id="category-<?= e($cat['category_slug']) ?>">
+            <div class="d-flex align-items-center justify-content-between border-bottom pb-3 mb-3">
+              <div>
+                <h4 class="fw-bold mb-0 text-dark"><?= e($cat['category_name']) ?></h4>
+                <div class="small text-muted"><?= count($catItems) ?> items in this category</div>
               </div>
             </div>
-          <?php endforeach; ?>
-        </div>
-      </section>
-    <?php endforeach; ?>
 
-  </main>
+            <!-- Dish Items List -->
+            <div class="d-flex flex-column gap-4">
+              <?php foreach ($catItems as $dish): ?>
+                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>">
+                  
+                  <!-- Dish Info -->
+                  <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <?php if ($dish['is_veg']): ?>
+                        <span class="badge bg-white text-success border border-success d-flex align-items-center gap-1 px-2 py-0" style="font-size:0.65rem;">
+                          <span style="width:6px; height:6px; border-radius:50%; background:#229947; display:inline-block;"></span> VEG
+                        </span>
+                      <?php else: ?>
+                        <span class="badge bg-white text-danger border border-danger d-flex align-items-center gap-1 px-2 py-0" style="font-size:0.65rem;">
+                          <span style="width:6px; height:6px; border-radius:50%; background:#D32F2F; display:inline-block;"></span> NON-VEG
+                        </span>
+                      <?php endif; ?>
+
+                      <span class="badge bg-light text-muted small"><i class="bi bi-clock me-1"></i><?= (int)$dish['prep_time_minutes'] ?>m</span>
+                    </div>
+
+                    <h5 class="fw-bold mb-1 text-dark"><?= e($dish['item_name']) ?></h5>
+                    <div class="fw-bold text-forest fs-5 mb-1"><?= format_inr($dish['price']) ?></div>
+                    <p class="text-muted small mb-0" style="max-width: 500px;">
+                      <?= e($dish['description']) ?>
+                    </p>
+                  </div>
+
+                  <!-- Dish Image & ADD Control -->
+                  <div class="position-relative text-center flex-shrink-0" style="width: 130px;">
+                    <img src="<?= e($dish['image_url']) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
+                    
+                    <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" style="margin-bottom: -14px;">
+                      <button 
+                        type="button" 
+                        class="btn btn-white btn-sm rounded-pill shadow px-3 py-1 fw-bold text-success border add-to-cart-btn"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                      >
+                        ADD +
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+        <?php endforeach; ?>
+
+      </div>
+
+      <!-- Right Column: Sticky Cart Sidebar -->
+      <div class="col-lg-4 d-none d-lg-block">
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white sticky-top" style="top: 90px;">
+          <div class="d-flex align-items-center justify-content-between border-bottom pb-3 mb-3">
+            <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-bag-check-fill text-success me-2"></i>Order Summary</h5>
+            <span class="badge bg-mint text-dark rounded-pill cart-count-badge">0</span>
+          </div>
+
+          <!-- Cart Items Container (Synced via JS app.js) -->
+          <div id="sidebarCartItems" class="mb-3" style="max-height: 320px; overflow-y: auto;">
+            <!-- Rendered via JS -->
+            <div class="text-center py-4 text-muted">
+              <i class="bi bi-cart3 fs-2 d-block mb-2 text-secondary opacity-50"></i>
+              <div class="small">Cart is currently empty</div>
+              <div class="small text-muted">Add items from the menu to start order</div>
+            </div>
+          </div>
+
+          <!-- Bill Summary Preview -->
+          <div class="border-top pt-3">
+            <div class="d-flex justify-content-between small text-muted mb-1">
+              <span>Subtotal</span>
+              <span class="fw-bold text-dark" id="sidebarSubtotal">₹0.00</span>
+            </div>
+            <div class="d-flex justify-content-between small text-muted mb-1">
+              <span>GST (5%)</span>
+              <span class="fw-semibold text-dark" id="sidebarGst">₹0.00</span>
+            </div>
+            <div class="d-flex justify-content-between small text-muted mb-2">
+              <span>Delivery Fee</span>
+              <span class="fw-semibold text-success" id="sidebarDelivery">₹0.00</span>
+            </div>
+            <div class="d-flex justify-content-between py-2 border-top mb-3">
+              <span class="fw-bold">Payable Total</span>
+              <span class="fw-bold text-forest fs-5" id="sidebarTotal">₹0.00</span>
+            </div>
+
+            <a href="<?= CUSTOMER_URL ?>/cart.php" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">
+              View Cart & Checkout <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</main>
+
+<script>
+// Filter veg switch on restaurant page
+document.addEventListener('DOMContentLoaded', () => {
+  const vegSwitch = document.getElementById('vegOnlySwitch');
+  if (vegSwitch) {
+    vegSwitch.addEventListener('change', () => {
+      const isVegOnly = vegSwitch.checked;
+      const rows = document.querySelectorAll('.dish-item-row');
+      rows.forEach(row => {
+        if (isVegOnly && row.getAttribute('data-veg') !== 'true') {
+          row.style.display = 'none';
+        } else {
+          row.style.display = 'flex';
+        }
+      });
+    });
+  }
+});
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -2,7 +2,7 @@
 -- ZIPPY FOOD ORDERING PLATFORM - SEED DATA SCRIPT
 -- =============================================================================
 
-USE `zippy_food`;
+USE `zippy_db`;
 
 -- 1. Insert Roles
 INSERT INTO `roles` (`role_id`, `role_name`, `description`) VALUES

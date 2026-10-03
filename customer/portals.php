@@ -125,7 +125,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div>
-              <a href="../html_design/delivery-partner.html" target="_blank" class="btn btn-info text-white w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
+              <a href="<?= DELIVERY_URL ?>/index.php" class="btn btn-info text-white w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
                 <i class="bi bi-box-arrow-up-right me-1"></i> Launch Courier App
               </a>
             </div>
@@ -156,7 +156,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div>
-              <a href="../html_design/admin-dashboard.html" target="_blank" class="btn btn-secondary w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
+              <a href="<?= ADMIN_URL ?>/index.php" class="btn btn-secondary w-100 rounded-pill fw-bold py-2 shadow-xs mb-2">
                 <i class="bi bi-box-arrow-up-right me-1"></i> Launch Admin Console
               </a>
             </div>

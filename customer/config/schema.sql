@@ -5,8 +5,8 @@
 -- Relational Database Engine: MySQL 8.0 InnoDB (3NF Fully Normalized Schema)
 -- ============================================================================
 
-CREATE DATABASE IF NOT EXISTS `zippy_food` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `zippy_food`;
+CREATE DATABASE IF NOT EXISTS `zippy_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `zippy_db`;
 
 -- ----------------------------------------------------------------------------
 -- 1. Table: roles (RBAC Authorization)

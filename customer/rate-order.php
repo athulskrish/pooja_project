@@ -1,69 +1,61 @@
 <?php
 /**
- * Post-Delivery Rating & Review System
- * MCSP-232: E-Commerce Platform for Food Order
+ * Rate Order & Delivery Rider
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Rate Your Order - Zippy';
+
+$pageTitle = 'Rate Your Food & Delivery';
+$activePage = 'orders';
+
 require_once __DIR__ . '/includes/header.php';
 
-$orderNumber = $_GET['order'] ?? 'ZIP-849201';
+$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1001;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    setFlash('success', 'Thank you for your valuable feedback and rating!');
-    header('Location: order-history.php');
-    exit;
+$order = db_fetch_one("
+    SELECT o.*, d.delivery_partner_name 
+    FROM `orders` o 
+    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id 
+    WHERE o.order_id = :id
+", [':id' => $orderId]);
+
+$submitted = false;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_rating') {
+    $submitted = true;
+    set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
 }
 ?>
 
-  <main class="container-xl py-4" style="max-width: 680px;">
+<main class="py-5">
+  <div class="container-xl">
     
-    <div class="p-4 p-md-5 bg-white rounded-4 border shadow-sm">
+    <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white text-center" style="max-width: 650px; margin: 0 auto;">
       
-      <div class="text-center pb-3 border-bottom mb-4">
-        <span class="badge bg-success bg-opacity-10 text-success fw-bold px-3 py-1 rounded-pill mb-2 font-monospace">
-          ORDER #<?= sanitize($orderNumber) ?> DELIVERED
+      <?php if ($submitted): ?>
+        <div class="my-4">
+          <div class="rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mb-3" style="width: 75px; height: 75px; background: #CEFFDC; color: #2E6F40;">
+            <i class="bi bi-star-fill fs-2"></i>
+          </div>
+          <h3 class="fw-bold font-outfit text-dark mb-2">Rating Received!</h3>
+          <p class="text-muted small mb-4">Your rating and courier tip for Order #ZIP-<?= $orderId ?> have been recorded successfully.</p>
+          <a href="<?= CUSTOMER_URL ?>/order-history.php" class="btn btn-success rounded-pill px-4" style="background:#2E6F40; border-color:#2E6F40;">
+            View Order History
+          </a>
+        </div>
+      <?php else: ?>
+        <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #2E6F40; color: #CEFFDC;">
+          CUSTOMER FEEDBACK
         </span>
-        <h3 class="fw-bold text-pine mb-1">How was your meal from Meghana Foods?</h3>
-        <p class="text-muted small mb-0">Your ratings help us improve food hygiene, kitchen prep, and courier speed.</p>
-      </div>
+        <h3 class="fw-bold font-outfit text-dark mb-1">How was your meal?</h3>
+        <p class="text-muted small mb-4">Order #ZIP-<?= $orderId ?> from Meghana Foods</p>
 
-      <form method="POST" action="rate-order.php">
-        
-        <!-- Food Rating (5 Stars) -->
-        <div class="text-center mb-4">
-          <label class="form-label fw-bold text-pine d-block mb-2">Rate Food Taste & Temperature</label>
-          <div class="d-flex justify-content-center gap-2 fs-2 text-warning cursor-pointer">
-            <i class="bi bi-star-fill"></i>
-            <i class="bi bi-star-fill"></i>
-            <i class="bi bi-star-fill"></i>
-            <i class="bi bi-star-fill"></i>
-            <i class="bi bi-star-fill"></i>
-          </div>
-          <span class="small text-muted fw-bold">5.0 • Loved It!</span>
-        </div>
+        <form method="POST" action="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="submit_rating">
 
-        <!-- Food Feedback Chips -->
-        <div class="mb-4">
-          <label class="form-label small fw-bold text-pine d-block mb-2">What did you enjoy most?</label>
-          <div class="d-flex flex-wrap gap-2">
-            <span class="badge bg-light text-pine border p-2 cursor-pointer border-success text-success"><i class="bi bi-check2 me-1"></i> Piping Hot</span>
-            <span class="badge bg-light text-pine border p-2 cursor-pointer border-success text-success"><i class="bi bi-check2 me-1"></i> Authentic Dum Flavors</span>
-            <span class="badge bg-light text-pine border p-2 cursor-pointer">Generous Portions</span>
-            <span class="badge bg-light text-pine border p-2 cursor-pointer border-success text-success"><i class="bi bi-check2 me-1"></i> Spill-Proof Packing</span>
-          </div>
-        </div>
-
-        <!-- Courier Rating -->
-        <div class="p-3 bg-light rounded-3 border mb-4">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-person-badge-fill text-success fs-4"></i>
-              <div>
-                <div class="fw-bold small text-pine">Rate Courier: Ramesh Kumar</div>
-                <div class="text-muted" style="font-size: 0.72rem;">Delivered on time with insulated bag</div>
-              </div>
-            </div>
-            <div class="text-warning fs-5">
+          <!-- Food Rating Stars -->
+          <div class="mb-4">
+            <label class="form-label small fw-bold text-muted text-uppercase" style="letter-spacing: 0.5px;">Food Quality & Taste</label>
+            <div class="fs-1 text-warning d-flex justify-content-center gap-2 cursor-pointer">
               <i class="bi bi-star-fill"></i>
               <i class="bi bi-star-fill"></i>
               <i class="bi bi-star-fill"></i>
@@ -72,32 +64,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
 
-          <!-- Rider Tip Selector -->
-          <div class="mt-3 pt-2 border-top">
-            <label class="small fw-bold text-pine d-block mb-2"><i class="bi bi-heart-fill text-danger me-1"></i> Add a tip for Ramesh?</label>
-            <div class="d-flex gap-2">
-              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">₹20</button>
-              <button type="button" class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background-color: var(--lush-forest);">₹30</button>
-              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">₹50</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3">Other</button>
+          <!-- Rider Rating Stars -->
+          <div class="mb-4 pt-3 border-top">
+            <label class="form-label small fw-bold text-muted text-uppercase" style="letter-spacing: 0.5px;">
+              Delivery Partner: <?= e($order['delivery_partner_name'] ?? 'Suresh Kumar') ?>
+            </label>
+            <div class="fs-1 text-warning d-flex justify-content-center gap-2 cursor-pointer">
+              <i class="bi bi-star-fill"></i>
+              <i class="bi bi-star-fill"></i>
+              <i class="bi bi-star-fill"></i>
+              <i class="bi bi-star-fill"></i>
+              <i class="bi bi-star"></i>
             </div>
           </div>
-        </div>
 
-        <!-- Comments Textarea -->
-        <div class="mb-4">
-          <label class="form-label small fw-bold text-pine">Detailed Review (Optional)</label>
-          <textarea class="form-control" rows="3" placeholder="Tell us more about the biryani tenderness, spices, or delivery experience..."></textarea>
-        </div>
+          <!-- Tip Selector -->
+          <div class="mb-4 pt-3 border-top">
+            <label class="form-label small fw-bold text-muted text-uppercase" style="letter-spacing: 0.5px;">Add a Tip for Rider</label>
+            <div class="d-flex justify-content-center gap-2">
+              <input type="radio" class="btn-check" name="tip" id="tip0" value="0" checked>
+              <label class="btn btn-outline-secondary btn-sm rounded-pill px-3" for="tip0">None</label>
 
-        <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-3 shadow-xs" style="background-color: var(--lush-forest);">
-          Submit Review & Ratings
-        </button>
+              <input type="radio" class="btn-check" name="tip" id="tip20" value="20">
+              <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="tip20">₹20</label>
 
-      </form>
+              <input type="radio" class="btn-check" name="tip" id="tip30" value="30">
+              <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="tip30">₹30</label>
+
+              <input type="radio" class="btn-check" name="tip" id="tip50" value="50">
+              <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="tip50">₹50</label>
+            </div>
+          </div>
+
+          <!-- Comments -->
+          <div class="mb-4">
+            <textarea name="comments" class="form-control rounded-3" rows="3" placeholder="Share your experience (Optional)..."></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 rounded-pill py-3 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">
+            Submit Feedback
+          </button>
+        </form>
+      <?php endif; ?>
 
     </div>
 
-  </main>
+  </div>
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

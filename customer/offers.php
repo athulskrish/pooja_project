@@ -1,103 +1,106 @@
 <?php
 /**
- * Offers & Deals Hub
- * MCSP-232: E-Commerce Platform for Food Order
+ * Offers, Discounts & Coupon Hub
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Offers, Deals & Promo Codes - Zippy';
+
+$pageTitle = 'Deals, Offers & Coupon Codes';
+$activePage = 'offers';
+
 require_once __DIR__ . '/includes/header.php';
+
+$coupons = get_available_coupons();
 ?>
 
-  <main class="container-xl py-4" style="max-width: 960px;">
+<main class="py-4">
+  <div class="container-xl">
     
-    <!-- Hero Banner -->
-    <div class="p-4 p-md-5 rounded-4 mb-4 text-white shadow-sm" style="background: linear-gradient(135deg, #1C3322 0%, #243E2C 60%, #2E6F40 100%);">
-      <span class="badge bg-mint text-pine fw-bold mb-2">OFFERS & PROMOTIONS</span>
-      <h2 class="display-6 fw-bold mb-2">Save More on Every Meal</h2>
-      <p class="lead text-white-50 mb-0" style="max-width: 600px;">
-        Apply verified discount coupons, unlock bank cashbacks, and enjoy free delivery on your favorite dishes.
+    <div class="text-center mb-5">
+      <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background:#CEFFDC; color:#243E2C;">
+        🔥 SAVE BIG ON EVERY ORDER
+      </span>
+      <h2 class="fw-bold font-outfit text-dark mb-2">Available Coupons & Payment Offers</h2>
+      <p class="text-muted small" style="max-width: 500px; margin: 0 auto;">
+        Apply verified discount codes at checkout to unlock savings across top restaurants in Bangalore.
       </p>
     </div>
 
     <!-- Active Promo Codes Grid -->
-    <h4 class="fw-bold text-pine mb-3"><i class="fa-solid fa-tags text-success me-2"></i> Verified Restaurant Promo Coupons</h4>
-    
     <div class="row g-4 mb-5">
       
-      <!-- Coupon 1: LUSHFOREST -->
-      <div class="col-md-6">
-        <div class="p-4 bg-white rounded-4 border shadow-xs h-100 d-flex flex-column justify-content-between" style="border-left: 5px solid var(--lush-forest) !important;">
-          <div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="badge bg-success bg-opacity-10 text-success fw-bold px-3 py-1">20% DISCOUNT</span>
-              <span class="small text-muted fw-bold">NO MIN ORDER</span>
-            </div>
-            <h5 class="fw-bold text-pine mb-1">Get 20% OFF up to ₹100</h5>
-            <p class="small text-muted mb-3">Valid across all Meghana Foods dishes, biryanis, curries, and sides.</p>
+      <!-- Coupon 1 -->
+      <div class="col-md-4">
+        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
+          <div class="position-absolute top-0 end-0 m-3">
+            <span class="badge" style="background:#2E6F40; color:#CEFFDC;">20% OFF</span>
           </div>
-          <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-            <span class="badge bg-light text-pine border font-monospace fs-6 px-3 py-2">LUSHFOREST</span>
-            <button class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold" onclick="copyCouponCode('LUSHFOREST')">
-              <i class="bi bi-copy me-1"></i> COPY CODE
+
+          <div>
+            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#EDFBF2; color:#2E6F40;">
+              <i class="fa-solid fa-seedling fs-5"></i>
+            </div>
+            <h5 class="fw-bold text-dark mb-1 font-outfit">Lush Forest Special</h5>
+            <p class="text-muted small mb-3">
+              Get 20% discount up to ₹100 on orders above ₹299. Exclusive to our Figma Lush Forest edition!
+            </p>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+            <code class="fs-5 fw-bold text-forest">LUSHFOREST</code>
+            <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('LUSHFOREST'); localStorage.setItem('pooja_active_coupon', 'LUSHFOREST'); showToast('Coupon LUSHFOREST applied & copied!');" style="background:#2E6F40; border-color:#2E6F40;">
+              APPLY
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Coupon 2: ZIPPY50 -->
-      <div class="col-md-6">
-        <div class="p-4 bg-white rounded-4 border shadow-xs h-100 d-flex flex-column justify-content-between" style="border-left: 5px solid var(--lush-pine) !important;">
-          <div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="badge bg-danger bg-opacity-10 text-danger fw-bold px-3 py-1">50% DISCOUNT</span>
-              <span class="small text-muted fw-bold">FIRST ORDER</span>
-            </div>
-            <h5 class="fw-bold text-pine mb-1">50% OFF on Your First Order</h5>
-            <p class="small text-muted mb-3">Welcome deal for new customers. Maximum discount capped at ₹100.</p>
+      <!-- Coupon 2 -->
+      <div class="col-md-4">
+        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
+          <div class="position-absolute top-0 end-0 m-3">
+            <span class="badge bg-danger">50% OFF</span>
           </div>
-          <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-            <span class="badge bg-light text-pine border font-monospace fs-6 px-3 py-2">ZIPPY50</span>
-            <button class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold" onclick="copyCouponCode('ZIPPY50')">
-              <i class="bi bi-copy me-1"></i> COPY CODE
+
+          <div>
+            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#fff1f1; color:#D32F2F;">
+              <i class="fa-solid fa-fire-flame-curved fs-5"></i>
+            </div>
+            <h5 class="fw-bold text-dark mb-1 font-outfit">Mega Feast 50</h5>
+            <p class="text-muted small mb-3">
+              Enjoy flat 50% discount up to ₹120 on orders above ₹399. Valid across all biryani and curries.
+            </p>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+            <code class="fs-5 fw-bold text-danger">ZIPPY50</code>
+            <button class="btn btn-sm btn-danger rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('ZIPPY50'); localStorage.setItem('pooja_active_coupon', 'ZIPPY50'); showToast('Coupon ZIPPY50 applied & copied!');">
+              APPLY
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Coupon 3: STEALDEAL -->
-      <div class="col-md-6">
-        <div class="p-4 bg-white rounded-4 border shadow-xs h-100 d-flex flex-column justify-content-between" style="border-left: 5px solid var(--lush-sage) !important;">
-          <div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="badge bg-warning bg-opacity-25 text-dark fw-bold px-3 py-1">FLAT ₹125 OFF</span>
-              <span class="small text-muted fw-bold">ABOVE ₹349</span>
-            </div>
-            <h5 class="fw-bold text-pine mb-1">Flat ₹125 OFF on Party Orders</h5>
-            <p class="small text-muted mb-3">Valid on minimum cart value of ₹349. Great for family Biryani combos.</p>
+      <!-- Coupon 3 -->
+      <div class="col-md-4">
+        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
+          <div class="position-absolute top-0 end-0 m-3">
+            <span class="badge bg-warning text-dark">FLAT ₹50</span>
           </div>
-          <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-            <span class="badge bg-light text-pine border font-monospace fs-6 px-3 py-2">STEALDEAL</span>
-            <button class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold" onclick="copyCouponCode('STEALDEAL')">
-              <i class="bi bi-copy me-1"></i> COPY CODE
-            </button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Coupon 4: WELCOME20 -->
-      <div class="col-md-6">
-        <div class="p-4 bg-white rounded-4 border shadow-xs h-100 d-flex flex-column justify-content-between" style="border-left: 5px solid #0284C7 !important;">
           <div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="badge bg-info bg-opacity-10 text-info fw-bold px-3 py-1">₹80 CASHBACK</span>
-              <span class="small text-muted fw-bold">ALL USERS</span>
+            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#fffbe6; color:#E5A100;">
+              <i class="fa-solid fa-gift fs-5"></i>
             </div>
-            <h5 class="fw-bold text-pine mb-1">Instant ₹80 Off on Orders above ₹249</h5>
-            <p class="small text-muted mb-3">Applicable on payments made via Google Pay, PhonePe, or Cards.</p>
+            <h5 class="fw-bold text-dark mb-1 font-outfit">Welcome Treat</h5>
+            <p class="text-muted small mb-3">
+              Flat ₹50 OFF on your first food order above ₹199. Zero terms & conditions, instant savings!
+            </p>
           </div>
-          <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-            <span class="badge bg-light text-pine border font-monospace fs-6 px-3 py-2">WELCOME20</span>
-            <button class="btn btn-sm btn-outline-success rounded-pill px-4 fw-bold" onclick="copyCouponCode('WELCOME20')">
-              <i class="bi bi-copy me-1"></i> COPY CODE
+
+          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+            <code class="fs-5 fw-bold text-dark">WELCOME</code>
+            <button class="btn btn-sm btn-dark rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('WELCOME'); localStorage.setItem('pooja_active_coupon', 'WELCOME'); showToast('Coupon WELCOME applied & copied!');">
+              APPLY
             </button>
           </div>
         </div>
@@ -105,39 +108,36 @@ require_once __DIR__ . '/includes/header.php';
 
     </div>
 
-    <!-- Bank Partner Deals -->
-    <h4 class="fw-bold text-pine mb-3"><i class="bi bi-credit-card-2-front text-success me-2"></i> Bank & Payment Partner Deals</h4>
+    <!-- Bank & Payment Offers -->
+    <h4 class="fw-bold mb-3 font-outfit text-dark"><i class="bi bi-bank text-success me-2"></i>Bank & Digital Payment Offers</h4>
+    
     <div class="row g-3">
-      <div class="col-md-4">
-        <div class="p-3 bg-white rounded-3 border">
-          <div class="fw-bold text-pine"><i class="bi bi-bank me-2 text-danger"></i> HDFC Bank Cards</div>
-          <div class="small text-muted">10% Instant Discount up to ₹150 on HDFC Credit & Debit Cards on orders &ge; ₹500.</div>
+      <div class="col-md-6">
+        <div class="card border-0 rounded-4 shadow-sm p-3 bg-white d-flex flex-row align-items-center gap-3">
+          <div class="p-3 rounded-3 bg-light border text-primary fs-3">
+            <i class="bi bi-credit-card"></i>
+          </div>
+          <div>
+            <div class="fw-bold text-dark">HDFC Bank Credit & Debit Cards</div>
+            <p class="small text-muted mb-0">Flat 15% instant discount up to ₹150 on minimum transaction of ₹600.</p>
+          </div>
         </div>
       </div>
-      <div class="col-md-4">
-        <div class="p-3 bg-white rounded-3 border">
-          <div class="fw-bold text-pine"><i class="bi bi-google me-2 text-primary"></i> Google Pay UPI</div>
-          <div class="small text-muted">Win up to ₹50 cashback scratch card on orders &ge; ₹299 using Google Pay.</div>
-        </div>
-      </div>
-      <div class="col-md-4">
-        <div class="p-3 bg-white rounded-3 border">
-          <div class="fw-bold text-pine"><i class="bi bi-lightning-charge-fill me-2 text-warning"></i> CRED Pay</div>
-          <div class="small text-muted">Flat ₹60 cashback for CRED members with minimum bill amount of ₹400.</div>
+
+      <div class="col-md-6">
+        <div class="card border-0 rounded-4 shadow-sm p-3 bg-white d-flex flex-row align-items-center gap-3">
+          <div class="p-3 rounded-3 bg-light border text-success fs-3">
+            <i class="bi bi-qr-code-scan"></i>
+          </div>
+          <div>
+            <div class="fw-bold text-dark">Google Pay & UPI Instant Cashback</div>
+            <p class="small text-muted mb-0">Earn up to ₹75 scratch card cashback on payments made via UPI.</p>
+          </div>
         </div>
       </div>
     </div>
 
-  </main>
-
-  <script>
-    function copyCouponCode(code) {
-      navigator.clipboard.writeText(code).then(() => {
-        showToast(`Coupon "${code}" copied to clipboard! Paste it at checkout.`);
-      }).catch(() => {
-        showToast(`Coupon: ${code}`);
-      });
-    }
-  </script>
+  </div>
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

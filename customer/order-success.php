@@ -1,103 +1,123 @@
 <?php
 /**
- * Order Success & Confirmation Celebration Page
- * MCSP-232: E-Commerce Platform for Food Order
+ * Order Success & Confirmation Page
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Order Placed Successfully! - Zippy';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/models/Order.php';
 
-$orderNumber = $_GET['order'] ?? 'ZIP-948261';
-$order = Order::getByOrderNumber($orderNumber);
+$pageTitle = 'Order Placed Successfully!';
+$activePage = 'orders';
+
+require_once __DIR__ . '/includes/header.php';
+
+$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1004;
+
+// Fetch Order Details
+$order = db_fetch_one("
+    SELECT o.*, u.full_name, u.phone_number, u.email,
+           a.address_line, a.pincode,
+           p.payment_mode, p.transaction_reference, p.payment_status,
+           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status
+    FROM `orders` o
+    JOIN `users` u ON o.user_id = u.user_id
+    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+    LEFT JOIN `payments` p ON o.order_id = p.order_id
+    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+    WHERE o.order_id = :id
+", [':id' => $orderId]);
+
+if (!$order) {
+    echo "<div class='container py-5 text-center'><h4>Order not found</h4><a href='" . CUSTOMER_URL . "/index.php' class='btn btn-success rounded-pill mt-3'>Return to Home</a></div>";
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
+
+// Fetch Items
+$orderItems = db_fetch_all("
+    SELECT oi.*, m.item_name, m.is_veg, m.image_url 
+    FROM `order_items` oi
+    JOIN `menu_items` m ON oi.item_id = m.item_id
+    WHERE oi.order_id = :id
+", [':id' => $orderId]);
 ?>
 
-  <main class="container-xl py-5" style="max-width: 760px;">
+<main class="py-5">
+  <div class="container-xl">
     
-    <!-- Success Celebration Card -->
-    <div class="p-4 p-md-5 bg-white rounded-4 border shadow-sm text-center mb-4">
+    <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white text-center mb-4" style="max-width: 760px; margin: 0 auto;">
       
-      <!-- Animated Success Icon -->
-      <div class="spec-icon mx-auto mb-3 bg-success text-white rounded-circle d-flex align-items-center justify-content-center shadow" style="width: 80px; height: 80px; font-size: 2.5rem; background-color: var(--lush-forest) !important;">
-        <i class="bi bi-check-lg"></i>
+      <!-- Animated Check Icon -->
+      <div class="mb-4">
+        <div class="rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm" style="width: 84px; height: 84px; background: #CEFFDC; color: #2E6F40;">
+          <i class="bi bi-check-lg" style="font-size: 3rem;"></i>
+        </div>
       </div>
 
-      <span class="badge bg-success bg-opacity-10 text-success fw-bold px-3 py-1 rounded-pill mb-2">ORDER CONFIRMED</span>
-      <h2 class="fw-extrabold text-pine mb-2">Thank you! Your food is on its way.</h2>
-      <p class="text-muted small mb-4" style="max-width: 480px; margin: 0 auto;">
-        We've received your order. Meghana Foods has accepted the ticket and cooking has begun in our Indiranagar kitchen.
+      <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #2E6F40; color: #CEFFDC;">
+        ORDER CONFIRMED & QUEUED
+      </span>
+
+      <h2 class="fw-bold font-outfit text-dark mb-2">Thank you, <?= e($order['full_name']) ?>!</h2>
+      <p class="text-muted small mb-4">
+        Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> has been sent to the kitchen. Our cooks are preparing your fresh meal!
       </p>
 
-      <!-- Key Order Meta Grid -->
+      <!-- Secret 6-Digit Delivery OTP Card -->
+      <div class="p-3 p-md-4 rounded-4 mb-4 text-start" style="background: #EDFBF2; border: 2px dashed #2E6F40;">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-shield-lock-fill text-success fs-5"></i>
+              <strong class="text-dark">Secret Delivery Handshake OTP</strong>
+            </div>
+            <div class="small text-muted">
+              Share this 6-digit code with courier <strong class="text-dark"><?= e($order['delivery_partner_name'] ?: 'Zippy Express Rider') ?></strong> only when you receive your food bag.
+            </div>
+          </div>
+          <div class="bg-white px-4 py-2 rounded-3 border shadow-sm text-center">
+            <span class="small text-muted d-block" style="font-size: 0.7rem; letter-spacing: 1px;">DELIVERY OTP</span>
+            <span class="fs-2 fw-bold font-monospace text-forest" style="letter-spacing: 4px;">
+              <?= e($order['delivery_otp'] ?: '482194') ?>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
       <div class="row g-3 text-start mb-4">
-        
-        <!-- Order Number -->
         <div class="col-sm-6">
           <div class="p-3 rounded-3 bg-light border">
-            <span class="small text-muted fw-bold text-uppercase d-block mb-1">ORDER ID</span>
-            <div class="fw-bold text-pine font-monospace fs-5"><?= sanitize($order['order_number'] ?? $orderNumber) ?></div>
-            <span class="small text-muted">Placed at <?= date('h:i A') ?></span>
+            <div class="small text-muted">Total Paid (<?= e($order['payment_mode']) ?>)</div>
+            <div class="fw-bold fs-5 text-dark"><?= format_inr($order['total_amount']) ?></div>
+            <div class="small text-muted text-truncate">Ref: <?= e($order['transaction_reference']) ?></div>
           </div>
         </div>
-
-        <!-- Secret Delivery OTP -->
         <div class="col-sm-6">
-          <div class="p-3 rounded-3 border" style="background-color: var(--lush-mint-soft); border-color: var(--lush-sage) !important;">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="small text-success fw-bold text-uppercase">SECRET DELIVERY OTP</span>
-              <span class="badge bg-success text-white small">Rider Verification</span>
+          <div class="p-3 rounded-3 bg-light border">
+            <div class="small text-muted">Estimated Delivery Time</div>
+            <div class="fw-bold fs-5 text-success">
+              <i class="bi bi-clock-history me-1"></i> 25-30 Mins
             </div>
-            <div class="fw-extrabold text-pine font-monospace fs-4" style="letter-spacing: 2px;">
-              <?= sanitize($order['delivery_otp'] ?? '839210') ?>
-            </div>
-            <span class="small text-muted">Share only with rider upon doorstep delivery</span>
+            <div class="small text-muted">Arriving at <?= e($order['address_line'] ?: 'Indiranagar') ?></div>
           </div>
         </div>
-
       </div>
 
       <!-- Action Buttons -->
-      <div class="d-flex flex-wrap gap-2 justify-content-center">
-        <a href="order-status.php?order=<?= urlencode($orderNumber) ?>" class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-xs" style="background-color: var(--lush-forest);">
-          <i class="fa-solid fa-location-crosshairs me-2"></i> Track Order Live
+      <div class="d-flex flex-wrap gap-3 justify-content-center pt-2 border-top">
+        <a href="<?= CUSTOMER_URL ?>/order-status.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">
+          <i class="bi bi-geo-alt-fill me-1"></i> Live Order Tracker
         </a>
-        <a href="invoice.php?order=<?= urlencode($orderNumber) ?>" class="btn btn-outline-secondary rounded-pill px-4 py-2 fw-bold">
-          <i class="bi bi-receipt me-2"></i> GST Tax Invoice
+        <a href="<?= CUSTOMER_URL ?>/invoice.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-outline-success rounded-pill px-4 py-2 fw-semibold" target="_blank">
+          <i class="bi bi-file-earmark-text me-1"></i> Tax Invoice (GST)
         </a>
-        <a href="kitchen-display.php" class="btn btn-warning rounded-pill px-4 py-2 fw-bold text-dark">
-          <i class="fa-solid fa-fire-burner me-2"></i> View in Kitchen KDS
+        <a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-light rounded-pill px-4 py-2 text-muted border">
+          Order More Food
         </a>
       </div>
 
     </div>
 
-    <!-- Items Ordered Summary -->
-    <?php if (!empty($order['items'])): ?>
-      <div class="p-4 bg-white rounded-4 border shadow-xs mb-4">
-        <h5 class="fw-bold text-pine mb-3">Order Details</h5>
-        <div class="d-flex flex-column gap-2 border-bottom pb-3 mb-3">
-          <?php foreach ($order['items'] as $it): ?>
-            <div class="d-flex justify-content-between align-items-center small">
-              <div>
-                <span class="food-type-icon <?= !empty($it['is_veg']) ? 'veg' : 'non-veg' ?> me-1"></span>
-                <strong><?= sanitize($it['item_name']) ?></strong> &times; <?= $it['quantity'] ?>
-              </div>
-              <div class="fw-bold text-pine"><?= formatPrice($it['line_total'] ?? ($it['unit_price'] * $it['quantity'])) ?></div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-        <div class="d-flex justify-content-between align-items-center fw-bold text-pine">
-          <span>Total Paid (incl. 5% GST & delivery)</span>
-          <span class="text-success fs-5"><?= formatPrice($order['total_amount'] ?? 0) ?></span>
-        </div>
-      </div>
-    <?php endif; ?>
-
-  </main>
-
-  <script>
-    // Clear client-side cart after successful order placement
-    localStorage.removeItem('pooja_zippy_cart');
-    localStorage.removeItem('pooja_active_coupon');
-  </script>
+  </div>
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

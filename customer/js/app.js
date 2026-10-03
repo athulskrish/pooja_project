@@ -29,8 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCheckoutPage();
   }
 
-  // Order status page specific initializer
-  if (document.getElementById('live-eta-countdown')) {
+  // Order status page specific initializer (only if not handled by dedicated tracker)
+  if (document.getElementById('live-eta-countdown') && !window.orderTrackingActive) {
     initOrderStatusSimulation();
   }
 });
@@ -175,7 +175,7 @@ function renderCartDrawer() {
         <i class="bi bi-cart-x display-3 text-muted"></i>
         <h5 class="mt-3 fw-bold text-pine">Your cart is empty</h5>
         <p class="text-muted small">Good food is always just a few clicks away! Explore delicious dishes from top restaurants.</p>
-        <a href="index.html" class="btn btn-outline-success rounded-pill px-4 fw-bold">Explore Food</a>
+        <a href="index.php" class="btn btn-outline-success rounded-pill px-4 fw-bold">Explore Food</a>
       </div>
     `;
     if (footerContainer) footerContainer.style.display = 'none';
@@ -494,15 +494,32 @@ function showToast(message, type = 'success') {
 }
 
 /**
- * Order Tracking Simulated ETA Countdown
+ * Order Tracking Simulated ETA Countdown (for static prototypes or fallback)
  */
 function initOrderStatusSimulation() {
-  let minutes = 19;
-  let seconds = 45;
   const countdownEl = document.getElementById('live-eta-countdown');
   if (!countdownEl) return;
 
-  setInterval(() => {
+  // Don't run simulation if handled by order-status page or if order is completed/delivered/cancelled
+  const status = (countdownEl.getAttribute('data-status') || '').toUpperCase();
+  if (status === 'DELIVERED' || status === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
+    return;
+  }
+
+  const initialText = countdownEl.textContent.trim().toUpperCase();
+  if (initialText.includes('DELIVERED') || initialText.includes('ARRIVED') || initialText.includes('CANCELLED')) {
+    return;
+  }
+
+  let minutes = 19;
+  let seconds = 45;
+
+  const simTimer = setInterval(() => {
+    const currentStatus = (countdownEl.getAttribute('data-status') || '').toUpperCase();
+    if (currentStatus === 'DELIVERED' || currentStatus === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
+      clearInterval(simTimer);
+      return;
+    }
     if (seconds > 0) {
       seconds--;
     } else {
@@ -529,35 +546,35 @@ function initMobileBottomNav() {
 
   if (document.querySelector('.mobile-bottom-nav')) return;
 
-  const currentPath = window.location.pathname.toLowerCase();
-  const isHome = currentPath.endsWith('index.html') || currentPath.endsWith('/') || currentPath.endsWith('pooja_project');
-  const isSearch = currentPath.includes('search.html');
-  const isOffers = currentPath.includes('offers.html');
-  const isOrders = currentPath.includes('order-history.html') || currentPath.includes('order-status.html');
-  const isProfile = currentPath.includes('profile.html') || currentPath.includes('manage-addresses.html');
+  const ext = currentPath.includes('.html') ? '.html' : '.php';
+  const isHome = currentPath.endsWith('index' + ext) || currentPath.endsWith('/') || currentPath.endsWith('customer');
+  const isSearch = currentPath.includes('search');
+  const isOffers = currentPath.includes('offers');
+  const isOrders = currentPath.includes('order-history') || currentPath.includes('order-status');
+  const isProfile = currentPath.includes('profile') || currentPath.includes('manage-addresses');
 
   const nav = document.createElement('nav');
   nav.className = 'mobile-bottom-nav d-lg-none';
   nav.setAttribute('aria-label', 'Mobile Bottom Navigation');
 
   nav.innerHTML = `
-    <a href="index.html" class="mobile-nav-btn ${isHome ? 'active' : ''}">
+    <a href="index${ext}" class="mobile-nav-btn ${isHome ? 'active' : ''}">
       <i class="bi bi-house-door-fill"></i>
       <span>Home</span>
     </a>
-    <a href="search.html" class="mobile-nav-btn ${isSearch ? 'active' : ''}">
+    <a href="search${ext}" class="mobile-nav-btn ${isSearch ? 'active' : ''}">
       <i class="bi bi-search"></i>
       <span>Search</span>
     </a>
-    <a href="offers.html" class="mobile-nav-btn ${isOffers ? 'active' : ''}">
+    <a href="offers${ext}" class="mobile-nav-btn ${isOffers ? 'active' : ''}">
       <i class="fa-solid fa-percent"></i>
       <span>Offers</span>
     </a>
-    <a href="order-history.html" class="mobile-nav-btn ${isOrders ? 'active' : ''}">
+    <a href="order-history${ext}" class="mobile-nav-btn ${isOrders ? 'active' : ''}">
       <i class="bi bi-clock-history"></i>
       <span>Orders</span>
     </a>
-    <a href="profile.html" class="mobile-nav-btn ${isProfile ? 'active' : ''}">
+    <a href="profile${ext}" class="mobile-nav-btn ${isProfile ? 'active' : ''}">
       <i class="bi bi-person-circle"></i>
       <span>Profile</span>
     </a>

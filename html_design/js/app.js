@@ -29,8 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCheckoutPage();
   }
 
-  // Order status page specific initializer
-  if (document.getElementById('live-eta-countdown')) {
+  // Order status page specific initializer (only if not handled by dedicated tracker)
+  if (document.getElementById('live-eta-countdown') && !window.orderTrackingActive) {
     initOrderStatusSimulation();
   }
 });
@@ -494,15 +494,32 @@ function showToast(message, type = 'success') {
 }
 
 /**
- * Order Tracking Simulated ETA Countdown
+ * Order Tracking Simulated ETA Countdown (for static prototypes or fallback)
  */
 function initOrderStatusSimulation() {
-  let minutes = 19;
-  let seconds = 45;
   const countdownEl = document.getElementById('live-eta-countdown');
   if (!countdownEl) return;
 
-  setInterval(() => {
+  // Don't run simulation if handled by order-status page or if order is completed/delivered/cancelled
+  const status = (countdownEl.getAttribute('data-status') || '').toUpperCase();
+  if (status === 'DELIVERED' || status === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
+    return;
+  }
+
+  const initialText = countdownEl.textContent.trim().toUpperCase();
+  if (initialText.includes('DELIVERED') || initialText.includes('ARRIVED') || initialText.includes('CANCELLED')) {
+    return;
+  }
+
+  let minutes = 19;
+  let seconds = 45;
+
+  const simTimer = setInterval(() => {
+    const currentStatus = (countdownEl.getAttribute('data-status') || '').toUpperCase();
+    if (currentStatus === 'DELIVERED' || currentStatus === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
+      clearInterval(simTimer);
+      return;
+    }
     if (seconds > 0) {
       seconds--;
     } else {

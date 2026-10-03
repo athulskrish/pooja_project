@@ -1,126 +1,137 @@
 <?php
 /**
- * Customer Order History & Reordering
- * MCSP-232: E-Commerce Platform for Food Order
+ * Customer Order History & Tax Invoices
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'My Orders & Order History - Zippy';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/models/Order.php';
 
-$userId = $_SESSION['user']['user_id'] ?? 1;
-$orders = Order::getUserOrders($userId);
+$pageTitle = 'Order History & Receipts';
+$activePage = 'orders';
+
+require_once __DIR__ . '/includes/header.php';
+
+$userId = $currentUser ? $currentUser['id'] : 2; // Default to demo customer Pooja JP if guest
+
+$orders = db_fetch_all("
+    SELECT o.*, 
+           COUNT(oi.order_item_id) AS total_items_count,
+           d.delivery_partner_name, d.delivery_otp,
+           p.payment_mode, p.payment_status
+    FROM `orders` o
+    LEFT JOIN `order_items` oi ON o.order_id = oi.order_id
+    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+    LEFT JOIN `payments` p ON o.order_id = p.order_id
+    WHERE o.user_id = :uid
+    GROUP BY o.order_id
+    ORDER BY o.placed_at DESC
+", [':uid' => $userId]);
+
+// Fetch item details for these orders
+$orderItemsGrouped = [];
+if (!empty($orders)) {
+    $orderIds = array_column($orders, 'order_id');
+    $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+    $itemsRaw = db_fetch_all("
+        SELECT oi.*, m.item_name, m.is_veg 
+        FROM `order_items` oi
+        JOIN `menu_items` m ON oi.item_id = m.item_id
+        WHERE oi.order_id IN ($placeholders)
+    ", $orderIds);
+
+    foreach ($itemsRaw as $item) {
+        $orderItemsGrouped[$item['order_id']][] = $item;
+    }
+}
 ?>
 
-  <main class="container-xl py-4" style="max-width: 860px;">
+<main class="py-4">
+  <div class="container-xl">
     
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
       <div>
-        <h2 class="fw-bold text-pine mb-1">My Orders</h2>
-        <p class="text-muted small mb-0">Track active orders, download tax invoices, and reorder favorites.</p>
+        <h2 class="fw-bold mb-0 font-outfit text-dark"><i class="bi bi-clock-history text-success me-2"></i>Past Orders & History</h2>
+        <p class="text-muted small mb-0">Showing orders placed by <?= e($currentUser ? $currentUser['name'] : 'Pooja JP') ?></p>
       </div>
-      <a href="restaurant.php" class="btn btn-sm btn-success rounded-pill px-4 fw-bold" style="background-color: var(--lush-forest);">
-        + Order Food
+      <a href="<?= CUSTOMER_URL ?>/index.php#dishes" class="btn btn-success btn-sm rounded-pill px-3 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+        <i class="bi bi-plus-circle me-1"></i> Order Food
       </a>
     </div>
 
     <?php if (empty($orders)): ?>
-      <div class="text-center py-5 bg-white rounded-4 border">
-        <i class="bi bi-clock-history text-muted fs-1 mb-2"></i>
-        <h5 class="fw-bold text-pine">No past orders found</h5>
-        <p class="text-muted small">You haven't placed any food orders yet.</p>
-        <a href="restaurant.php" class="btn btn-sm btn-success rounded-pill px-4 fw-bold">Browse Menu</a>
+      <div class="card border-0 rounded-4 shadow-sm p-5 text-center bg-white">
+        <i class="bi bi-receipt text-muted opacity-50 mb-3" style="font-size: 3.5rem;"></i>
+        <h5 class="fw-bold text-dark">No orders placed yet</h5>
+        <p class="text-muted small mb-4">Explore our delicious biryanis, curries and rolls to place your first order.</p>
+        <div>
+          <a href="<?= CUSTOMER_URL ?>/index.php#dishes" class="btn btn-success rounded-pill px-4 py-2 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+            Browse Dishes
+          </a>
+        </div>
       </div>
     <?php else: ?>
-      <div class="d-flex flex-column gap-4">
-        <?php foreach ($orders as $ord): ?>
-          <?php 
-            $status = strtoupper($ord['order_status']);
-            $isDelivered = ($status === 'DELIVERED');
-          ?>
-          <div class="p-4 bg-white rounded-4 border shadow-xs">
-            
-            <!-- Order Header Bar -->
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 pb-3 border-bottom mb-3">
-              <div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                  <h5 class="fw-bold text-pine mb-0">Meghana Foods</h5>
-                  <span class="badge bg-light text-muted border small">Indiranagar Outlet</span>
+      <div class="row g-4">
+        <?php foreach ($orders as $order): ?>
+          <?php $items = $orderItemsGrouped[$order['order_id']] ?? []; ?>
+          <div class="col-12">
+            <div class="card border-0 rounded-4 shadow-sm p-4 bg-white hover-lift">
+              <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
+                <div>
+                  <span class="fw-bold fs-5 text-dark me-2">Order #ZIP-<?= (int)$order['order_id'] ?></span>
+                  <span class="text-muted small">Placed on <?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?></span>
                 </div>
-                <div class="small text-muted font-monospace">
-                  #<?= sanitize($ord['order_number']) ?> • <?= date('d M Y, h:i A', strtotime($ord['placed_at'])) ?>
+                <div>
+                  <?= get_status_badge($order['order_status']) ?>
                 </div>
               </div>
 
-              <div class="text-end">
-                <span class="badge <?= $isDelivered ? 'bg-success' : 'bg-warning text-dark' ?> fw-bold px-3 py-1 rounded-pill">
-                  <?= sanitize($status) ?>
-                </span>
-                <div class="fw-bold text-pine fs-6 mt-1"><?= formatPrice($ord['total_amount']) ?></div>
-              </div>
-            </div>
-
-            <!-- Items List -->
-            <div class="d-flex flex-column gap-2 mb-3">
-              <?php if (!empty($ord['items'])): ?>
-                <?php foreach ($ord['items'] as $item): ?>
-                  <div class="d-flex justify-content-between small text-muted">
-                    <div>
-                      <span class="food-type-icon <?= !empty($item['is_veg']) ? 'veg' : 'non-veg' ?> me-1"></span>
-                      <strong><?= sanitize($item['item_name']) ?></strong> &times; <?= $item['quantity'] ?? 1 ?>
-                    </div>
-                    <span><?= formatPrice(($item['unit_price'] ?? 0) * ($item['quantity'] ?? 1)) ?></span>
-                  </div>
-                <?php endforeach; ?>
-              <?php endif; ?>
-            </div>
-
-            <!-- Order Footer & Action CTAs -->
-            <div class="pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
-              <div class="small text-muted">
-                <?php if (!$isDelivered): ?>
-                  <span class="text-success fw-bold"><i class="bi bi-geo-alt-fill me-1"></i> Food in preparation</span>
-                <?php else: ?>
-                  <span>Delivered by <?= sanitize($ord['delivery_partner_name'] ?? 'Ramesh Kumar') ?></span>
-                <?php endif; ?>
-              </div>
-
-              <div class="d-flex gap-2">
-                <?php if (!$isDelivered): ?>
-                  <a href="order-status.php?order=<?= urlencode($ord['order_number']) ?>" class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background-color: var(--lush-forest);">
-                    <i class="fa-solid fa-location-crosshairs me-1"></i> Track Live
-                  </a>
-                <?php else: ?>
-                  <a href="rate-order.php?order=<?= urlencode($ord['order_number']) ?>" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">
-                    <i class="bi bi-star me-1"></i> Rate Order
-                  </a>
-                <?php endif; ?>
+              <div class="row align-items-center g-3">
                 
-                <a href="invoice.php?order=<?= urlencode($ord['order_number']) ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                  <i class="bi bi-receipt me-1"></i> Invoice
-                </a>
+                <!-- Items Summary -->
+                <div class="col-lg-6">
+                  <div class="small fw-bold text-muted text-uppercase mb-2" style="font-size: 0.7rem; letter-spacing: 0.5px;">Ordered Items:</div>
+                  <div class="d-flex flex-column gap-1">
+                    <?php foreach ($items as $item): ?>
+                      <div class="d-flex align-items-center gap-2 small">
+                        <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1" style="font-size:0.6rem;"><?= (int)$item['quantity'] ?>x</span>
+                        <span class="text-dark fw-semibold"><?= e($item['item_name']) ?></span>
+                        <span class="text-muted ms-auto"><?= format_inr($item['line_total']) ?></span>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
 
-                <button class="btn btn-sm btn-light border rounded-pill px-3 fw-bold" onclick="reorderItems(<?= htmlspecialchars(json_encode($ord['items'] ?? [])) ?>)">
-                  <i class="bi bi-arrow-repeat me-1 text-success"></i> Reorder
-                </button>
+                <!-- Order Pricing & OTP -->
+                <div class="col-lg-3 border-start ps-lg-4">
+                  <div class="small text-muted mb-1">Total Bill: <strong class="text-forest fs-5 d-block"><?= format_inr($order['total_amount']) ?></strong></div>
+                  <div class="small text-muted mb-2">Paid via <span class="badge bg-light text-dark border"><?= e($order['payment_mode']) ?></span></div>
+                  <?php if (!empty($order['delivery_otp'])): ?>
+                    <div class="small text-muted">Delivery OTP: <span class="badge bg-mint text-dark font-monospace fw-bold"><?= e($order['delivery_otp']) ?></span></div>
+                  <?php endif; ?>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="col-lg-3 text-lg-end border-start ps-lg-4">
+                  <div class="d-flex flex-column gap-2">
+                    <a href="<?= CUSTOMER_URL ?>/order-status.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-outline-success btn-sm rounded-pill fw-semibold py-2">
+                      <i class="bi bi-geo-alt-fill me-1"></i> Live Tracker
+                    </a>
+                    <a href="<?= CUSTOMER_URL ?>/invoice.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-light btn-sm rounded-pill border py-2 text-muted" target="_blank">
+                      <i class="bi bi-file-earmark-text me-1 text-success"></i> Tax Invoice
+                    </a>
+                    <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-light btn-sm rounded-pill border py-2 text-muted">
+                      <i class="bi bi-star me-1 text-warning"></i> Rate Food
+                    </a>
+                  </div>
+                </div>
+
               </div>
-            </div>
 
+            </div>
           </div>
         <?php endforeach; ?>
       </div>
     <?php endif; ?>
 
-  </main>
-
-  <script>
-    function reorderItems(items) {
-      if (!items || items.length === 0) return;
-      items.forEach(it => {
-        addToCart(it.item_id || 1, it.item_name, it.unit_price || 300, it.is_veg);
-      });
-      showToast('Items added to cart! Redirecting...');
-      setTimeout(() => { window.location.href = 'cart.php'; }, 700);
-    }
-  </script>
+  </div>
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

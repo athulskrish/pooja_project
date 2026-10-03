@@ -4,8 +4,8 @@
 -- Engine: MySQL 8.0 InnoDB with Referential Integrity, Triggers & Procedures
 -- =============================================================================
 
-CREATE DATABASE IF NOT EXISTS `zippy_food` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `zippy_food`;
+CREATE DATABASE IF NOT EXISTS `zippy_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `zippy_db`;
 
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `order_audit_trail`;

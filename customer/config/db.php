@@ -14,19 +14,19 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Database Connection Constants (XAMPP / Local MySQL Default)
-define('DB_HOST', 'localhost');
-define('DB_PORT', '3306');
-define('DB_NAME', 'zippy_food');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+defined('DB_HOST') or define('DB_HOST', 'localhost');
+defined('DB_PORT') or define('DB_PORT', '3306');
+defined('DB_NAME') or define('DB_NAME', 'zippy_db');
+defined('DB_USER') or define('DB_USER', 'root');
+defined('DB_PASS') or define('DB_PASS', '');
 
 // Application Constants
-define('APP_NAME', 'Zippy');
-define('APP_TAGLINE', 'Lush Forest Edition');
-define('APP_CURRENCY', '₹');
-define('GST_RATE', 0.05); // 5% GST on restaurant food services
-define('FREE_DELIVERY_THRESHOLD', 500.00);
-define('DEFAULT_DELIVERY_FEE', 40.00);
+defined('APP_NAME') or define('APP_NAME', 'Zippy');
+defined('APP_TAGLINE') or define('APP_TAGLINE', 'Lush Forest Edition');
+defined('APP_CURRENCY') or define('APP_CURRENCY', '₹');
+defined('GST_RATE') or define('GST_RATE', 0.05); // 5% GST on restaurant food services
+defined('FREE_DELIVERY_THRESHOLD') or define('FREE_DELIVERY_THRESHOLD', 500.00);
+defined('DEFAULT_DELIVERY_FEE') or define('DEFAULT_DELIVERY_FEE', 40.00);
 
 // Base URL helper
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || ($_SERVER['SERVER_PORT'] ?? 80) == 443) ? "https://" : "http://";

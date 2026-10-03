@@ -1,144 +1,223 @@
 <?php
 /**
- * Customer Address Management
- * MCSP-232: E-Commerce Platform for Food Order
+ * Customer Saved Addresses Management (3NF Relational Model)
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Manage Delivery Addresses - Zippy';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/models/Address.php';
 
-$userId = $_SESSION['user']['user_id'] ?? 1;
+$pageTitle = 'Manage Delivery Addresses';
+$activePage = 'profile';
 
-// Handle add address POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_address') {
-    $type      = $_POST['address_type'] ?? 'HOME';
-    $title     = trim($_POST['title'] ?? 'Home');
-    $line      = trim($_POST['address_line'] ?? '');
-    $landmark  = trim($_POST['landmark'] ?? '');
-    $pincode   = trim($_POST['pincode'] ?? '');
-    $isDefault = isset($_POST['is_default']);
+// Bootstrap core libraries before HTML output (prevents "headers already sent")
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+$currentUser = current_user();
+require_login();
 
-    if (!empty($line) && !empty($pincode)) {
-        Address::add($userId, $type, $title, $line, $landmark, $pincode, $isDefault);
-        setFlash('success', 'New address added successfully!');
-    } else {
-        setFlash('danger', 'Address line and pincode are required.');
+$userId = $currentUser['id'];
+
+// Handle Add Address
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        set_flash('danger', 'Invalid session token.');
+    } elseif ($_POST['action'] === 'add_address') {
+        $type = clean_input($_POST['address_type'] ?? 'HOME');
+        $line = clean_input($_POST['address_line'] ?? '');
+        $landmark = clean_input($_POST['landmark'] ?? '');
+        $pincode = clean_input($_POST['pincode'] ?? '560038');
+        $isDefault = !empty($_POST['is_default']) ? 1 : 0;
+
+        if (!empty($line)) {
+            if ($isDefault) {
+                db_query("UPDATE `user_addresses` SET `is_default` = 0 WHERE `user_id` = :uid", [':uid' => $userId]);
+            }
+            db_query("
+                INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `is_default`) 
+                VALUES (:uid, :type, :line, :lm, :pin, :def)
+            ", [
+                ':uid' => $userId,
+                ':type' => $type,
+                ':line' => $line,
+                ':lm' => $landmark,
+                ':pin' => $pincode,
+                ':def' => $isDefault
+            ]);
+            set_flash('success', 'New delivery address added successfully.');
+            header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
+            exit;
+        } else {
+            set_flash('danger', 'Please enter a complete address line.');
+        }
+    } elseif ($_POST['action'] === 'set_default') {
+        $addressId = (int)$_POST['address_id'];
+        db_query("UPDATE `user_addresses` SET `is_default` = 0 WHERE `user_id` = :uid", [':uid' => $userId]);
+        db_query("UPDATE `user_addresses` SET `is_default` = 1 WHERE `address_id` = :aid AND `user_id` = :uid", [
+            ':aid' => $addressId,
+            ':uid' => $userId
+        ]);
+        set_flash('success', 'Default delivery destination updated.');
+        header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
+        exit;
+    } elseif ($_POST['action'] === 'delete_address') {
+        $addressId = (int)$_POST['address_id'];
+        db_query("DELETE FROM `user_addresses` WHERE `address_id` = :aid AND `user_id` = :uid", [
+            ':aid' => $addressId,
+            ':uid' => $userId
+        ]);
+        set_flash('success', 'Address removed from your address book.');
+        header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
+        exit;
     }
 }
 
-$addresses = Address::getAllByUserId($userId);
+require_once __DIR__ . '/includes/header.php';
+
+// Fetch all addresses
+$addresses = db_fetch_all("
+    SELECT * FROM `user_addresses` 
+    WHERE `user_id` = :uid 
+    ORDER BY `is_default` DESC, `address_id` DESC
+", [':uid' => $userId]);
 ?>
 
-  <main class="container-xl py-4" style="max-width: 860px;">
+<main class="py-4">
+  <div class="container-xl">
     
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
       <div>
-        <h2 class="fw-bold text-pine mb-1">Manage Delivery Addresses</h2>
-        <p class="text-muted small mb-0">Saved locations mapped to <code>user_addresses</code> relational table (3NF).</p>
+        <h2 class="fw-bold mb-0 font-outfit text-dark"><i class="bi bi-geo-alt-fill text-success me-2"></i>Saved Delivery Addresses</h2>
+        <p class="text-muted small mb-0">Addresses stored in 3NF normalized <code>user_addresses</code> table</p>
       </div>
-      <button class="btn btn-sm btn-success rounded-pill px-4 fw-bold shadow-xs" data-bs-toggle="modal" data-bs-target="#addAddressModal" style="background-color: var(--lush-forest);">
-        + Add New Address
+      <button type="button" class="btn btn-success btn-sm rounded-pill px-3 fw-bold" data-bs-toggle="modal" data-bs-target="#addAddressModal" style="background:#2E6F40; border-color:#2E6F40;">
+        <i class="bi bi-plus-lg me-1"></i> Add New Address
       </button>
     </div>
 
-    <div class="row g-4 mb-4">
-      <?php foreach ($addresses as $addr): ?>
-        <div class="col-md-6">
-          <div class="p-4 bg-white rounded-4 border shadow-xs h-100 d-flex flex-column justify-content-between position-relative <?= $addr['is_default'] ? 'border-success' : '' ?>">
+    <div class="row g-4">
+      <?php if (empty($addresses)): ?>
+        <div class="col-12">
+          <div class="card border-0 rounded-4 shadow-sm p-5 text-center bg-white">
+            <i class="bi bi-geo text-muted opacity-50 mb-3" style="font-size: 3rem;"></i>
+            <h5 class="fw-bold text-dark">No saved addresses found</h5>
+            <p class="text-muted small mb-3">Add your home or office address for faster 1-click checkout.</p>
             <div>
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="badge bg-success bg-opacity-10 text-success fw-bold">
-                  <i class="bi bi-<?= strtolower($addr['address_type']) === 'home' ? 'house-door' : 'briefcase' ?> me-1"></i>
-                  <?= sanitize($addr['address_type']) ?>
-                </span>
-                <?php if ($addr['is_default']): ?>
-                  <span class="badge bg-success text-white small">DEFAULT DESTINATION</span>
-                <?php endif; ?>
-              </div>
-              <h5 class="fw-bold text-pine mb-1"><?= sanitize($addr['title']) ?></h5>
-              <p class="small text-muted mb-2"><?= sanitize($addr['address_line']) ?></p>
-              <?php if (!empty($addr['landmark'])): ?>
-                <div class="small text-muted mb-1"><i class="bi bi-geo-alt text-success me-1"></i> Landmark: <?= sanitize($addr['landmark']) ?></div>
-              <?php endif; ?>
-              <div class="small text-muted"><strong>Pincode:</strong> <?= sanitize($addr['pincode']) ?></div>
-            </div>
-
-            <div class="pt-3 border-top mt-3 d-flex justify-content-between align-items-center">
-              <span class="badge bg-light text-muted border small">25 Mins Delivery Zone</span>
-              <div class="d-flex gap-2">
-                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="alert('Address editing modal opened for #<?= $addr['address_id'] ?>')">
-                  <i class="bi bi-pencil me-1"></i> Edit
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      <?php endforeach; ?>
-    </div>
-
-    <!-- Add Address Modal -->
-    <div class="modal fade" id="addAddressModal" tabindex="-1">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content rounded-4 border-0 shadow">
-          <div class="modal-header border-0 pb-0">
-            <h5 class="modal-title fw-bold text-pine">Add New Delivery Address</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body p-4">
-            <form method="POST" action="manage-addresses.php">
-              <input type="hidden" name="action" value="add_address">
-
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-pine">Address Tag / Type</label>
-                <div class="d-flex gap-2">
-                  <input type="radio" class="btn-check" name="address_type" id="typeHome" value="HOME" checked>
-                  <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="typeHome">Home</label>
-
-                  <input type="radio" class="btn-check" name="address_type" id="typeWork" value="WORK">
-                  <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="typeWork">Work / Office</label>
-
-                  <input type="radio" class="btn-check" name="address_type" id="typeOther" value="OTHER">
-                  <label class="btn btn-outline-success btn-sm rounded-pill px-3" for="typeOther">Other</label>
-                </div>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-pine">Address Nickname</label>
-                <input type="text" name="title" class="form-control" placeholder="e.g. My Apartment, Studio, Office" required>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label small fw-bold text-pine">Complete Address Line</label>
-                <textarea name="address_line" class="form-control" rows="2" placeholder="House/Flat No., Building Name, Street, Area..." required></textarea>
-              </div>
-
-              <div class="row g-2 mb-3">
-                <div class="col-6">
-                  <label class="form-label small fw-bold text-pine">Landmark</label>
-                  <input type="text" name="landmark" class="form-control" placeholder="Nearby Metro, Mall...">
-                </div>
-                <div class="col-6">
-                  <label class="form-label small fw-bold text-pine">Postal Pincode</label>
-                  <input type="text" name="pincode" class="form-control" placeholder="e.g. 560038" required maxlength="6">
-                </div>
-              </div>
-
-              <div class="form-check mb-4">
-                <input class="form-check-input" type="checkbox" name="is_default" id="setDefaultCheck">
-                <label class="form-check-label small fw-bold text-pine" for="setDefaultCheck">
-                  Make this my default delivery address
-                </label>
-              </div>
-
-              <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background-color: var(--lush-forest);">
-                Save Address
+              <button class="btn btn-success rounded-pill px-4 py-2" data-bs-toggle="modal" data-bs-target="#addAddressModal" style="background:#2E6F40; border-color:#2E6F40;">
+                Add First Address
               </button>
-            </form>
+            </div>
           </div>
         </div>
-      </div>
+      <?php else: ?>
+        <?php foreach ($addresses as $addr): ?>
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between <?= $addr['is_default'] ? 'border-start border-success border-4' : '' ?>">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="badge bg-dark px-2 py-1 small"><?= e($addr['address_type']) ?></span>
+                  <?php if ($addr['is_default']): ?>
+                    <span class="badge bg-mint text-dark fw-bold px-2 py-1"><i class="bi bi-star-fill text-warning me-1"></i>DEFAULT</span>
+                  <?php endif; ?>
+                </div>
+
+                <div class="fw-semibold text-dark mb-1 fs-6"><?= e($addr['address_line']) ?></div>
+                <?php if (!empty($addr['landmark'])): ?>
+                  <div class="small text-muted mb-1"><i class="bi bi-pin-map me-1 text-danger"></i>Near <?= e($addr['landmark']) ?></div>
+                <?php endif; ?>
+                <div class="small text-muted">PIN: <?= e($addr['pincode']) ?> | Bangalore</div>
+              </div>
+
+              <div class="border-top pt-3 mt-3 d-flex align-items-center justify-content-between">
+                <?php if (!$addr['is_default']): ?>
+                  <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php" class="m-0">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="set_default">
+                    <input type="hidden" name="address_id" value="<?= (int)$addr['address_id'] ?>">
+                    <button type="submit" class="btn btn-link text-success btn-sm p-0 fw-bold text-decoration-none">
+                      Set as Default
+                    </button>
+                  </form>
+                <?php else: ?>
+                  <span class="small text-muted"><i class="bi bi-check-circle-fill text-success me-1"></i>Current Default</span>
+                <?php endif; ?>
+
+                <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php" class="m-0" onsubmit="return confirm('Are you sure you want to delete this address?');">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="delete_address">
+                  <input type="hidden" name="address_id" value="<?= (int)$addr['address_id'] ?>">
+                  <button type="submit" class="btn btn-link text-danger btn-sm p-0 text-decoration-none">
+                    <i class="bi bi-trash3"></i> Delete
+                  </button>
+                </form>
+              </div>
+
+            </div>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
 
-  </main>
+  </div>
+</main>
+
+<!-- Add Address Modal -->
+<div class="modal fade" id="addAddressModal" tabindex="-1" aria-labelledby="addAddressModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom">
+        <h5 class="modal-title fw-bold font-outfit" id="addAddressModalLabel"><i class="bi bi-geo-alt-fill text-success me-2"></i>Add Delivery Destination</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      
+      <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="add_address">
+        
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Address Type</label>
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" name="address_type" id="typeHome" value="HOME" checked>
+              <label class="btn btn-outline-success" for="typeHome"><i class="bi bi-house-door me-1"></i> HOME</label>
+
+              <input type="radio" class="btn-check" name="address_type" id="typeWork" value="WORK">
+              <label class="btn btn-outline-success" for="typeWork"><i class="bi bi-briefcase me-1"></i> WORK</label>
+
+              <input type="radio" class="btn-check" name="address_type" id="typeOther" value="OTHER">
+              <label class="btn btn-outline-success" for="typeOther"><i class="bi bi-geo-alt me-1"></i> OTHER</label>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Complete Street Address *</label>
+            <textarea name="address_line" class="form-control rounded-3" rows="3" placeholder="Door No, Apartment / Building Name, Street / Layout" required></textarea>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-bold">Nearby Landmark</label>
+              <input type="text" name="landmark" class="form-control rounded-3" placeholder="Opposite Metro Station">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-bold">Pincode *</label>
+              <input type="text" name="pincode" class="form-control rounded-3" placeholder="560038" value="560038" required>
+            </div>
+          </div>
+
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_default" value="1" id="defaultCheck" checked>
+            <label class="form-check-label small text-muted" for="defaultCheck">
+              Set as primary default address for food deliveries
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">Save Address</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

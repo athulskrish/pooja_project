@@ -1,109 +1,121 @@
 <?php
 /**
- * Multi-Role Authentication Page
- * MCSP-232: E-Commerce Platform for Food Order
+ * Customer Sign In Portal
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Sign In - Zippy';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/controllers/AuthController.php';
 
-// Handle login post
-AuthController::handleLogin();
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
+
+// If already logged in, redirect
+if (is_logged_in()) {
+    header("Location: " . CUSTOMER_URL . "/index.php");
+    exit;
+}
+
+$redirectTarget = clean_input($_GET['redirect'] ?? '');
+$loginError = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        $loginError = 'Session expired. Please try again.';
+    } else {
+        $email = clean_input($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+
+        $authResult = attempt_login($email, $password);
+
+        if ($authResult['success']) {
+            set_flash('success', 'Welcome back, ' . $authResult['user']['full_name'] . '!');
+            if ($redirectTarget === 'checkout') {
+                header("Location: " . CUSTOMER_URL . "/checkout.php");
+            } else {
+                header("Location: " . CUSTOMER_URL . "/index.php");
+            }
+            exit;
+        } else {
+            $loginError = $authResult['message'];
+        }
+    }
+}
+
+$pageTitle = 'Customer Sign In';
+$activePage = 'login';
+require_once __DIR__ . '/includes/header.php';
 ?>
 
-  <main class="container-xl py-5" style="max-width: 520px;">
-    
-    <div class="p-4 p-md-5 bg-white rounded-4 border shadow-sm">
-      
-      <div class="text-center mb-4">
-        <div class="brand-icon-box mx-auto mb-3" style="width: 55px; height: 55px; font-size: 1.5rem; background-color: var(--lush-forest); color: white; display: flex; align-items: center; justify-content: center; border-radius: 14px;">
-          <i class="fa-solid fa-utensils"></i>
-        </div>
-        <h3 class="fw-bold text-pine mb-1">Welcome to Zippy</h3>
-        <p class="text-muted small">Sign in to your food ordering account or portal</p>
-      </div>
-
-      <!-- Quick Demo Credentials Selector -->
-      <div class="p-3 bg-light rounded-3 border mb-4">
-        <div class="small fw-bold text-pine mb-2"><i class="bi bi-key-fill text-success me-1"></i> Quick 1-Click Demo Login:</div>
-        <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-sm btn-outline-success rounded-pill" onclick="fillCredentials('pooja.mca2026@ignou.ac.in', 'pooja123')">
-            👤 Customer
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-warning rounded-pill text-dark" onclick="fillCredentials('kitchen@zippy.in', 'pooja123')">
-            👨‍🍳 Kitchen
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-info rounded-pill" onclick="fillCredentials('rider@zippy.in', 'pooja123')">
-            🚴 Rider
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" onclick="fillCredentials('admin@zippy.in', 'pooja123')">
-            👨‍💼 Admin
-          </button>
-        </div>
-      </div>
-
-      <!-- Login Form -->
-      <form method="POST" action="login.php<?= !empty($_GET['redirect']) ? '?redirect=' . urlencode($_GET['redirect']) : '' ?>">
+<main class="py-5">
+  <div class="container-xl">
+    <div class="row justify-content-center">
+      <div class="col-md-7 col-lg-5">
         
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-pine">Email Address</label>
-          <div class="input-group">
-            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-envelope"></i></span>
-            <input type="email" name="email" id="loginEmail" class="form-control border-start-0" placeholder="name@example.com" value="pooja.mca2026@ignou.ac.in" required>
+        <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white">
+          
+          <div class="text-center mb-4">
+            <div class="brand-icon-box mx-auto mb-3" style="width: 48px; height: 48px; background:#2E6F40; color:#fff;">
+              <i class="fa-solid fa-utensils fs-4"></i>
+            </div>
+            <h3 class="fw-bold font-outfit text-dark mb-1">Welcome Back!</h3>
+            <p class="text-muted small">Sign in to your Zippy customer account to continue</p>
           </div>
+
+          <?php if ($loginError): ?>
+            <div class="alert alert-danger d-flex align-items-center gap-2 mb-4 rounded-3 small">
+              <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+              <div><?= e($loginError) ?></div>
+            </div>
+          <?php endif; ?>
+
+          <!-- 1-Click Demo Customer Account Button -->
+          <div class="p-3 rounded-3 mb-4 text-center" style="background: #EDFBF2; border: 1px dashed #2E6F40;">
+            <div class="small fw-bold text-forest mb-1">Quick Demo Access (Customer)</div>
+            <button type="button" class="btn btn-sm btn-success rounded-pill px-3 py-1 fw-bold" onclick="document.getElementById('loginEmail').value='pooja@example.com'; document.getElementById('loginPassword').value='password123';" style="background:#2E6F40; border-color:#2E6F40;">
+              Fill Customer: pooja@example.com
+            </button>
+          </div>
+
+          <form method="POST" action="<?= CUSTOMER_URL ?>/login.php<?= !empty($redirectTarget) ? '?redirect=' . urlencode($redirectTarget) : '' ?>">
+            <?= csrf_field() ?>
+
+            <div class="mb-3">
+              <label class="form-label small fw-bold">Email Address</label>
+              <div class="input-group">
+                <span class="input-group-text bg-white text-muted"><i class="bi bi-envelope"></i></span>
+                <input type="email" name="email" id="loginEmail" class="form-control rounded-end-3 py-2" placeholder="pooja@example.com" required>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label small fw-bold mb-0">Password</label>
+                <a href="<?= CUSTOMER_URL ?>/help.php" class="text-success small text-decoration-none">Forgot password?</a>
+              </div>
+              <div class="input-group mt-1">
+                <span class="input-group-text bg-white text-muted"><i class="bi bi-lock"></i></span>
+                <input type="password" name="password" id="loginPassword" class="form-control rounded-end-3 py-2" placeholder="••••••••" required>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-success w-100 rounded-pill py-3 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">
+              Sign In to Zippy
+            </button>
+          </form>
+
+          <div class="text-center mt-4 pt-3 border-top small text-muted">
+            Don't have an account yet? 
+            <a href="<?= CUSTOMER_URL ?>/signup.php" class="text-success fw-bold text-decoration-none ms-1">Sign Up Free</a>
+          </div>
+
+          <div class="text-center mt-3 pt-2 border-top small text-muted">
+            Are you a Store Administrator? 
+            <a href="<?= ADMIN_URL ?>/login.php" class="text-dark fw-bold text-decoration-none ms-1">Admin Portal &rarr;</a>
+          </div>
+
         </div>
 
-        <div class="mb-3">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <label class="form-label small fw-bold text-pine mb-0">Password</label>
-            <a href="#" class="small text-success text-decoration-none">Forgot password?</a>
-          </div>
-          <div class="input-group">
-            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-lock"></i></span>
-            <input type="password" name="password" id="loginPassword" class="form-control border-start-0 border-end-0" placeholder="••••••••" value="pooja123" required>
-            <span class="input-group-text bg-white border-start-0 cursor-pointer text-muted" onclick="togglePasswordVisibility()">
-              <i class="bi bi-eye" id="togglePasswordIcon"></i>
-            </span>
-          </div>
-        </div>
-
-        <div class="form-check mb-4">
-          <input class="form-check-input" type="checkbox" id="rememberMe" checked>
-          <label class="form-check-label small text-muted" for="rememberMe">Remember me on this browser</label>
-        </div>
-
-        <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-3 shadow-xs" style="background-color: var(--lush-forest);">
-          Sign In to Zippy
-        </button>
-
-      </form>
-
-      <div class="text-center mt-4 pt-3 border-top small text-muted">
-        Don't have an account yet? <a href="signup.php" class="text-success fw-bold text-decoration-none">Create New Account</a>
       </div>
-
     </div>
-
-  </main>
-
-  <script>
-    function fillCredentials(email, pass) {
-      document.getElementById('loginEmail').value = email;
-      document.getElementById('loginPassword').value = pass;
-      showToast(`Credentials filled for ${email}`);
-    }
-
-    function togglePasswordVisibility() {
-      const pass = document.getElementById('loginPassword');
-      const icon = document.getElementById('togglePasswordIcon');
-      if (pass.type === 'password') {
-        pass.type = 'text';
-        icon.className = 'bi bi-eye-slash';
-      } else {
-        pass.type = 'password';
-        icon.className = 'bi bi-eye';
-      }
-    }
-  </script>
+  </div>
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

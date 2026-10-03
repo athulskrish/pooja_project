@@ -5,7 +5,7 @@
  * Student: Pooja JP | University: IGNOU
  *
  * Implements PDO Singleton pattern with automated self-installation:
- * If 'zippy_food' database does not exist, automatically executes schema.sql.
+ * If 'zippy_db' database does not exist, automatically executes schema.sql.
  * If MySQL server is offline (e.g. XAMPP not started), provides transparent fallback
  * so the frontend remains fully interactive with mock data for viva demonstrations.
  */
@@ -15,15 +15,16 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Global Configuration
-define('APP_NAME', 'Zippy');
-define('APP_TAGLINE', 'Online Food Ordering & Cloud Kitchen Platform');
-define('STUDENT_NAME', 'Pooja JP');
-define('COURSE_CODE', 'MCSP-232 (MCA Major Project)');
-define('CURRENCY_SYMBOL', '₹');
-define('GST_PERCENT', 5.0); // 5% GST (2.5% CGST + 2.5% SGST)
-define('PLATFORM_FEE', 5.00);
-define('DELIVERY_FEE', 35.00);
+defined('APP_NAME') or define('APP_NAME', 'Zippy');
+defined('APP_TAGLINE') or define('APP_TAGLINE', 'Online Food Ordering & Cloud Kitchen Platform');
+defined('STUDENT_NAME') or define('STUDENT_NAME', 'Pooja JP');
+defined('COURSE_CODE') or define('COURSE_CODE', 'MCSP-232 (MCA Major Project)');
+defined('CURRENCY_SYMBOL') or define('CURRENCY_SYMBOL', '₹');
+defined('GST_PERCENT') or define('GST_PERCENT', 5.0); // 5% GST (2.5% CGST + 2.5% SGST)
+defined('PLATFORM_FEE') or define('PLATFORM_FEE', 5.00);
+defined('DELIVERY_FEE') or define('DELIVERY_FEE', 35.00);
 
+if (!class_exists('Database')) {
 class Database {
     private static ?PDO $instance = null;
     private static bool $isOffline = false;
@@ -31,7 +32,7 @@ class Database {
 
     private const DB_HOST = '127.0.0.1';
     private const DB_PORT = '3306';
-    private const DB_NAME = 'zippy_food';
+    private const DB_NAME = 'zippy_db';
     private const DB_USER = 'root';
     private const DB_PASS = '';
 
@@ -87,8 +88,11 @@ class Database {
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             ]);
 
-            // Execute schema file if available
-            $schemaFile = __DIR__ . '/schema.sql';
+            // Execute canonical schema file if available
+            $schemaFile = __DIR__ . '/../../database/schema.sql';
+            if (!file_exists($schemaFile)) {
+                $schemaFile = __DIR__ . '/schema.sql';
+            }
             if (file_exists($schemaFile)) {
                 $sql = file_get_contents($schemaFile);
                 self::$instance->exec($sql);
@@ -102,14 +106,27 @@ class Database {
         }
     }
 
-    public static function isConnected(): bool {
-        return self::getConnection() !== null;
+    public static function getInstance(): ?PDO {
+        return self::getConnection();
     }
 
-    public static function getErrorMessage(): string {
+    public static function isMockMode(): bool {
+        return !self::isConnected();
+    }
+
+    public static function getConnectionError(): ?string {
         return self::$errorMessage;
     }
+
+    public static function setupDatabase(): array {
+        $pdo = self::autoInstallDatabase();
+        if ($pdo) {
+            return ['success' => true, 'message' => 'Database zippy_db initialized successfully with 10 tables!'];
+        }
+        return ['success' => false, 'message' => 'Setup failed: ' . self::$errorMessage];
+    }
 }
+} // end if (!class_exists('Database'))
 
 // Initialize active user session if not set (Default Demo Customer: Pooja JP)
 if (!isset($_SESSION['user'])) {

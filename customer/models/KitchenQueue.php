@@ -34,7 +34,7 @@ class KitchenQueue {
                 $orders = $stmt->fetchAll();
                 foreach ($orders as $ord) {
                     $stmtItems = $pdo->prepare("
-                        SELECT oi.*, m.item_name, m.prep_time_minutes, m.kitchen_station, m.is_veg
+                        SELECT oi.*, m.item_name, m.prep_time_minutes, m.is_veg
                         FROM order_items oi
                         JOIN menu_items m ON oi.item_id = m.item_id
                         WHERE oi.order_id = ?

@@ -6,6 +6,7 @@
  * =============================================================================
  */
 
+if (!class_exists('Database')) {
 class Database {
     private static ?PDO $instance = null;
     private static bool $isMockMode = false;
@@ -62,8 +63,11 @@ class Database {
             $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             $pdo->exec("USE `" . DB_NAME . "`");
 
-            // Execute schema.sql
-            $schemaFile = __DIR__ . '/../database/schema.sql';
+            // Execute canonical schema.sql
+            $schemaFile = __DIR__ . '/../../database/schema.sql';
+            if (!file_exists($schemaFile)) {
+                $schemaFile = __DIR__ . '/../database/schema.sql';
+            }
             if (file_exists($schemaFile)) {
                 $schemaSql = file_get_contents($schemaFile);
                 // Split queries safely (ignoring DELIMITER directives for raw exec)
@@ -107,4 +111,5 @@ class Database {
             return ['success' => false, 'message' => 'Setup failed: ' . $e->getMessage()];
         }
     }
+}
 }

@@ -1,96 +1,164 @@
 # Zippy - Online Food Ordering Platform
-**Student:** Pooja JP | **Course:** MCSP-232 (MCA Project) | **University:** IGNOU  
+**Student:** Pooja JP | **Course:** MCSP-232 (MCA Major Project) | **University:** IGNOU  
 **Design System:** Figma Resource Library "Lush Forest" Color Palette (#Combination-4)  
-**Current Phase:** Step 1 Completed & Approved - UI/UX Architecture archived in `html_design/` (Ready for Step 2: PHP OOP/MVC Backend)
+**Implementation Phase:** Step 2 Completed - Full PHP Backend & Frontend with MySQL 8.0 3NF Relational Database  
 
 ---
 
-## 🎨 Figma "Lush Forest" Color Palette Architecture
+## 🌟 Architectural & Implementation Summary
 
-This project strictly adheres to the official **Figma Combination 4: Lush Forest** color specifications:
+The system consists of dedicated role-based web applications implemented in native, modern PHP with shared 3NF database configuration, ACID transaction management, and Master-level computational algorithms:
+- **Customer Storefront** (`customer/`)
+- **Delivery Partner Fleet App** (`delivery/`)
+- **Kitchen Display System (KDS)** (`kitchen/`)
+- **Admin Operations Console** (`admin/`)
 
-| Role | Color Name | Hex Code | Visual Application in UI |
-| :--- | :--- | :--- | :--- |
-| **Dark Pine** | Forest Floor | `#243E2C` | Headings, dark navbar contrast, primary text, footer background |
-| **Forest Green** | Lush Forest Primary | `#2E6F40` | Primary buttons, brand CTA, active tabs, highlight badges |
-| **Sage Green** | New Leaf Accent | `#68BA7F` | Secondary badges, borders, star ratings, progress bar |
-| **Light Mint** | Forest Mist | `#CEFFDC` | Subtle badge backgrounds, discount pill tags, glow hover states |
-| **Clean Surface** | Off-White Lush Tint | `#F7FAF8` | Page background, cards surface, input fields |
-
-All colors are declared as reusable CSS variables inside `html_design/css/style.css`.
+```
+pooja_project/
+├── index.php                  # Central Portals Launchpad & Architecture Hub
+├── README.md                  # Comprehensive Documentation & Architecture Guide
+├── SYSTEM_ANALYSIS_AND_DESIGN.md # DFD, ERD, Use Cases & 3NF Normalization
+│
+├── config/                    # Shared System Configuration
+│   ├── config.php             # Constants, session security, CSRF protection, URL detection
+│   └── database.php           # PDO MySQL singleton connection with diagnostic status
+│
+├── database/                  # 3NF Relational Database Schema & Seeder
+│   ├── schema.sql             # 10-table 3NF schema, ACID triggers, foreign keys & seed data
+│   └── seed.php               # 1-click web/CLI automated installer & password rehasher
+│
+├── includes/                  # Shared Business Logic & Computational Algorithms
+│   ├── functions.php          # Database wrappers, bill calculations & coupon logic
+│   ├── auth.php               # Authentication, Argon2id/Bcrypt hashing & RBAC claims
+│   ├── AprioriEngine.php      # Algorithm 1: Market Basket Analysis Cross-Selling
+│   ├── WSJFQueue.php          # Algorithm 2: Dynamic WSJF Kitchen Queue Prioritization
+│   └── SESDemandForecast.php  # Algorithm 3: Single Exponential Smoothing Demand Forecast
+│
+├── assets/                    # Shared Figma "Lush Forest" Assets
+│   ├── css/style.css          # CSS custom properties, responsive styles & components
+│   └── js/app.js              # Client state, persistent cart, toasts & dynamic drawer
+│
+├── customer/                  # 🛒 Customer Food Ordering Storefront
+│   ├── index.php              # Storefront home, hero carousel, categories, menu catalog
+│   ├── restaurant.php         # Restaurant menu, veg switch & sticky sidebar cart
+│   ├── cart.php               # Dedicated cart, coupon validation & bill breakdown
+│   ├── checkout.php           # Multi-step checkout with ACID transaction & row locking
+│   ├── order-success.php      # Order celebration, 6-digit delivery OTP & direct links
+│   ├── order-status.php       # Live ETA countdown, 4-stage stepper & courier card
+│   ├── order-history.php      # Past orders list, status badges & invoice access
+│   ├── invoice.php            # Indian GST Tax Invoice (SAC 996331, 5% GST breakdown)
+│   ├── search.php             # Real-time search, filters (veg, price, prep time)
+│   ├── offers.php             # Coupons hub (`LUSHFOREST`, `ZIPPY50`, `WELCOME`)
+│   ├── profile.php            # Account center, personal details edit & stats
+│   ├── manage-addresses.php   # Address book CRUD for `user_addresses` (3NF)
+│   ├── rate-order.php         # 5-star rating for food & delivery partner with tips
+│   ├── help.php               # 24x7 FAQs accordions & support ticket form
+│   ├── login.php              # Customer login with 1-click demo autofill
+│   ├── signup.php             # New customer registration with address setup
+│   ├── logout.php             # Secure session destruction
+│   ├── includes/
+│   │   ├── header.php         # Customer navbar, location modal trigger & cart badge
+│   │   └── footer.php         # Offcanvas cart drawer, mobile bar & footer credits
+│   └── ajax/
+│       ├── cart-action.php    # AJAX cart synchronizer
+│       └── order-status-api.php # Live order status polling endpoint
+│
+├── delivery/                  # 🚴 Delivery Partner Fleet Web App (Delivery Boy)
+│   ├── index.php              # Rider workspace (Duty toggle, active dispatch, trip history, earnings)
+│   ├── login.php              # Fleet partner secure login with 1-click demo access
+│   └── logout.php             # Secure rider session termination
+│
+├── kitchen/                   # 🍳 Dedicated Kitchen Display System (KDS) & Chef Station
+│   ├── index.php              # Standalone KDS (Accept order, WSJF prep, Handover to rider)
+│   ├── login.php              # Dedicated Chef & Cook authentication portal
+│   ├── logout.php             # Kitchen session signoff
+│   ├── kot.php                # Printable thermal Kitchen Order Ticket slip
+│   └── ajax/
+│       ├── update-status.php  # AJAX order transition handler (Cooking, Ready, Handover)
+│       ├── poll-orders.php    # Live order poller & audio chime listener
+│       └── toggle-stock.php   # Instant 86-list item availability toggle
+│
+└── admin/                     # 👨‍💼 Admin Management & Kitchen Console
+    ├── index.php              # Executive Dashboard with KPI cards & live orders
+    ├── orders.php             # Full Order Management & status lifecycle transitions
+    ├── kitchen.php            # Quick redirect to dedicated Kitchen Station
+    ├── categories.php         # Food Categories CRUD (slugs, display order, active toggle)
+    ├── dishes.php             # Menu Catalog CRUD (pricing, stock reserves, prep time)
+    ├── users.php              # User & Staff RBAC (Admin, Kitchen Chef, Delivery Rider)
+    ├── reports.php            # Executive BI Reports (Chart.js + SES Demand Forecasting)
+    ├── login.php              # Staff & Admin secure authentication
+    ├── logout.php             # Admin session logout
+    ├── includes/
+    │   ├── header.php         # Admin sidebar, responsive topbar & role verification
+    │   └── footer.php         # Admin layout closing scripts & toast engine
+    └── ajax/
+        └── update-order-status.php # Real-time AJAX status updates
+```
 
 ---
 
-## 📁 Complete Project Pages & Architecture (25 Pages)
+## 🔑 Standard Pre-Seeded Demo Credentials
 
-This platform covers the complete **Customer Ordering Journey**, the **Admin & Kitchen KDS Portal**, and the **Delivery & System Operations**:
+All demo accounts share the standard password: `password123`
 
-### 🛒 1. Customer Portal Pages
-| Page Name | File Path | Purpose & Key Features |
-| :--- | :--- | :--- |
-| **Home Page** | [`html_design/index.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/index.html) | Zippy home page with hero carousel, food categories, top restaurant chains, sticky filters, 12+ restaurant cards, app download, and footer. |
-| **Interactive Search** | [`html_design/search.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/search.html) | Live query search for dishes/cuisines/restaurants, veg/non-veg filter toggle, price & rating sorters, and direct cart ADD controls. |
-| **Offers & Discounts** | [`html_design/offers.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/offers.html) | Deals hub: coupon codes (`LUSHFOREST`, `ZIPPY50`, etc.) with copy buttons, bank offers (HDFC, ICICI, GPay), and partner restaurant discounts. |
-| **User Profile & Account** | [`html_design/profile.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/profile.html) | Account center: Zippy One membership status, order statistics, savings tracker, dietary preferences, and interactive Edit Profile modal. |
-| **Manage Addresses** | [`html_design/manage-addresses.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/manage-addresses.html) | Address book mapped to `user_addresses` (3NF), default address toggles, GPS locator detector, and Add/Edit address modal. |
-| **Order Confirmed** | [`html_design/order-success.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/order-success.html) | Animated order celebration, Order ID, delivery OTP, Apriori add-on suggestions, and direct links to live tracking and tax invoice. |
-| **Rate Order & Rider** | [`html_design/rate-order.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/rate-order.html) | Post-delivery 5-star rating system for restaurant and courier, feedback chips, individual dish thumbs-up, and tip selector. |
-| **Help & Support** | [`html_design/help.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/help.html) | Customer care hub: recent order dispute tiles, categorized FAQ search accordions, and interactive 24x7 AI chatbot simulator. |
-| **Restaurant Menu** | [`html_design/restaurant.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/restaurant.html) | Meghana Foods menu with veg/non-veg toggle, dish cards with interactive `ADD` / `- 1 +` counter controls, and Apriori cross-sell recommendations. |
-| **Dedicated Cart** | [`html_design/cart.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/cart.html) | Full shopping cart page with item customization, cooking instructions, free delivery progress bar, Apriori add-ons, and coupon codes. |
-| **Checkout & Pay** | [`html_design/checkout.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/checkout.html) | Multi-step checkout: saved address selector (Home/Office), delivery instructions, UPI (GPay/PhonePe)/Card/COD options, and bill summary. |
-| **Live Order Tracking** | [`html_design/order-status.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/order-status.html) | Real-time ETA countdown timer, 4-stage animated progress stepper, simulated GPS courier route map, and delivery partner card. |
-| **Order History** | [`html_design/order-history.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/order-history.html) | Active in-kitchen order status with link to live tracker, past delivered orders with "Reorder", "Rate Order", and "Tax Invoice". |
-| **Login** | [`html_design/login.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/login.html) | Tabbed login (Customer vs Admin), password visibility toggle, remember me, and one-click demo credentials fill. |
-| **Sign Up** | [`html_design/signup.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/signup.html) | New customer registration form capturing full name, email, phone, and delivery address. |
-
-### 👨‍🍳 2. Admin & Restaurant KDS Portal
-| Page Name | File Path | Purpose & Key Features |
-| :--- | :--- | :--- |
-| **Admin Dashboard** | [`html_design/admin-dashboard.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/admin-dashboard.html) | Store admin portal: KPI metrics (₹84k revenue, orders, prep time), Live Kitchen Queue with WSJF priority scores, and Dish Catalog CRUD modal. |
-| **Kitchen Display (KDS)** | [`html_design/kitchen-display.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/kitchen-display.html) | Dedicated cook & expeditor interface: 3-column kanban swimlanes (New, Cooking, Ready), multi-station routing (Handi, Tandoor, Grills, Pantry), all-day item prep aggregator, live WSJF urgency calculations, interactive touch item checkboxes, ticket recall modal, fullscreen station mode, and sound alert engine (isolated from admin/portal privileges). |
-| **Executive BI Reports** | [`html_design/admin-reports.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/admin-reports.html) | Chart.js interactive visualizations: Hourly sales volume, category share doughnut, Single Exponential Smoothing (SES) item velocity, and delivery logs. |
-| **Food Categories CRUD** | [`html_design/admin-categories.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/admin-categories.html) | Complete CRUD for `categories` table: slug auto-generation, active/hidden toggles, dish counters, and Add/Edit category modal. |
-| **User & Staff RBAC** | [`html_design/admin-users.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/admin-users.html) | Role-Based Access Control (`roles` & `users`): Customer, Kitchen Staff, Delivery Rider, Admin filters, Argon2id encryption context, and status toggles. |
-
-### 🚴 3. Delivery & System Pages
-| Page Name | File Path | Purpose & Key Features |
-| :--- | :--- | :--- |
-| **Delivery Partner App** | [`html_design/delivery-partner.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/delivery-partner.html) | Courier portal: Online/Offline duty toggle, earnings stats, active delivery workflow, GPS turn-by-turn navigator, and secret customer OTP verification. |
-| **GST Tax Invoice** | [`html_design/invoice.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/invoice.html) | Official Indian e-commerce GST Tax Invoice: SAC/HSN codes, 5% food GST breakdown (CGST+SGST), `@media print` layout, and digital verification QR. |
-| **Terms of Service** | [`html_design/terms.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/terms.html) | Tripartite aggregator terms & conditions, perishable food cancellation policies, GST compliance, and sticky Table of Contents. |
-| **Privacy Policy** | [`html_design/privacy.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/privacy.html) | DPDPA 2023 & GDPR compliant privacy policy, data minimization, Argon2id security guarantees, data rights, and grievance officer contact. |
-| **404 Not Found** | [`html_design/404.html`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/html_design/404.html) | Playful food-themed error page ("Page Devoured"), quick search redirect, popular cuisine tags, and navigation shortcuts. |
+| Role | Name | Email | Password | Access Portal |
+| :--- | :--- | :--- | :--- | :--- |
+| **ADMIN** | Pooja JP (Admin) | `admin@zippy.com` | `password123` | [`admin/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/admin/index.php) |
+| **CUSTOMER** | Pooja JP (Customer) | `pooja@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
+| **CUSTOMER** | Rahul Sharma | `rahul@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
+| **KITCHEN** | Chef Sanjeev | `chef@zippy.com` | `password123` | [`kitchen/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/kitchen/index.php) |
+| **RIDER** | Suresh Kumar | `rider@zippy.com` | `password123` | [`delivery/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) |
 
 ---
 
-## 💡 "ഇത്രേ മതിയോ?" (Is this enough for the MCA project?)
+## 🗄️ Database Setup & Installation
 
-**Yes, absolutely!** This set of 9 pages covers the entire software engineering lifecycle required by university evaluators for **MCSP-232 (MCA Major Project)**:
-
-1. **User Role (Customer Journey):**
-   - User Registration & Authentication (`signup.html`, `login.html`)
-   - Browsing & Discovery (`index.html`)
-   - Menu Selection & Add to Cart (`restaurant.html`, `cart.html`)
-   - Order Placement & Payments (`checkout.html`)
-   - Real-time Order Tracking (`order-status.html`)
-   - Order History & Tax Receipts (`order-history.html`)
-
-2. **Admin Role (Store Management Journey):**
-   - Store KPIs & Daily Sales Overview (`admin-dashboard.html`)
-   - Kitchen Dispatch & Order Fulfillment (`admin-dashboard.html`)
-   - Dish Catalog & Stock Availability Management (`admin-dashboard.html`)
-
-3. **Academic Algorithmic Rigor (Highlighted in UI):**
-   - **Market Basket Analysis (Apriori Algorithm):** Cross-selling recommendation system.
-   - **Dynamic Kitchen Queue (WSJF Algorithm):** Weighted Shortest Job First scheduling.
+To initialize or reset the database:
+1. Open XAMPP / MariaDB / MySQL.
+2. In your browser, navigate to:  
+   `http://localhost/Pooja/pooja_project/database/seed.php`  
+   *(or run via terminal: `php database/seed.php`)*
+3. The automated seeder will create `zippy_db`, create all 10 normalized tables (3NF), install audit triggers, and populate initial seed records with encrypted passwords.
 
 ---
 
-## 🔮 Step 2: Preparing for PHP Backend (OOP/MVC)
+## 🧠 Master's Degree (MCA) Algorithmic Depth
 
-When transitioning to PHP:
-1. Extract `<header>` into `includes/header.php`.
-2. Extract `<footer>` into `includes/footer.php`.
-3. Create `config/database.php` for MySQL 8.0 InnoDB connection via PDO.
-4. Implement MVC Controllers (`OrderController`, `MenuController`, `AuthController`).
+1. **Market Basket Analysis (Apriori Algorithm) - `includes/AprioriEngine.php`:**
+   - Scans historical `order_items` transactional pairs.
+   - Calculates item support and confidence to recommend complementary items (e.g. Biryani + Garlic Naan + Mango Lassi).
+
+2. **Weighted Shortest Job First (WSJF) Dynamic Kitchen Queue - `includes/WSJFQueue.php`:**
+   $$\text{WSJF Score} = \frac{\text{Cost of Delay (Elapsed Wait Time)}}{\text{Job Duration (Max Prep Time + Portions)}}$$
+   - Ensures orders experiencing delay automatically bubble to the top of the kitchen Kanban queue.
+
+3. **Single Exponential Smoothing (SES) Demand Forecasting - `includes/SESDemandForecast.php`:**
+   $$\hat{Y}_{t+1} = \alpha Y_t + (1 - \alpha) \hat{Y}_t \quad (\alpha = 0.3)$$
+   - Analyzes historical dish velocity to forecast tomorrow and weekend demand, flagging dishes at risk of stockouts.
+
+4. **High-Concurrency ACID Checkout with Pessimistic Row Locking - `customer/checkout.php`:**
+   - Utilizes `SELECT ... FOR UPDATE` inside `START TRANSACTION ... COMMIT / ROLLBACK` to prevent overselling of limited food portions under race conditions.
+
+5. **Cryptographic Doorstep Handshake (6-Digit OTP Verification) - `delivery/index.php`:**
+   - Orders create a random 6-digit cryptographic verification OTP in `delivery_dispatches`.
+   - The delivery partner cannot complete an order without entering this customer-held secret code, preventing false delivery disputes and guaranteeing physical handover.
+
+---
+
+## 🚴 Delivery Partner Fleet Portal (Delivery Boy)
+
+The Delivery Partner subsystem is implemented as a standalone web application under [`delivery/`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) mapped directly to Use Cases **UC-14 through UC-17**:
+
+1. **UC-14: Toggle Online/Offline Duty:**
+   - Rider can toggle duty mode from the top bar. When offline, dispatches are paused.
+2. **UC-15: Accept Delivery Assignment / Claim Order:**
+   - Rider views available orders marked `READY` by the kitchen and clicks **"Accept & Pick Up Order"**.
+   - Updates `orders.order_status = 'OUT_FOR_DELIVERY'`, assigns courier credentials to `delivery_dispatches`, and logs to `order_audit_trail`.
+3. **UC-16: Turn-by-Turn GPS Route Navigation:**
+   - Interactive modal rendering turn-by-turn route, simulated speed, distance, and direct 1-click customer phone dialer (`tel:`).
+4. **UC-17: Doorstep 6-Digit OTP Verification & Cash Settlement:**
+   - Verification modal checks submitted OTP against `delivery_dispatches.delivery_otp`.
+   - On match: transitions order to `DELIVERED`, stamps `delivered_at = NOW()`, settles COD cash payments to `SUCCESSFUL`, credits trip earnings (₹55.00), and records state change in `order_audit_trail`.
+5. **Shift Earnings & Trip History:**
+   - Real-time aggregated financial ledger tracking base fares, distance allowances, customer tips, and instant IMPS bank cashout simulation.
+

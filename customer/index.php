@@ -1,291 +1,483 @@
 <?php
 /**
- * Zippy - Online Food Ordering Storefront (Customer Home)
- * MCSP-232: E-Commerce Platform for Food Order
- * Student: Pooja JP | University: IGNOU
+ * Customer Storefront Home Page
+ * Zippy - Online Food Ordering Platform
  */
-$pageTitle = 'Zippy - Online Food Delivery | Cloud Kitchen';
-require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/controllers/MenuController.php';
 
-$data = MenuController::getHomePageData();
-$categories = $data['categories'];
-$bestsellers = $data['bestsellers'];
+$pageTitle = 'Order Food Online | Zippy Lush Forest Edition';
+$activePage = 'home';
+
+require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/../includes/AprioriEngine.php';
+
+// Fetch Active Categories
+$categories = db_fetch_all("
+    SELECT c.*, COUNT(m.item_id) AS total_dishes 
+    FROM `categories` c 
+    LEFT JOIN `menu_items` m ON c.category_id = m.category_id AND m.is_available = 1
+    WHERE c.is_active = 1 
+    GROUP BY c.category_id 
+    ORDER BY c.display_order ASC
+");
+
+// Fetch Menu Items
+$menuItems = db_fetch_all("
+    SELECT m.*, c.category_name, c.category_slug 
+    FROM `menu_items` m
+    JOIN `categories` c ON m.category_id = c.category_id
+    WHERE m.is_available = 1
+    ORDER BY m.stock_quantity DESC, m.item_id ASC
+");
+
+// Fetch Apriori Cross-sell Recommendations
+$recommendations = AprioriEngine::getRecommendations([], 4);
 ?>
 
+<main>
+
   <!-- =========================================================================
-       HERO BANNER & PROMO CAROUSEL
+       HERO CAROUSEL & BANNER
        ========================================================================= -->
-  <section class="hero-section py-4 py-md-5">
+  <section class="hero-carousel-section py-4">
     <div class="container-xl">
-      <div class="row align-items-center g-4">
+      <div id="heroCarousel" class="carousel slide carousel-fade rounded-4 overflow-hidden shadow-sm" data-bs-ride="carousel" data-bs-interval="4500">
+        <div class="carousel-indicators">
+          <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="0" class="active" aria-current="true"></button>
+          <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="1"></button>
+          <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="2"></button>
+        </div>
         
-        <div class="col-lg-7">
-          <div class="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-pill bg-success bg-opacity-10 text-success small fw-bold mb-3 border border-success border-opacity-25">
-            <i class="fa-solid fa-leaf"></i> Lush Edition • Cloud Kitchen Network
-          </div>
-          <h1 class="display-4 fw-extrabold text-pine mb-3">
-            Craving Delicious Food? <br>
-            <span class="text-success">Delivered in 25 Mins.</span>
-          </h1>
-          <p class="lead text-muted mb-4" style="max-width: 580px;">
-            Order from top cloud kitchens and iconic restaurants like <strong>Meghana Foods</strong>. Freshly prepared, hygienically packed, and delivered blazing fast to your doorstep.
-          </p>
-
-          <!-- Search Input Box -->
-          <form action="search.php" method="GET" class="hero-search-box mb-4">
-            <div class="input-group input-group-lg shadow-sm rounded-pill overflow-hidden border">
-              <span class="input-group-text bg-white border-0 ps-4 text-success">
-                <i class="bi bi-search fs-5"></i>
-              </span>
-              <input type="text" name="q" class="form-control border-0 py-3" placeholder="Search for Biryani, Butter Chicken, Paneer Tikka, Desserts..." required>
-              <button class="btn btn-success px-4 px-md-5 fw-bold" type="submit" style="background-color: var(--lush-forest);">
-                Find Food
-              </button>
-            </div>
-          </form>
-
-          <!-- Quick Highlights -->
-          <div class="d-flex flex-wrap gap-4 text-muted small">
-            <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-shield-check text-success fs-5"></i>
-              <span>100% FSSAI Certified</span>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-lightning-charge-fill text-warning fs-5"></i>
-              <span>Live WSJF Kitchen Queue</span>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-percent text-success fs-5"></i>
-              <span>Flat 20% Off via LUSHFOREST</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Hero Visual / Featured Promo Card -->
-        <div class="col-lg-5">
-          <div class="hero-food-card position-relative rounded-4 overflow-hidden shadow-lg border">
-            <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=700&q=80" class="w-100 object-fit-cover" style="height: 380px;" alt="Signature Biryani">
-            <div class="position-absolute bottom-0 start-0 end-0 p-4 text-white" style="background: linear-gradient(to top, rgba(36, 62, 44, 0.95), transparent);">
-              <span class="badge bg-warning text-dark fw-bold mb-2">MOST ORDERED</span>
-              <h4 class="fw-bold mb-1">Meghana Special Chicken Biryani</h4>
-              <p class="small text-white-50 mb-3">Authentic spicy Andhra recipe layered with rich marinated chicken.</p>
-              <div class="d-flex align-items-center justify-content-between">
-                <span class="fs-4 fw-bold">₹340.00</span>
-                <a href="restaurant.php" class="btn btn-sm btn-light rounded-pill px-4 fw-bold text-pine shadow-sm">
-                  Order Now <i class="bi bi-arrow-right ms-1"></i>
-                </a>
+        <div class="carousel-inner">
+          
+          <!-- Slide 1: Lush Forest Special -->
+          <div class="carousel-item active">
+            <div class="hero-slide-bg p-4 p-md-5 d-flex align-items-center" style="background: linear-gradient(135deg, #1C2B20 0%, #2E6F40 100%); min-height: 280px;">
+              <div class="row align-items-center w-100 g-4">
+                <div class="col-lg-7 text-white">
+                  <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #CEFFDC; color: #243E2C;">
+                    🌿 FIGMA LUSH FOREST EXCLUSIVE
+                  </span>
+                  <h1 class="display-6 fw-bold mb-2 text-white">Craving Piping Hot Dum Biryani?</h1>
+                  <p class="text-white-50 mb-3 fs-6">
+                    Get <strong>20% OFF up to ₹100</strong> on authentic slow-cooked claypot biryanis. Use coupon <code class="text-mint fw-bold bg-dark px-2 py-1 rounded">LUSHFOREST</code>
+                  </p>
+                  <div class="d-flex flex-wrap gap-2">
+                    <a href="#dishes" class="btn btn-mint fw-bold rounded-pill px-4 py-2" style="background:#CEFFDC; color:#243E2C;">
+                      Order Biryani Now <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                    <a href="<?= CUSTOMER_URL ?>/offers.php" class="btn btn-outline-light rounded-pill px-4 py-2">
+                      View All Offers
+                    </a>
+                  </div>
+                </div>
+                <div class="col-lg-5 d-none d-lg-block text-center">
+                  <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=500&q=80" alt="Biryani Feast" class="img-fluid rounded-4 shadow-lg hero-img-glow" style="max-height: 220px; object-fit: cover;">
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- Slide 2: Free Delivery -->
+          <div class="carousel-item">
+            <div class="hero-slide-bg p-4 p-md-5 d-flex align-items-center" style="background: linear-gradient(135deg, #243E2C 0%, #1a4d2e 100%); min-height: 280px;">
+              <div class="row align-items-center w-100 g-4">
+                <div class="col-lg-7 text-white">
+                  <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #68BA7F; color: #fff;">
+                    ⚡ LIGHTNING DISPATCH
+                  </span>
+                  <h1 class="display-6 fw-bold mb-2 text-white">Free Express Delivery on Orders > ₹499</h1>
+                  <p class="text-white-50 mb-3 fs-6">
+                    Guaranteed 30-minute kitchen-to-doorstep delivery backed by our dynamic WSJF scheduling algorithm.
+                  </p>
+                  <a href="#dishes" class="btn btn-mint fw-bold rounded-pill px-4 py-2" style="background:#CEFFDC; color:#243E2C;">
+                    Explore Dishes
+                  </a>
+                </div>
+                <div class="col-lg-5 d-none d-lg-block text-center">
+                  <img src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=500&q=80" alt="Curry Feast" class="img-fluid rounded-4 shadow-lg hero-img-glow" style="max-height: 220px; object-fit: cover;">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 3: 50% Off Mega Deals -->
+          <div class="carousel-item">
+            <div class="hero-slide-bg p-4 p-md-5 d-flex align-items-center" style="background: linear-gradient(135deg, #2E6F40 0%, #14351d 100%); min-height: 280px;">
+              <div class="row align-items-center w-100 g-4">
+                <div class="col-lg-7 text-white">
+                  <span class="badge bg-warning text-dark rounded-pill px-3 py-1 mb-2 fw-semibold">
+                    🔥 50% SUPER SALE
+                  </span>
+                  <h1 class="display-6 fw-bold mb-2 text-white">Flat 50% Off with Code ZIPPY50</h1>
+                  <p class="text-white-50 mb-3 fs-6">
+                    Enjoy mouth-watering burgers, rolls, crispy dosas, and royal desserts at half price today!
+                  </p>
+                  <a href="<?= CUSTOMER_URL ?>/offers.php" class="btn btn-warning text-dark fw-bold rounded-pill px-4 py-2">
+                    Claim Deal
+                  </a>
+                </div>
+                <div class="col-lg-5 d-none d-lg-block text-center">
+                  <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80" alt="Burger Feast" class="img-fluid rounded-4 shadow-lg hero-img-glow" style="max-height: 220px; object-fit: cover;">
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
+        <button class="carousel-control-prev" type="button" data-bs-target="#heroCarousel" data-bs-slide="prev">
+          <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#heroCarousel" data-bs-slide="next">
+          <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        </button>
       </div>
     </div>
   </section>
 
   <!-- =========================================================================
-       FOOD CATEGORIES INSPIRATION
+       INSPIRATION FOR YOUR FIRST ORDER (FOOD CATEGORIES)
        ========================================================================= -->
-  <section class="py-5 bg-white border-top border-bottom">
+  <section class="categories-section py-4">
     <div class="container-xl">
-      <div class="d-flex justify-content-between align-items-end mb-4">
+      <div class="d-flex align-items-center justify-content-between mb-3">
         <div>
-          <span class="text-success fw-bold small text-uppercase letter-spacing-1">What's on your mind?</span>
-          <h2 class="fw-bold text-pine mb-0">Explore Culinary Categories</h2>
+          <h3 class="fw-bold mb-0">What's on your mind?</h3>
+          <p class="text-muted small mb-0">Explore fresh meals prepared by certified top kitchen chefs</p>
         </div>
-        <a href="restaurant.php" class="text-success text-decoration-none fw-bold small">
-          View Full Menu <i class="bi bi-arrow-right"></i>
-        </a>
       </div>
 
-      <div class="row g-3 g-md-4">
+      <!-- Category Pills Carousel / Grid -->
+      <div class="category-scroll-container d-flex gap-3 overflow-x-auto pb-3">
+        <a href="<?= CUSTOMER_URL ?>/index.php" class="category-pill-card text-center text-decoration-none flex-shrink-0 active">
+          <div class="category-pill-img-wrap rounded-circle shadow-sm mx-auto mb-2 d-flex align-items-center justify-content-center" style="width: 80px; height: 80px; background: #2E6F40; color: #fff;">
+            <i class="fa-solid fa-utensils fs-3"></i>
+          </div>
+          <span class="category-name d-block fw-bold small text-dark">All Dishes</span>
+        </a>
+
         <?php foreach ($categories as $cat): ?>
-          <div class="col-6 col-md-4 col-lg-2">
-            <a href="restaurant.php?category=<?= sanitize($cat['category_slug']) ?>" class="category-circle-card text-decoration-none d-block text-center p-3 rounded-4 border hover-lift">
-              <div class="category-img-wrap mx-auto mb-2 rounded-circle overflow-hidden shadow-xs" style="width: 100px; height: 100px;">
-                <img src="<?= sanitize($cat['image_url']) ?>" class="w-100 h-100 object-fit-cover" alt="<?= sanitize($cat['category_name']) ?>">
-              </div>
-              <h6 class="fw-bold text-pine mb-1 small"><?= sanitize($cat['category_name']) ?></h6>
-              <?php if (!empty($cat['badge'])): ?>
-                <span class="badge bg-success bg-opacity-10 text-success" style="font-size: 0.65rem;"><?= sanitize($cat['badge']) ?></span>
-              <?php endif; ?>
-            </a>
-          </div>
+          <a href="<?= CUSTOMER_URL ?>/search.php?category=<?= urlencode($cat['category_slug']) ?>" class="category-pill-card text-center text-decoration-none flex-shrink-0">
+            <div class="category-pill-img-wrap rounded-circle shadow-sm mx-auto mb-2 overflow-hidden" style="width: 80px; height: 80px;">
+              <img src="<?= e($cat['image_url']) ?>" alt="<?= e($cat['category_name']) ?>" class="w-100 h-100 object-fit-cover" loading="lazy">
+            </div>
+            <span class="category-name d-block fw-bold small text-dark text-truncate" style="max-width: 90px;"><?= e($cat['category_name']) ?></span>
+            <span class="text-muted" style="font-size: 0.65rem;"><?= (int)$cat['total_dishes'] ?> items</span>
+          </a>
         <?php endforeach; ?>
       </div>
     </div>
   </section>
 
   <!-- =========================================================================
-       TOP CLOUD KITCHENS & RESTAURANT OUTLETS
+       TOP RESTAURANT CHAINS IN BANGALORE
        ========================================================================= -->
-  <section class="py-5" style="background-color: var(--lush-bg);">
+  <section class="restaurant-chains-section py-3 bg-white border-top border-bottom">
     <div class="container-xl">
-      <div class="d-flex justify-content-between align-items-end mb-4">
-        <div>
-          <span class="text-success fw-bold small text-uppercase letter-spacing-1">Handpicked Brands</span>
-          <h2 class="fw-bold text-pine mb-0">Top Cloud Kitchens in Indiranagar</h2>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="badge bg-success rounded-pill px-3 py-2">
-            <i class="bi bi-geo-alt-fill me-1"></i> Delivery to 560038
-          </span>
-        </div>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 class="fw-bold mb-0">Top Restaurant Chains in Bangalore</h4>
+        <a href="<?= CUSTOMER_URL ?>/restaurant.php" class="text-success fw-bold small text-decoration-none">View All Chains &rarr;</a>
       </div>
 
-      <div class="row g-4">
-        <!-- Card 1: Meghana Foods (Primary Featured Restaurant) -->
-        <div class="col-md-6 col-lg-4">
-          <div class="restaurant-card bg-white rounded-4 overflow-hidden border shadow-sm h-100 d-flex flex-column">
+      <div class="row g-3">
+        
+        <!-- Restaurant 1 -->
+        <div class="col-lg-3 col-md-6">
+          <a href="<?= CUSTOMER_URL ?>/restaurant.php" class="card h-100 border-0 shadow-sm rounded-4 text-decoration-none overflow-hidden restaurant-card hover-lift">
             <div class="position-relative">
-              <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=500&q=80" class="w-100 object-fit-cover" style="height: 190px;" alt="Meghana Foods">
-              <span class="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 start-0 m-3 fw-bold">
-                <i class="bi bi-clock me-1"></i> 20-25 MINS
-              </span>
-              <span class="badge bg-danger position-absolute top-0 end-0 m-3 fw-bold">
-                50% OFF UPTO ₹100
-              </span>
+              <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=500&q=80" class="card-img-top" alt="Meghana Foods" style="height: 160px; object-fit: cover;">
+              <span class="badge bg-dark position-absolute bottom-0 start-0 m-2 px-2 py-1 small fw-bold">₹100 OFF ABOVE ₹299</span>
             </div>
-            <div class="p-3 flex-grow-1 d-flex flex-column justify-content-between">
-              <div>
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <h5 class="fw-bold text-pine mb-0">Meghana Foods</h5>
-                  <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill me-1"></i> 4.5</span>
-                </div>
-                <p class="small text-muted mb-2">Biryani, Andhra Special, North Indian, Seafood</p>
-                <div class="small text-muted mb-3"><i class="bi bi-geo-alt text-success me-1"></i> Indiranagar • 2.4 km away</div>
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <h6 class="fw-bold text-dark mb-0">Meghana Foods</h6>
+                <span class="badge bg-success d-flex align-items-center gap-1"><i class="bi bi-star-fill text-warning"></i> 4.5</span>
               </div>
-              <a href="restaurant.php" class="btn btn-outline-success w-100 rounded-pill fw-bold py-2">
-                View Full Menu <i class="bi bi-chevron-right ms-1"></i>
-              </a>
+              <div class="text-muted small mb-2 text-truncate">Biryani, Andhra, North Indian, Seafood</div>
+              <div class="d-flex justify-content-between small text-muted border-top pt-2">
+                <span><i class="bi bi-clock me-1 text-success"></i> 25-30 mins</span>
+                <span>Indiranagar</span>
+              </div>
             </div>
-          </div>
+          </a>
         </div>
 
-        <!-- Card 2: Empire Restaurant -->
-        <div class="col-md-6 col-lg-4">
-          <div class="restaurant-card bg-white rounded-4 overflow-hidden border shadow-sm h-100 d-flex flex-column">
+        <!-- Restaurant 2 -->
+        <div class="col-lg-3 col-md-6">
+          <a href="<?= CUSTOMER_URL ?>/restaurant.php" class="card h-100 border-0 shadow-sm rounded-4 text-decoration-none overflow-hidden restaurant-card hover-lift">
             <div class="position-relative">
-              <img src="https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=500&q=80" class="w-100 object-fit-cover" style="height: 190px;" alt="Empire Restaurant">
-              <span class="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 start-0 m-3 fw-bold">
-                <i class="bi bi-clock me-1"></i> 30-35 MINS
-              </span>
-              <span class="badge bg-success position-absolute top-0 end-0 m-3 fw-bold">
-                FLAT ₹125 OFF
-              </span>
+              <img src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=500&q=80" class="card-img-top" alt="Empire Restaurant" style="height: 160px; object-fit: cover;">
+              <span class="badge bg-dark position-absolute bottom-0 start-0 m-2 px-2 py-1 small fw-bold">50% OFF UP TO ₹100</span>
             </div>
-            <div class="p-3 flex-grow-1 d-flex flex-column justify-content-between">
-              <div>
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <h5 class="fw-bold text-pine mb-0">Empire Restaurant</h5>
-                  <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill me-1"></i> 4.3</span>
-                </div>
-                <p class="small text-muted mb-2">Kebabs, Shawarma, Ghee Rice, Mughlai</p>
-                <div class="small text-muted mb-3"><i class="bi bi-geo-alt text-success me-1"></i> 80 Feet Road, Indiranagar • 1.8 km away</div>
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <h6 class="fw-bold text-dark mb-0">Hotel Empire</h6>
+                <span class="badge bg-success d-flex align-items-center gap-1"><i class="bi bi-star-fill text-warning"></i> 4.3</span>
               </div>
-              <a href="restaurant.php" class="btn btn-outline-success w-100 rounded-pill fw-bold py-2">
-                View Full Menu <i class="bi bi-chevron-right ms-1"></i>
-              </a>
+              <div class="text-muted small mb-2 text-truncate">North Indian, Mughlai, Kebabs, Rolls</div>
+              <div class="d-flex justify-content-between small text-muted border-top pt-2">
+                <span><i class="bi bi-clock me-1 text-success"></i> 30-35 mins</span>
+                <span>Koramangala</span>
+              </div>
             </div>
-          </div>
+          </a>
         </div>
 
-        <!-- Card 3: Punjab Grill Cloud Kitchen -->
-        <div class="col-md-6 col-lg-4">
-          <div class="restaurant-card bg-white rounded-4 overflow-hidden border shadow-sm h-100 d-flex flex-column">
+        <!-- Restaurant 3 -->
+        <div class="col-lg-3 col-md-6">
+          <a href="<?= CUSTOMER_URL ?>/restaurant.php" class="card h-100 border-0 shadow-sm rounded-4 text-decoration-none overflow-hidden restaurant-card hover-lift">
             <div class="position-relative">
-              <img src="https://images.unsplash.com/photo-1588166524941-3bf61a9c41db?auto=format&fit=crop&w=500&q=80" class="w-100 object-fit-cover" style="height: 190px;" alt="Punjab Grill">
-              <span class="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 start-0 m-3 fw-bold">
-                <i class="bi bi-clock me-1"></i> 25-30 MINS
-              </span>
-              <span class="badge bg-warning text-dark position-absolute top-0 end-0 m-3 fw-bold">
-                FREE DELIVERY
-              </span>
+              <img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80" class="card-img-top" alt="Truffles Burgers" style="height: 160px; object-fit: cover;">
+              <span class="badge bg-dark position-absolute bottom-0 start-0 m-2 px-2 py-1 small fw-bold">ITEMS AT ₹179</span>
             </div>
-            <div class="p-3 flex-grow-1 d-flex flex-column justify-content-between">
-              <div>
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <h5 class="fw-bold text-pine mb-0">Punjab Grill Kitchen</h5>
-                  <span class="badge bg-success text-white fw-bold"><i class="bi bi-star-fill me-1"></i> 4.6</span>
-                </div>
-                <p class="small text-muted mb-2">North Indian, Butter Chicken, Dal Makhani, Naan</p>
-                <div class="small text-muted mb-3"><i class="bi bi-geo-alt text-success me-1"></i> HAL 2nd Stage • 2.9 km away</div>
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <h6 class="fw-bold text-dark mb-0">Truffles Cafe & Burgers</h6>
+                <span class="badge bg-success d-flex align-items-center gap-1"><i class="bi bi-star-fill text-warning"></i> 4.6</span>
               </div>
-              <a href="restaurant.php" class="btn btn-outline-success w-100 rounded-pill fw-bold py-2">
-                View Full Menu <i class="bi bi-chevron-right ms-1"></i>
-              </a>
+              <div class="text-muted small mb-2 text-truncate">Burgers, Pastas, Desserts, Shakes</div>
+              <div class="d-flex justify-content-between small text-muted border-top pt-2">
+                <span><i class="bi bi-clock me-1 text-success"></i> 20-25 mins</span>
+                <span>Indiranagar</span>
+              </div>
             </div>
-          </div>
+          </a>
         </div>
+
+        <!-- Restaurant 4 -->
+        <div class="col-lg-3 col-md-6">
+          <a href="<?= CUSTOMER_URL ?>/restaurant.php" class="card h-100 border-0 shadow-sm rounded-4 text-decoration-none overflow-hidden restaurant-card hover-lift">
+            <div class="position-relative">
+              <img src="https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=500&q=80" class="card-img-top" alt="A2B Veg" style="height: 160px; object-fit: cover;">
+              <span class="badge bg-success position-absolute bottom-0 start-0 m-2 px-2 py-1 small fw-bold">PURE VEG</span>
+            </div>
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <h6 class="fw-bold text-dark mb-0">Adyar Ananda Bhavan (A2B)</h6>
+                <span class="badge bg-success d-flex align-items-center gap-1"><i class="bi bi-star-fill text-warning"></i> 4.4</span>
+              </div>
+              <div class="text-muted small mb-2 text-truncate">South Indian, Crispy Dosas, Sweets</div>
+              <div class="d-flex justify-content-between small text-muted border-top pt-2">
+                <span><i class="bi bi-clock me-1 text-success"></i> 18-22 mins</span>
+                <span>HSR Layout</span>
+              </div>
+            </div>
+          </a>
+        </div>
+
       </div>
     </div>
   </section>
 
   <!-- =========================================================================
-       RECOMMENDED BESTSELLERS (DIRECT ADD TO CART)
+       DISH CATALOG & LIVE MENU WITH ADD TO CART
        ========================================================================= -->
-  <section class="py-5 bg-white border-top">
+  <section class="dishes-catalog-section py-5" id="dishes">
     <div class="container-xl">
-      <div class="d-flex justify-content-between align-items-end mb-4">
+      
+      <!-- Section Title & Filter Pills -->
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
-          <span class="text-success fw-bold small text-uppercase letter-spacing-1">Trending Right Now</span>
-          <h2 class="fw-bold text-pine mb-0">Popular Chef Recommendations</h2>
+          <h3 class="fw-bold mb-1 font-outfit">Recommended Dishes with Fast Delivery</h3>
+          <p class="text-muted small mb-0">Live stock synchronized with our MySQL 8.0 ACID transaction engine</p>
         </div>
-        <a href="restaurant.php" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">
-          Explore All Dishes
-        </a>
-      </div>
 
-      <div class="row g-4">
-        <?php foreach ($bestsellers as $dish): ?>
-          <div class="col-md-6 col-lg-3">
-            <div class="dish-card bg-white rounded-4 border p-3 shadow-xs h-100 d-flex flex-column justify-content-between hover-lift">
-              <div class="position-relative mb-3 rounded-3 overflow-hidden" style="height: 160px;">
-                <img src="<?= sanitize($dish['image_url']) ?>" class="w-100 h-100 object-fit-cover" alt="<?= sanitize($dish['item_name']) ?>">
-                <span class="food-type-icon <?= $dish['is_veg'] ? 'veg' : 'non-veg' ?> position-absolute top-0 start-0 m-2"></span>
-                <span class="badge bg-dark bg-opacity-75 text-white position-absolute bottom-0 end-0 m-2 small">
-                  <i class="bi bi-clock me-1"></i> <?= (int)$dish['prep_time_minutes'] ?>m prep
-                </span>
-              </div>
-              <div>
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <h6 class="fw-bold text-pine mb-0 text-truncate" style="max-width: 170px;" title="<?= sanitize($dish['item_name']) ?>"><?= sanitize($dish['item_name']) ?></h6>
-                  <span class="text-success small fw-bold"><i class="bi bi-star-fill text-warning me-1"></i><?= $dish['rating'] ?></span>
-                </div>
-                <p class="small text-muted dish-desc-clamp mb-3" style="font-size: 0.78rem;"><?= sanitize($dish['description']) ?></p>
-              </div>
-              <div class="d-flex align-items-center justify-content-between pt-2 border-top">
-                <span class="fw-bold text-pine fs-6"><?= formatPrice($dish['price']) ?></span>
-                <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold" onclick="addToCart(<?= $dish['item_id'] ?>, '<?= addslashes($dish['item_name']) ?>', <?= $dish['price'] ?>, <?= $dish['is_veg'] ? 'true' : 'false' ?>)" style="background-color: var(--lush-forest);">
-                  <i class="bi bi-plus-lg me-1"></i> ADD
-                </button>
-              </div>
-            </div>
-          </div>
-        <?php endforeach; ?>
-      </div>
-    </div>
-  </section>
+        <!-- Dietary & Filter Toggles -->
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          
+          <!-- Veg Only Toggle Button -->
+          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2" id="vegOnlyToggle">
+            <span class="food-badge-dot veg" style="width:10px; height:10px; border-radius:50%; background:#229947; display:inline-block;"></span>
+            <span>Pure Veg Only</span>
+          </button>
 
-  <!-- =========================================================================
-       PROMO COUPON CALLOUT
-       ========================================================================= -->
-  <section class="py-5" style="background: linear-gradient(135deg, #1C3322 0%, #243E2C 50%, #2E6F40 100%);">
-    <div class="container-xl text-white">
-      <div class="row align-items-center g-4">
-        <div class="col-lg-8">
-          <span class="badge bg-mint text-pine fw-bold px-3 py-1 rounded-pill mb-2">SPECIAL DISCOUNT CODE</span>
-          <h2 class="display-6 fw-bold mb-2">Get 20% Off Your Entire Order!</h2>
-          <p class="lead text-white-50 mb-0">Use promo code <span class="badge bg-white text-dark font-monospace px-3 py-1">LUSHFOREST</span> at checkout to unlock savings upto ₹100.</p>
-        </div>
-        <div class="col-lg-4 text-lg-end">
-          <a href="offers.php" class="btn btn-light rounded-pill px-4 py-3 fw-bold text-pine shadow">
-            <i class="fa-solid fa-gift text-success me-2"></i> View All 5 Coupons
+          <!-- Sort / Fast Filter -->
+          <a href="<?= CUSTOMER_URL ?>/search.php?sort=price_asc" class="btn btn-light btn-sm rounded-pill px-3 py-1 border text-muted">
+            <i class="bi bi-sort-numeric-down me-1"></i> Price: Low to High
+          </a>
+
+          <a href="<?= CUSTOMER_URL ?>/search.php" class="btn btn-light btn-sm rounded-pill px-3 py-1 border text-muted">
+            <i class="bi bi-sliders me-1"></i> More Filters
           </a>
         </div>
       </div>
+
+      <!-- Dish Cards Grid -->
+      <div class="row g-4" id="dishesGrid">
+        <?php if (!empty($menuItems)): ?>
+          <?php foreach ($menuItems as $dish): ?>
+            <div class="col-xl-3 col-lg-4 col-md-6 dish-card-wrapper" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-category="<?= e($dish['category_slug']) ?>">
+              <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden dish-catalog-card hover-lift">
+                
+                <!-- Dish Image Box -->
+                <div class="dish-card-img-container position-relative overflow-hidden" style="height: 190px;">
+                  <img src="<?= e($dish['image_url']) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
+                  
+                  <!-- Veg / Non-Veg Indicator -->
+                  <div class="position-absolute top-0 start-0 m-2">
+                    <?php if ($dish['is_veg']): ?>
+                      <span class="badge bg-white text-success border border-success d-flex align-items-center gap-1 shadow-sm px-2 py-1" style="font-size: 0.7rem;">
+                        <span style="width: 8px; height: 8px; border-radius: 50%; background: #229947; display: inline-block;"></span>
+                        VEG
+                      </span>
+                    <?php else: ?>
+                      <span class="badge bg-white text-danger border border-danger d-flex align-items-center gap-1 shadow-sm px-2 py-1" style="font-size: 0.7rem;">
+                        <span style="width: 8px; height: 8px; border-radius: 50%; background: #D32F2F; display: inline-block;"></span>
+                        NON-VEG
+                      </span>
+                    <?php endif; ?>
+                  </div>
+
+                  <!-- Prep Time Badge -->
+                  <div class="position-absolute top-0 end-0 m-2">
+                    <span class="badge bg-dark bg-opacity-75 text-white shadow-sm px-2 py-1" style="font-size: 0.7rem;">
+                      <i class="bi bi-clock me-1 text-mint"></i> <?= (int)$dish['prep_time_minutes'] ?>m
+                    </span>
+                  </div>
+
+                  <!-- Live Stock Pill -->
+                  <?php if ((int)$dish['stock_quantity'] < 15): ?>
+                    <div class="position-absolute bottom-0 start-0 m-2">
+                      <span class="badge bg-danger shadow-sm px-2 py-1" style="font-size: 0.65rem;">
+                        Only <?= (int)$dish['stock_quantity'] ?> left in stock
+                      </span>
+                    </div>
+                  <?php endif; ?>
+                </div>
+
+                <!-- Dish Card Content -->
+                <div class="card-body p-3 d-flex flex-column justify-content-between">
+                  <div>
+                    <div class="small text-muted mb-1 text-uppercase fw-semibold" style="font-size: 0.7rem; letter-spacing: 0.5px;">
+                      <?= e($dish['category_name']) ?>
+                    </div>
+                    <h6 class="fw-bold mb-1 text-dark dish-title" title="<?= e($dish['item_name']) ?>">
+                      <?= e($dish['item_name']) ?>
+                    </h6>
+                    <p class="text-muted small mb-3 dish-desc-clamp" style="min-height: 38px;">
+                      <?= e($dish['description']) ?>
+                    </p>
+                  </div>
+
+                  <!-- Pricing & Add to Cart Controls -->
+                  <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+                    <div>
+                      <span class="fs-5 fw-bold text-forest"><?= format_inr($dish['price']) ?></span>
+                    </div>
+
+                    <!-- Client JS Synchronized ADD Button -->
+                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>">
+                      <button 
+                        type="button" 
+                        class="btn btn-outline-success btn-sm rounded-pill px-3 fw-bold add-to-cart-btn"
+                        style="border-color: #2E6F40; color: #2E6F40;"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                      >
+                        ADD <i class="bi bi-plus"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <div class="col-12 text-center py-5">
+            <i class="bi bi-egg-fried fs-1 text-muted mb-3 d-block"></i>
+            <h5>No dishes available right now</h5>
+            <p class="text-muted small">Please check back soon or initialize the database seeder.</p>
+            <a href="<?= BASE_URL ?>/database/seed.php" class="btn btn-success btn-sm rounded-pill px-4">Initialize Menu</a>
+          </div>
+        <?php endif; ?>
+      </div>
+
     </div>
   </section>
+
+  <!-- =========================================================================
+       APRIORI ALGORITHM: FREQUENTLY ORDERED TOGETHER (MARKET BASKET ANALYSIS)
+       ========================================================================= -->
+  <?php if (!empty($recommendations)): ?>
+    <section class="apriori-section py-5" style="background: #EDFBF2;">
+      <div class="container-xl">
+        <div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="badge rounded-pill px-3 py-1" style="background: #2E6F40; color: #CEFFDC;">
+                🧠 APRIORI ALGORITHM
+              </span>
+              <span class="small text-muted fw-bold">Market Basket Recommendation Engine</span>
+            </div>
+            <h3 class="fw-bold mb-0 font-outfit">Frequently Ordered Combos & Add-ons</h3>
+          </div>
+          <span class="text-muted small">Computed from historical transaction support & confidence</span>
+        </div>
+
+        <div class="row g-3">
+          <?php foreach ($recommendations as $rec): ?>
+            <div class="col-md-6 col-lg-3">
+              <div class="card h-100 border-0 rounded-4 shadow-sm p-3 bg-white d-flex flex-column justify-content-between">
+                <div class="d-flex gap-3 align-items-center mb-2">
+                  <img src="<?= e($rec['image_url']) ?>" alt="<?= e($rec['item_name']) ?>" class="rounded-3 object-fit-cover" style="width: 65px; height: 65px;">
+                  <div class="overflow-hidden">
+                    <span class="badge bg-light text-success border small mb-1" style="font-size: 0.65rem;">Popular Combo</span>
+                    <h6 class="fw-bold mb-0 text-truncate text-dark" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></h6>
+                    <div class="small fw-bold text-forest"><?= format_inr($rec['price']) ?></div>
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  class="btn btn-outline-success btn-sm w-100 rounded-pill fw-semibold mt-2"
+                  onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= addslashes(e($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                >
+                  <i class="bi bi-plus-circle me-1"></i> Add Combo Item
+                </button>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </section>
+  <?php endif; ?>
+
+  <!-- =========================================================================
+       APP DOWNLOAD & LOYALTY CTA
+       ========================================================================= -->
+  <section class="app-cta-section py-5">
+    <div class="container-xl">
+      <div class="rounded-4 p-4 p-md-5 shadow-sm" style="background: linear-gradient(135deg, #243E2C 0%, #2E6F40 100%); color: #fff;">
+        <div class="row align-items-center g-4">
+          <div class="col-lg-8">
+            <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #CEFFDC; color: #243E2C;">
+              ⚡ ZIPPY INSTANT DISPATCH
+            </span>
+            <h2 class="fw-bold mb-2 text-white">Experience Zero-Lag Food Ordering</h2>
+            <p class="text-white-50 mb-4" style="max-width: 600px;">
+              Engineered with 3NF Normalized relational storage, row-level pessimistic locking, and dynamic WSJF scheduling to ensure every meal arrives fresh and on time.
+            </p>
+            <div class="d-flex flex-wrap gap-3">
+              <a href="<?= CUSTOMER_URL ?>/cart.php" class="btn btn-mint fw-bold rounded-pill px-4 py-2" style="background: #CEFFDC; color: #243E2C;">
+                <i class="bi bi-bag-check-fill me-1"></i> Go to Your Cart
+              </a>
+              <a href="<?= ADMIN_URL ?>/index.php" class="btn btn-outline-light rounded-pill px-4 py-2">
+                <i class="bi bi-speedometer2 me-1"></i> Open Store Admin Portal
+              </a>
+            </div>
+          </div>
+          <div class="col-lg-4 text-center d-none d-lg-block">
+            <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);">
+              <i class="bi bi-shield-check text-mint fs-1 mb-2 d-block" style="color: #CEFFDC;"></i>
+              <div class="fw-bold text-white fs-5">FSSAI Certified</div>
+              <div class="small text-white-50">100% Hygienic & Contactless Delivery Handshake</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
