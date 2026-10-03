@@ -5,6 +5,9 @@
  * Student: Pooja JP | Course: MCSP-232 (MCA Major Project)
  */
 
+// Set default timezone to Indian Standard Time (IST) to align PHP with MariaDB system time
+date_default_timezone_set('Asia/Kolkata');
+
 // Disable implicit flushing and start output buffering for clean HTTP headers and redirects
 ini_set('implicit_flush', '0');
 if (!ob_get_level()) {

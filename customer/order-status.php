@@ -366,6 +366,7 @@ window.orderTrackingActive = true;
   const orderId = <?= (int)$order['order_id'] ?>;
   let orderStatus = '<?= addslashes(strtoupper($order['order_status'])) ?>';
   let secondsLeft = <?= (int)$remainingSeconds ?>;
+  window.__setSecondsLeft = function(s) { secondsLeft = s; };
   const countdownElem = document.getElementById('live-eta-countdown');
   const countdownLabel = document.getElementById('countdownLabel');
   const countdownSubtext = document.getElementById('countdownSubtext');

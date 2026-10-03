@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     // Step 3: Concurrency Control - Lock & Verify Stock via SELECT ... FOR UPDATE
                     $verifiedItems = [];
                     $subtotal = 0.00;
-                    $maxPrepTime = 20;
+                    $maxPrepTime = 0;
 
                     $lockStmt = $pdo->prepare("
                         SELECT `item_id`, `item_name`, `price`, `stock_quantity`, `is_available`, `prep_time_minutes` 
