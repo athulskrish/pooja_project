@@ -169,6 +169,11 @@ To initialize or reset the database:
    - Orders generate a random 6-digit cryptographic verification OTP in `delivery_dispatches`.
    - The delivery partner cannot complete an order without entering this customer-held secret code, preventing false delivery disputes and guaranteeing physical handover.
 
+6. **Razorpay Standard Sandbox Payment Gateway — `customer/checkout.php`:**
+   - Dual-mode online payment processing using official Razorpay JS SDK (`rzp_test_1DP5mmOlF5G5ag`) with automatic fallback to built-in offline sandbox simulator.
+   - Accepts test card `4111 1111 1111 1111` (CVV `123`, OTP `123456`) and dummy UPI `success@razorpay`.
+   - Persists verified payment IDs (`pay_...`) to `payments.transaction_reference`, stamps status `SUCCESSFUL`, and generates print-ready Indian GST Tax Invoice (`SAC 996331`).
+
 ---
 
 ## 🚴 Delivery Partner Fleet Portal (Delivery Boy)

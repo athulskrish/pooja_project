@@ -305,9 +305,9 @@ flowchart LR
   4. System acquires row-level pessimistic locks on all cart dishes (`SELECT stock_quantity FROM menu_items WHERE item_id = ? FOR UPDATE`).
   5. System validates that `stock_quantity >= cart_quantity` for every item.
   6. System calculates 5% GST (2.5% CGST + 2.5% SGST), packaging fees, and delivery fee.
-  7. System invokes Payment Gateway (UC-08). Upon payment confirmation, system inserts record into `orders` and `order_items`.
+  7. System invokes Payment Gateway (UC-08: Razorpay Sandbox Checkout SDK / Offline Test Simulator). Upon payment authorization token return (`pay_...`), system inserts record into `orders` and `order_items`.
   8. System decrements `stock_quantity` by ordered amounts and sets `is_available = FALSE` if stock drops to 0.
-  9. System inserts payment details into `payments` table and records an initial audit entry in `order_audit_trail`.
+  9. System inserts payment details into `payments` table (storing Razorpay payment ID as `transaction_reference` with status `SUCCESSFUL`) and records an initial audit entry in `order_audit_trail`.
   10. System commits transaction (`COMMIT`) and displays animated confirmation with Order ID and Delivery OTP.
 * **Alternative / Exception Flows:**
   * *Insufficient Stock:* If any item has fewer portions than requested, the system aborts the transaction (`ROLLBACK`), frees locks, and notifies customer: *"Sorry, [Dish Name] just sold out!"*

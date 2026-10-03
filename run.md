@@ -59,9 +59,13 @@ The project supports zero-dependency environment configuration via `.env` with a
    # Environment Settings
    APP_ENV=development
    APP_DEBUG=true
+
+   # Razorpay Test Mode Credentials (Standard Sandbox)
+   RAZORPAY_KEY_ID=rzp_test_1DP5mmOlF5G5ag
+   RAZORPAY_KEY_SECRET=dummy_secret_key
    ```
 
-> ℹ️ **Note:** If no `.env` file exists, the system automatically defaults to `127.0.0.1:3306`, user `root`, empty password, and database `zippy_db`.
+> ℹ️ **Note:** If no `.env` file exists, the system automatically defaults to `127.0.0.1:3306`, user `root`, empty password, database `zippy_db`, and test key `rzp_test_1DP5mmOlF5G5ag`.
 
 ---
 
@@ -221,7 +225,7 @@ sequenceDiagram
     A->>A: Inspect Sales KPIs & SES Demand Forecasts
 ```
 
-### Stage 1: Customer Ordering & Checkout
+### Stage 1: Customer Ordering & Checkout (Razorpay Test Gateway)
 1. Open [http://127.0.0.1:8080/customer/login.php](http://127.0.0.1:8080/customer/login.php).
 2. Click the **"Customer Demo Login"** button (or enter `pooja@example.com` / `password123`).
 3. Browse the storefront:
@@ -232,11 +236,20 @@ sequenceDiagram
 4. Open the Cart Drawer or go to [`customer/cart.php`](http://127.0.0.1:8080/customer/cart.php):
    - Enter promo code `LUSHFOREST` or `ZIPPY50` to apply promotional discounts.
 5. Click **"Proceed to Checkout"** ([`customer/checkout.php`](http://127.0.0.1:8080/customer/checkout.php)):
-   - Select a saved delivery address (or add a new one).
-   - Choose **Cash on Delivery (COD)** or **UPI / Net Banking**.
-   - Click **"Place Order Now"**.
-   - *Technical Note:* The checkout executes inside a MySQL `START TRANSACTION`, acquiring row-level pessimistic locks (`SELECT ... FOR UPDATE`) on dishes to verify and decrement stock atomically.
-6. On [`customer/order-success.php`](http://127.0.0.1:8080/customer/order-success.php) and [`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php), note the **6-digit Secret Delivery OTP** (e.g. `852914`). Keep this browser tab open to watch real-time status transitions.
+   - Select a saved delivery address (or enter a new address).
+   - Under **"4. Select Payment Method"**, choose any **Razorpay Online Sandbox** option:
+     * ⚡ **Instant UPI via Razorpay:** Test VPA `success@razorpay` (or 1-click Pay).
+     * 💳 **Credit / Debit Card via Razorpay:** Test card `4111 1111 1111 1111`, Expiry `12/28`, CVV `123`, OTP `123456`.
+     * 🏦 **Net Banking via Razorpay:** Any bank sandbox auth.
+     * *(Or choose Cash on Delivery for pending cash settlement).*
+   - Click **"Pay & Place Order"**:
+     * The official **Razorpay Checkout Sandbox Modal** (or built-in offline test sandbox modal) will appear with the calculated bill amount in paise.
+     * Click **"Simulate Successful Payment (Instant)"** or enter test credentials to authorize the payment.
+   - *Technical Note:* The checkout executes inside a MySQL `START TRANSACTION`, acquiring row-level pessimistic locks (`SELECT ... FOR UPDATE`) on dishes to verify and decrement stock atomically, records the Razorpay payment token (`pay_...`) in `payments` with status `SUCCESSFUL`, logs to `order_audit_trail`, and generates the 6-digit delivery OTP.
+6. On [`customer/order-success.php`](http://127.0.0.1:8080/customer/order-success.php):
+   - Note the **🌿 Razorpay Test Verified** badge displaying your generated transaction reference (e.g. `pay_rzp_test_...`).
+   - Note the **6-digit Secret Delivery OTP** (e.g. `852914`).
+   - Click **"Track Live Order"** to view real-time status at [`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php).
 
 ### Stage 2: Kitchen Display System (KDS) & Thermal KOT
 1. Open a new window or tab: [http://127.0.0.1:8080/kitchen/login.php](http://127.0.0.1:8080/kitchen/login.php).
@@ -288,6 +301,35 @@ sequenceDiagram
    - **BI Reports & SES Forecasting ([`admin/reports.php`](http://127.0.0.1:8080/admin/reports.php)):** Review Chart.js sales visuals and Single Exponential Smoothing ($\alpha = 0.3$) demand forecasts to predict ingredient requirements and prevent stockouts.
 
 ---
+
+## 💳 Testing Razorpay Dummy / Sandbox Payments
+
+The system integrates the **Razorpay Standard Checkout** workflow with full dual-mode sandbox support (online via official CDN and offline via built-in resilient test simulator).
+
+### Test Credentials Reference:
+| Payment Mode | Test Credential / Value | Expected Behavior |
+|:---|:---|:---|
+| **UPI** | `success@razorpay` | Instant authorization approval via dummy VPA |
+| **Visa Test Card** | `4111 1111 1111 1111` (Exp: any future e.g. `12/28`, CVV: `123`) | OTP screen (`123456`) -> Successful authorization |
+| **MasterCard Test**| `5123 4567 8901 2346` (Exp: any future, CVV: `123`) | Successful sandbox authorization |
+| **Net Banking** | Any Indian Bank (HDFC, ICICI, SBI, Axis, Kotak) | Simulated bank redirect & instant approval |
+| **Failure Testing**| Click **"Simulate Payment Failure"** in test modal | Displays realistic bank decline error without submitting order |
+
+### Dual-Mode Architecture (Online + Offline Resilient):
+1. **Online Mode (Internet Connected):**  
+   Invokes the official Razorpay JS SDK (`https://checkout.razorpay.com/v1/checkout.js`) with key `rzp_test_1DP5mmOlF5G5ag`. Opens Razorpay's branded modal themed in Zippy's Lush Forest green (`#2E6F40`).
+2. **Offline Mode (Local / Viva Defense / Restricted Network):**  
+   If the browser cannot reach `checkout.razorpay.com` (e.g. offline evaluation), the checkout automatically launches the built-in **Razorpay Test Sandbox Simulator Modal**. Clicking **"Simulate Successful Payment (Instant)"** generates an authentic `pay_rzp_test_...` transaction reference token and completes the ACID checkout seamlessly.
+
+### Where to Verify the Razorpay Payment in the System:
+1. **Customer Order Confirmation ([`customer/order-success.php`](http://127.0.0.1:8080/customer/order-success.php)):**  
+   Shows payment mode (`UPI` or `CREDIT_CARD`), transaction reference (`pay_...`), and the green **🌿 Razorpay Test Verified** badge.
+2. **Customer Live Tracking ([`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php)):**  
+   Summary card displays `Payment Status: SUCCESSFUL` and the full transaction reference code.
+3. **Official Indian GST Tax Invoice ([`customer/invoice.php`](http://127.0.0.1:8080/customer/invoice.php)):**  
+   Prints the Razorpay Transaction Reference (`Ref: pay_...`) directly on the SAC 996331 tax invoice.
+4. **Relational Database (`payments` table):**  
+   Row inserted with `transaction_reference = 'pay_...'`, `payment_status = 'SUCCESSFUL'`, and `amount_paid`.
 
 ## 🧠 Master's Degree (MCA) Algorithmic Implementations
 

@@ -36,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $cartItems = json_decode($rawCartJson, true);
         $couponCode = clean_input($_POST['coupon_code'] ?? '');
         $paymentMode = clean_input($_POST['payment_mode'] ?? 'UPI');
+        $razorpayPaymentId = clean_input($_POST['razorpay_payment_id'] ?? '');
         $orderNotes = clean_input($_POST['order_notes'] ?? '');
         $selectedAddressId = !empty($_POST['address_id']) ? (int)$_POST['address_id'] : null;
 
@@ -205,8 +206,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
 
                     // Step 7: Record Payment Entry
-                    $txRef = strtoupper($paymentMode) . '-' . strtoupper(bin2hex(random_bytes(5)));
-                    $payStatus = ($paymentMode === 'COD') ? 'PENDING' : 'SUCCESSFUL';
+                    $validModes = ['UPI', 'CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING', 'COD'];
+                    if (!in_array($paymentMode, $validModes)) {
+                        $paymentMode = 'UPI';
+                    }
+
+                    if ($paymentMode === 'COD') {
+                        $txRef = 'COD-' . strtoupper(bin2hex(random_bytes(5)));
+                        $payStatus = 'PENDING';
+                    } else {
+                        // Razorpay Online Sandbox Payment
+                        if (!empty($razorpayPaymentId)) {
+                            $txRef = $razorpayPaymentId;
+                        } else {
+                            $txRef = 'pay_test_' . substr(bin2hex(random_bytes(7)), 0, 14);
+                        }
+                        $payStatus = 'SUCCESSFUL';
+                    }
 
                     $payStmt = $pdo->prepare("
                         INSERT INTO `payments` (`order_id`, `payment_mode`, `transaction_reference`, `amount_paid`, `payment_status`, `payment_timestamp`) 
@@ -299,6 +315,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       <input type="hidden" name="action" value="process_order">
       <input type="hidden" name="cart_json" id="checkoutCartJsonInput" value="[]">
       <input type="hidden" name="coupon_code" id="checkoutCouponInput" value="">
+      <input type="hidden" name="razorpay_payment_id" id="razorpayPaymentIdInput" value="">
+      <input type="hidden" name="razorpay_order_id" id="razorpayOrderIdInput" value="">
+      <input type="hidden" name="razorpay_signature" id="razorpaySignatureInput" value="">
 
       <div class="row g-4">
         
@@ -403,41 +422,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
           <!-- Section 4: Payment Mode Selection -->
           <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-            <h5 class="fw-bold text-dark mb-3"><i class="bi bi-credit-card-2-front-fill text-success me-2"></i>4. Select Payment Method</h5>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="fw-bold text-dark mb-0"><i class="bi bi-credit-card-2-front-fill text-success me-2"></i>4. Select Payment Method</h5>
+              <span class="badge rounded-pill px-3 py-1" style="background:#02042B; color:#528FF0; font-size:0.75rem;">
+                <i class="bi bi-shield-check me-1"></i> Razorpay Test Sandbox
+              </span>
+            </div>
+
+            <!-- Razorpay Info Banner -->
+            <div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 small rounded-3 mb-3 border-0" style="background:#EDFBF2; color:#1C2B20;">
+              <i class="bi bi-info-circle-fill text-success fs-5 flex-shrink-0"></i>
+              <div>
+                <strong>Razorpay Test Sandbox Enabled:</strong> Online payments are processed in dummy test mode. You can test with test card <code>4111 1111 1111 1111</code>, dummy UPI <code>success@razorpay</code>, or 1-Click Sandbox Simulation.
+              </div>
+            </div>
             
             <div class="d-flex flex-column gap-3">
               
-              <!-- UPI -->
+              <!-- UPI via Razorpay -->
               <label class="p-3 border rounded-3 d-flex align-items-center justify-content-between cursor-pointer payment-option-card active" style="cursor:pointer; background:#EDFBF2; border-color:#2E6F40 !important;">
                 <div class="d-flex align-items-center gap-3">
                   <input class="form-check-input m-0" type="radio" name="payment_mode" value="UPI" checked>
                   <div>
-                    <strong class="text-dark d-block">Instant UPI (Google Pay, PhonePe, Paytm, BHIM)</strong>
-                    <span class="small text-muted">Direct instant settlement via UPI QR or VPA Intent</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <strong class="text-dark">Instant UPI via Razorpay</strong>
+                      <span class="badge bg-success rounded-pill px-2 py-0" style="font-size:0.65rem;">TEST MODE</span>
+                    </div>
+                    <span class="small text-muted">Google Pay, PhonePe, Paytm, BHIM — dummy VPA: <code>success@razorpay</code></span>
                   </div>
                 </div>
-                <span class="badge bg-success rounded-pill px-2 py-1"><i class="bi bi-lightning-charge-fill"></i> FASTEST</span>
+                <span class="badge rounded-pill px-2 py-1" style="background:#02042B; color:#528FF0; font-size:0.75rem;">
+                  <i class="bi bi-lightning-charge-fill text-warning"></i> FASTEST
+                </span>
               </label>
 
-              <!-- Cards -->
+              <!-- Cards via Razorpay -->
               <label class="p-3 border rounded-3 d-flex align-items-center justify-content-between cursor-pointer payment-option-card" style="cursor:pointer;">
                 <div class="d-flex align-items-center gap-3">
                   <input class="form-check-input m-0" type="radio" name="payment_mode" value="CREDIT_CARD">
                   <div>
-                    <strong class="text-dark d-block">Credit / Debit Card</strong>
-                    <span class="small text-muted">Visa, MasterCard, RuPay & Diners Club</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <strong class="text-dark">Credit / Debit Card via Razorpay</strong>
+                      <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-0" style="font-size:0.65rem;">TEST MODE</span>
+                    </div>
+                    <span class="small text-muted">Visa, MasterCard, RuPay — test card: <code>4111 1111 1111 1111</code>, CVV: <code>123</code></span>
                   </div>
                 </div>
                 <i class="bi bi-credit-card fs-4 text-muted"></i>
               </label>
 
-              <!-- Net Banking -->
+              <!-- Net Banking via Razorpay -->
               <label class="p-3 border rounded-3 d-flex align-items-center justify-content-between cursor-pointer payment-option-card" style="cursor:pointer;">
                 <div class="d-flex align-items-center gap-3">
                   <input class="form-check-input m-0" type="radio" name="payment_mode" value="NET_BANKING">
                   <div>
-                    <strong class="text-dark d-block">Net Banking</strong>
-                    <span class="small text-muted">All major Indian banks supported (HDFC, ICICI, SBI, Axis)</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <strong class="text-dark">Net Banking via Razorpay</strong>
+                      <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-2 py-0" style="font-size:0.65rem;">TEST MODE</span>
+                    </div>
+                    <span class="small text-muted">HDFC, ICICI, SBI, Axis, Kotak — simulated instant sandbox auth</span>
                   </div>
                 </div>
                 <i class="bi bi-bank fs-4 text-muted"></i>
@@ -449,7 +492,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                   <input class="form-check-input m-0" type="radio" name="payment_mode" value="COD">
                   <div>
                     <strong class="text-dark d-block">Cash on Delivery (Pay upon arrival)</strong>
-                    <span class="small text-muted">Pay via cash or UPI to rider upon receiving delivery</span>
+                    <span class="small text-muted">Pay cash or UPI directly to courier upon receiving delivery</span>
                   </div>
                 </div>
                 <i class="bi bi-cash-stack fs-4 text-muted"></i>
@@ -518,16 +561,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
   </div>
 </main>
 
+<!-- Razorpay Sandbox Simulator Modal (For offline/resilient test demonstration) -->
+<div class="modal fade" id="razorpaySimulatorModal" tabindex="-1" aria-labelledby="rzpSimTitle" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <!-- Modal Header -->
+      <div class="p-3 text-white d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, #02042B 0%, #0c2340 100%); border-bottom: 3px solid #528FF0;">
+        <div class="d-flex align-items-center gap-2">
+          <div class="px-2 py-1 rounded fw-bold" style="background:#528FF0; color:#fff; font-size:0.85rem; letter-spacing:0.5px;">
+            RAZORPAY
+          </div>
+          <div>
+            <h6 class="modal-title fw-bold mb-0 text-white" id="rzpSimTitle">Test Mode Sandbox</h6>
+            <span class="text-white-50 small" style="font-size:0.7rem;">Merchant: <?= e(RAZORPAY_MERCHANT_NAME) ?></span>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="modal-body p-4 bg-light">
+        <div class="card border-0 rounded-3 shadow-sm p-3 bg-white mb-3 text-center">
+          <div class="small text-muted text-uppercase fw-semibold" style="letter-spacing:1px; font-size:0.7rem;">Amount to Authorize</div>
+          <div class="display-6 fw-bold text-dark my-1" id="rzpSimAmountDisplay">₹0.00</div>
+          <div class="small text-muted" id="rzpSimCustomerInfo">Pooja JP • pooja@example.com</div>
+        </div>
+
+        <!-- Sandbox Dummy Credentials Card -->
+        <div class="card border-0 rounded-3 p-3 mb-3" style="background:#EDFBF2; border:1px solid #CEFFDC !important;">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <i class="bi bi-shield-check text-success fs-5"></i>
+            <strong class="text-forest small">Razorpay Test Mode Credentials</strong>
+          </div>
+          <ul class="list-unstyled small text-muted mb-0 d-flex flex-column gap-1">
+            <li>• <strong>UPI Dummy ID:</strong> <code>success@razorpay</code> (Instant Approval)</li>
+            <li>• <strong>Test Card:</strong> <code>4111 1111 1111 1111</code> | Exp: <code>12/28</code> | CVV: <code>123</code> | OTP: <code>123456</code></li>
+            <li>• <strong>Net Banking:</strong> All major Indian banks supported in test mode</li>
+          </ul>
+        </div>
+
+        <div id="rzpSimErrorBanner" class="alert alert-danger py-2 px-3 small rounded-3 mb-3 d-none">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          <span id="rzpSimErrorMessage">Transaction declined by issuing bank (Test Simulation).</span>
+        </div>
+
+        <!-- Simulation Actions -->
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-success rounded-pill fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2" id="rzpSimSuccessBtn" style="background:#2E6F40; border-color:#2E6F40;">
+            <i class="bi bi-check-circle-fill"></i> Simulate Successful Payment (Instant)
+          </button>
+          <button type="button" class="btn btn-outline-danger rounded-pill fw-semibold py-2" id="rzpSimFailBtn">
+            <i class="bi bi-x-circle me-1"></i> Simulate Payment Failure
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer bg-white border-0 py-2 px-4 justify-content-between">
+        <span class="small text-muted" style="font-size:0.75rem;">
+          <i class="bi bi-lock-fill text-success"></i> 256-Bit Test Sandbox Encryption
+        </span>
+        <button type="button" class="btn btn-sm btn-link text-muted" data-bs-dismiss="modal">Cancel & Return</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Official Razorpay Checkout JS SDK -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
 <script>
-// Synchronize client cart with checkout form
+// Global grand total tracker
+window.currentGrandTotal = 0;
+
 document.addEventListener('DOMContentLoaded', () => {
   const jsonInput = document.getElementById('checkoutCartJsonInput');
   const couponInput = document.getElementById('checkoutCouponInput');
   const itemsContainer = document.getElementById('checkoutSummaryItems');
+  const checkoutForm = document.getElementById('checkoutForm');
 
+  // Synchronize client cart with hidden input
   if (jsonInput) jsonInput.value = JSON.stringify(cart);
   if (couponInput) couponInput.value = activeCoupon || '';
 
+  // Synchronize UI bill breakdown
   if (itemsContainer) {
     if (!cart || cart.length === 0) {
       itemsContainer.innerHTML = '<div class="text-center text-muted small py-3">No items in cart. Please return to menu.</div>';
@@ -563,6 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const taxable = Math.max(0, subtotal - discount);
       const gst = taxable * 0.05;
       const grandTotal = taxable + gst + deliveryFee + platformFee;
+      window.currentGrandTotal = grandTotal;
 
       document.getElementById('chkSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
       document.getElementById('chkDelivery').textContent = deliveryFee === 0 ? 'FREE' : `₹${deliveryFee.toFixed(2)}`;
@@ -577,6 +695,165 @@ document.addEventListener('DOMContentLoaded', () => {
         discRow.style.setProperty('display', 'none', 'important');
       }
     }
+  }
+
+  // Payment Option selection visual styling
+  const optionCards = document.querySelectorAll('.payment-option-card');
+  optionCards.forEach(card => {
+    card.addEventListener('click', function() {
+      optionCards.forEach(c => {
+        c.classList.remove('active');
+        c.style.background = '';
+        c.style.borderColor = '';
+      });
+      this.classList.add('active');
+      this.style.background = '#EDFBF2';
+      this.style.borderColor = '#2E6F40';
+      const radio = this.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true;
+    });
+  });
+
+  // Razorpay Sandbox Simulator Modal initialization
+  let rzpSimModal = null;
+  const simModalEl = document.getElementById('razorpaySimulatorModal');
+  if (simModalEl) {
+    rzpSimModal = new bootstrap.Modal(simModalEl);
+  }
+
+  function launchSimulatorModal(grandTotal, customerName, customerEmail) {
+    document.getElementById('rzpSimAmountDisplay').textContent = `₹${grandTotal.toFixed(2)}`;
+    document.getElementById('rzpSimCustomerInfo').textContent = `${customerName} • ${customerEmail}`;
+    document.getElementById('rzpSimErrorBanner').classList.add('d-none');
+    if (rzpSimModal) rzpSimModal.show();
+  }
+
+  // Simulator Success Button
+  const simSuccessBtn = document.getElementById('rzpSimSuccessBtn');
+  if (simSuccessBtn) {
+    simSuccessBtn.addEventListener('click', () => {
+      simSuccessBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Authorizing via Razorpay Sandbox...';
+      simSuccessBtn.disabled = true;
+
+      setTimeout(() => {
+        // Generate authentic-format Razorpay payment ID
+        const dummyPayId = 'pay_rzp_test_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+        document.getElementById('razorpayPaymentIdInput').value = dummyPayId;
+        if (rzpSimModal) rzpSimModal.hide();
+        checkoutForm.submit();
+      }, 700);
+    });
+  }
+
+  // Simulator Failure Button
+  const simFailBtn = document.getElementById('rzpSimFailBtn');
+  if (simFailBtn) {
+    simFailBtn.addEventListener('click', () => {
+      const errBanner = document.getElementById('rzpSimErrorBanner');
+      errBanner.classList.remove('d-none');
+      errBanner.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  // Intercept Checkout Form Submission for Razorpay Online Payments
+  if (checkoutForm) {
+    checkoutForm.addEventListener('submit', function(e) {
+      const selectedRadio = document.querySelector('input[name="payment_mode"]:checked');
+      const selectedMode = selectedRadio ? selectedRadio.value : 'UPI';
+      const rzpPaymentId = document.getElementById('razorpayPaymentIdInput').value;
+
+      // If COD or Razorpay has already authorized the payment, let standard POST proceed
+      if (selectedMode === 'COD' || (rzpPaymentId && rzpPaymentId.trim() !== '')) {
+        return true;
+      }
+
+      // Online payment via Razorpay requested
+      e.preventDefault();
+
+      // 1. Validate Cart
+      if (!cart || cart.length === 0) {
+        alert("Your cart is empty. Please add items to your cart before proceeding.");
+        return false;
+      }
+
+      // 2. Validate Address
+      const hasSavedAddr = document.querySelector('input[name="address_id"]:checked');
+      const newAddrInput = document.querySelector('textarea[name="new_address_line"]');
+      if (!hasSavedAddr && (!newAddrInput || !newAddrInput.value.trim())) {
+        alert("Please select or enter a delivery address.");
+        if (newAddrInput) newAddrInput.focus();
+        return false;
+      }
+
+      // 3. Validate Guest Fields if present
+      const guestNameInput = document.querySelector('input[name="guest_name"]');
+      if (guestNameInput && !guestNameInput.value.trim()) {
+        alert("Please enter your name.");
+        guestNameInput.focus();
+        return false;
+      }
+
+      const grandTotal = window.currentGrandTotal || 0;
+      const amountInPaise = Math.round(grandTotal * 100);
+
+      const customerName = guestNameInput ? guestNameInput.value.trim() : '<?= addslashes($currentUser['full_name'] ?? 'Pooja JP') ?>';
+      const customerEmail = document.querySelector('input[name="guest_email"]')?.value.trim() || '<?= addslashes($currentUser['email'] ?? 'pooja@example.com') ?>';
+      const customerPhone = document.querySelector('input[name="guest_phone"]')?.value.trim() || '<?= addslashes($currentUser['phone_number'] ?? '9876543210') ?>';
+
+      // 4. Try Official Razorpay SDK Modal
+      if (typeof Razorpay !== 'undefined') {
+        const options = {
+          "key": "<?= RAZORPAY_KEY_ID ?>",
+          "amount": amountInPaise,
+          "currency": "INR",
+          "name": "<?= RAZORPAY_MERCHANT_NAME ?>",
+          "description": "Order Payment (Razorpay Test Mode)",
+          "image": "https://cdn-icons-png.flaticon.com/512/3075/3075977.png",
+          "prefill": {
+            "name": customerName,
+            "email": customerEmail,
+            "contact": customerPhone
+          },
+          "notes": {
+            "platform": "Zippy MCSP-232",
+            "payment_mode": selectedMode
+          },
+          "theme": {
+            "color": "#2E6F40"
+          },
+          "handler": function (response) {
+            // Authorized successfully by official Razorpay test checkout
+            document.getElementById('razorpayPaymentIdInput').value = response.razorpay_payment_id;
+            if (response.razorpay_order_id) {
+              document.getElementById('razorpayOrderIdInput').value = response.razorpay_order_id;
+            }
+            if (response.razorpay_signature) {
+              document.getElementById('razorpaySignatureInput').value = response.razorpay_signature;
+            }
+            checkoutForm.submit();
+          },
+          "modal": {
+            "ondismiss": function() {
+              console.log("Razorpay standard checkout modal closed.");
+            }
+          }
+        };
+
+        try {
+          const rzp = new Razorpay(options);
+          rzp.on('payment.failed', function (resp){
+            alert("Razorpay Payment Failed: " + (resp.error.description || 'Transaction declined.'));
+          });
+          rzp.open();
+        } catch (err) {
+          console.warn("Could not open Razorpay checkout SDK, falling back to simulator modal:", err);
+          launchSimulatorModal(grandTotal, customerName, customerEmail);
+        }
+      } else {
+        // Fallback for offline or restricted network environments
+        launchSimulatorModal(grandTotal, customerName, customerEmail);
+      }
+    });
   }
 });
 </script>

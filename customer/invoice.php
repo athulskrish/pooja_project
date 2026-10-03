@@ -101,6 +101,9 @@ $sgst = round($order['tax_amount'] / 2, 2);
       <div class="small text-muted">Date: <?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?></div>
       <div class="small text-muted">SAC Code: <strong>996331</strong> (Restaurant Services)</div>
       <div class="small text-muted">Payment: <span class="badge bg-success bg-opacity-25 text-success"><?= e($order['payment_mode']) ?> - <?= e($order['payment_status'] ?: 'PAID') ?></span></div>
+      <?php if (!empty($order['transaction_reference'])): ?>
+        <div class="small text-muted" style="font-size:0.75rem;">Txn Ref: <code class="text-dark"><?= e($order['transaction_reference']) ?></code></div>
+      <?php endif; ?>
     </div>
   </div>
 

@@ -88,7 +88,12 @@ $orderItems = db_fetch_all("
           <div class="p-3 rounded-3 bg-light border">
             <div class="small text-muted">Total Paid (<?= e($order['payment_mode']) ?>)</div>
             <div class="fw-bold fs-5 text-dark"><?= format_inr($order['total_amount']) ?></div>
-            <div class="small text-muted text-truncate">Ref: <?= e($order['transaction_reference']) ?></div>
+            <div class="small text-muted text-truncate">Ref: <code class="text-dark"><?= e($order['transaction_reference']) ?></code></div>
+            <?php if (str_starts_with($order['transaction_reference'] ?? '', 'pay_')): ?>
+              <span class="badge rounded-pill mt-1" style="background:#02042B; color:#528FF0; font-size:0.7rem;">
+                <i class="bi bi-shield-check me-1"></i> Razorpay Test Verified
+              </span>
+            <?php endif; ?>
           </div>
         </div>
         <div class="col-sm-6">

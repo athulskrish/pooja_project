@@ -29,6 +29,11 @@ define('DEFAULT_DELIVERY_FEE', 40.00);
 define('FREE_DELIVERY_THRESHOLD', 499.00);
 define('PLATFORM_FEE', 5.00);
 
+// Razorpay Payment Gateway Settings (Test Mode Sandbox)
+define('RAZORPAY_KEY_ID', getenv('RAZORPAY_KEY_ID') ?: 'rzp_test_1DP5mmOlF5G5ag');
+define('RAZORPAY_KEY_SECRET', getenv('RAZORPAY_KEY_SECRET') ?: 'dummy_secret_key');
+define('RAZORPAY_MERCHANT_NAME', 'Zippy Foods');
+
 // Base URL Auto-detection
 if (!defined('BASE_URL')) {
     $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";

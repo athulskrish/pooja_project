@@ -31,7 +31,7 @@ if (!isset($_GET['order_id'])) {
 $order = db_fetch_one("
     SELECT o.*, u.full_name, u.phone_number,
            a.address_line, a.pincode,
-           p.payment_mode, p.payment_status,
+           p.payment_mode, p.payment_status, p.transaction_reference,
            d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status
     FROM `orders` o
     JOIN `users` u ON o.user_id = u.user_id
@@ -324,6 +324,21 @@ $initialCountdownText = sprintf('%02d:%02d', $initMins, $initSecs);
               <span>Total Paid</span>
               <span class="text-forest"><?= format_inr($order['total_amount']) ?></span>
             </div>
+            <div class="d-flex justify-content-between small text-muted mt-2 pt-1 border-top">
+              <span>Payment Mode:</span>
+              <span class="fw-semibold text-dark"><?= e($order['payment_mode']) ?></span>
+            </div>
+            <div class="d-flex justify-content-between small text-muted">
+              <span>Payment Status:</span>
+              <span class="badge <?= ($order['payment_status'] ?? '') === 'SUCCESSFUL' ? 'bg-success' : 'bg-warning text-dark' ?>">
+                <?= e($order['payment_status'] ?: 'PENDING') ?>
+              </span>
+            </div>
+            <?php if (!empty($order['transaction_reference'])): ?>
+              <div class="small text-muted text-truncate mt-1" style="font-size:0.75rem;" title="<?= e($order['transaction_reference']) ?>">
+                Ref: <code class="text-dark"><?= e($order['transaction_reference']) ?></code>
+              </div>
+            <?php endif; ?>
           </div>
 
           <div class="mt-4 d-grid gap-2">
