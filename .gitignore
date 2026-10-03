@@ -1,0 +1,16 @@
+# Environment & Local Secrets
+.env
+*.log
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PHP Session and Temporary Files
+*.tmp
+sess_*
+
+# Dependencies
+/vendor/

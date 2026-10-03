@@ -1,0 +1,1515 @@
+PROJECT SYNOPSIS (MCSP – 232)
+
+on
+
+E- Commerce Platform for Food Order
+
+by
+
+Pooja JP
+
+Enrollment Number: 2500051247
+
+Under the Guidance of
+
+Saurabh Vasanta Bhagwat
+
+Submitted to the School of Computer and Information Sciences, IGNOU in partial fulfillment of the requirements for the award of the degree
+
+Master of Computer Applications (MCAOL) 2026
+
+Indira Gandhi National Open University Maidan Garhi
+
+New Delhi – 110068.
+
+Table of Contents
+
+Title of the Project2
+
+Introduction and Objectives of the Project2
+
+Introduction2
+
+Objectives2
+
+Project Category2
+
+Tools/Platform, Hardware and Software Requirement Specifications2
+
+Development Tools and Platforms2
+
+Hardware Requirements3
+
+Software Requirements3
+
+Problem Definition, Requirement Specifications / Literature Review / Project Planning and Scheduling3
+
+Problem Definition5
+
+Functional Requirements5
+
+Technical Specifications5
+
+Literature Review5
+
+Project Planning and Scheduling5
+
+Scope of the Solution6
+
+Analysis7
+
+Data Flow Diagram (DFD)7
+
+DFD Level 07
+
+DFD Level 17
+
+DFD Level 28
+
+Entity Relationship Diagram (ER Diagram)11
+
+Use Case Diagram11
+
+Activity Diagram12
+
+Class Diagram12
+
+State Diagram13
+
+Complete Database and Table Details13
+
+Complete Structure19
+
+Modules and Description19
+
+Process Logic20
+
+Data Structures22
+
+Implementation Methodology22
+
+Reports Generated22
+
+Overall Network Architecture23
+
+Implementation of Security Mechanisms at Various Levels24
+
+Future Scope and Further Enhancement of the Project24
+
+Bibliography25
+
+Title of the Project
+
+E- Commerce Platform for Food Order
+
+Introduction and Objectives of the Project
+
+Introduction
+
+The “Online E- Commerce Platform for Food Order” helps small restaurants replace phone chaos with a
+
+clean website. Customers see the complete menu with categories like North Indian curries, Chinese
+
+noodles, and fast-food burgers – complete with prices and live-stock counts. They add items to cart, pick
+
+quantities, submit orders, and get a tracking number instantly.
+
+Restaurant staff log into their dashboard to see new orders pop up by time received. They mark status as
+
+“cooking”, “ready”, or “delivered”, add new dishes anytime, update stock levels, and check quick reports
+
+like today’s top sellers or low-stock warnings.
+
+Everything runs on a regular laptop using XAMPP – no internet or hosting needed. HTML and CSS make
+
+pages look professional on phones or computers, PHP handles all the order processing safely, and MySQL
+
+stores customer details, menu, and orders in organized tables.
+
+This project follows the complete software development process: understanding restaurant problems,
+
+drawing flow diagrams and database structures, writing the actual code with security checks, testing
+
+everything works, and writing full documentation.
+
+Objectives
+
+The major objectives of the proposed system are as follows:
+
+To replace phone orders with online menu browsing to cut confusion by 90%.
+
+To let customers build carts and submit orders in 30 seconds.
+
+To give restaurant staff real-time dashboard for order updates and menu changes.
+
+To create MySQL database with proper table links and security rules.
+
+To build responsive pages that work on any phone or laptop screen.
+
+To add login protection and prevent hacking attempts.
+
+To generate simple reports for daily sales and stock alerts.
+
+To make everything run locally on XAMPP for easy demo.
+
+To document full development process with diagrams and test results.
+
+To design for future additions like payments or delivery tracking.
+
+Project Category
+
+The proposed project falls under RDBMS (Relational Database Management System) category with web application development.
+
+PRIMARY FOCUS: RDBMS
+
+The core system uses MySQL database with 4 normalized tables connected by primary/ foreign keys:
+
+Users (customers + admins)
+
+Menu_items (dishes with stock levels)
+
+Orders (customer purchases)
+
+Order_items (links orders to specific dishes)
+
+PHP performs all CRUD operations securely while HTML/CSS displays results through web pages.
+
+Tools/Platform, Hardware and Software Requirement Specifications
+
+Development Tools and Platforms
+
+The proposed project falls under RDBMS (Relational Database Management System) category with web application development.
+
+Component
+
+Technology
+
+Backend
+
+PHP 8.0 (form processing, database calls)
+
+Frontend
+
+HTML5, CSS3 (responsive design)
+
+Database
+
+MySQL 8.0 (InnoDB tables, 3NF normalized)
+
+Server
+
+XAMPP (local Apache + MySQL)
+
+Hardware Requirements
+
+The hardware configuration should be sufficient for an e-commerce platform for food order depend on the size of the business. It includes:
+
+Intel i3 Processor or higher
+
+Minimum 4 GB RAM
+
+2 GB free hard disk space
+
+Standard laptop screen (1366x768)
+
+Keyboard + Mouse
+
+Software Requirements
+
+The following software tools are required for development, testing, deployment, and database management.
+
+FRONTEND: HTML5, CSS3, Bootstrap
+
+BACKEND: PHP 8.2
+
+DATABASE: MySQL 8.0
+
+SERVER: XAMPP (Apache + MySQL + PHP)
+
+BROWSER: Chrome/Firefox
+
+EDITOR: VS Code
+
+Problem Definition, Requirement Specifications / Literature Review / Project Planning and Scheduling
+
+Problem Definition
+
+Most small restaurants still depend on handwritten notes and phone calls to take orders. Staff answer
+
+multiple calls during busy hours, write details in notebooks, and pass them to the kitchen manually.
+
+This old method causes mistakes—wrong orders, duplicate items, and forgotten deliveries. Customers
+
+also face delays while trying to confirm if their order was received or when it will be ready.
+
+There is no proper system to display real-time menus, stock availability, or daily specials. If a dish runs
+
+out in the kitchen, waiters must inform customers individually, creating confusion. Owners cannot easily
+
+track which items sell most, how much revenue they earned in a day, or how much stock is left.
+
+The system uses PHP and MySQL to store data such as customers, menu items, and orders in structured
+
+tables, replacing all manual paperwork. It also ensures security with login authentication and reduces
+
+errors through automation. This project solves real-world restaurant challenges by bringing a fast, clear,
+
+and affordable digital ordering solution that any small restaurant can run locally without needing
+
+expensive software or internet servers.
+
+Existing System
+
+The existing food ordering system is mostly based on traditional methods where customers place orders
+
+by visiting restaurants physically or by making phone calls. Some restaurants maintain separate websites
+
+or social media pages for taking orders, while others depend on third-party food delivery applications.
+
+Features of the Existing System:
+
+Customers order food through phone calls or direct visits.
+
+Restaurant staff manually record and process orders.
+
+Payments are often made in cash or through separate online payment methods.
+
+Order tracking is limited or unavailable.
+
+Menu updates are performed manually.
+
+Limitations of Existing System
+
+The existing system suffers from:
+
+Time-consuming process for both customers and restaurants.
+
+Human errors in recording and processing orders.
+
+Lack of real-time order tracking.
+
+Limited accessibility since customers may need to call or visit the restaurant.
+
+Difficulty in managing multiple orders during peak hours.
+
+No centralized platform for comparing restaurants, menus, and prices.
+
+Inefficient communication between customers, restaurants, and delivery personnel.
+
+Proposed System
+
+To solve this, the proposed “Online E-Commerce Platform for Food Order” converts the entire process
+
+into a simple web-based system. Customers can easily browse menus, choose items, submit orders, and
+
+check status using any mobile or computer browser. The restaurant receives orders instantly in a
+
+dashboard where staff can update each stage (Received, Cooking, Ready, Delivered).
+
+To overcome these limitations, an integrated e-commerce food ordering platform is required that provides:
+
+Online menu browsing
+
+Easy order placement
+
+Secure online payments
+
+Real-time order tracking
+
+Automated order management
+
+Delivery tracking and notifications
+
+This improves customer convenience, reduces manual work, and increases operational efficiency.
+
+Functional Requirements
+
+The proposed system shall support the following functional requirements:
+
+FR-01: Customer Side
+
+Browse menu by category with live stock
+
+Add to cart → adjust quantity → see total
+
+Submit order (name, phone, address)
+
+View order history/status
+
+FR-02: Admin Side
+
+Dashboard - all orders by time
+
+Update order status (Cooking/Ready/Done)
+
+Add/edit menu items (price/stock)
+
+Sales report + low stock alert
+
+Non- Functional:
+
+Mobile responsive (Bootstrap)
+
+Secure login/sessions
+
+Fast loading (<2 sec)
+
+SQL injection protection
+
+Local XAMPP only DATABASE TABLES (3NF):
+
+users | menu_items | orders | order_items
+
+Technical Specifications
+
+The E-Commerce Platform for Food Order is developed using modern web technologies to provide an
+
+efficient, secure, and user-friendly food ordering experience. The technical specifications define the
+
+software, hardware, database, networking, and security requirements of the system.
+
+Literature Review
+
+The development of online food ordering systems has evolved significantly over the years, driven by the
+
+increasing adoption of e-commerce and digital technologies in the food service industry. Various studies
+
+have explored methods to improve restaurant operations, customer convenience, and order management
+
+efficiency.
+
+Existing research shows online food ordering systems solve manual restaurant problems but vary by
+
+complexity:
+
+1. Automated Food Ordering Systems
+
+Early research by Deore and Shete (2016) focused on web-based food ordering systems that replaced
+
+traditional telephone-based ordering. Their study found that online menu browsing and automated order
+
+processing significantly reduced order errors and improved customer satisfaction. However, these systems
+
+were mainly designed for large restaurants and lacked affordability for small businesses.
+
+2. Android-Based Food Ordering Applications
+
+Adithya et al. (2017) developed a mobile food ordering application that enabled customers to place orders
+
+through smartphones. The system improved order accuracy and customer engagement through ratings
+
+and feedback mechanisms. Despite its advantages, the requirement for dedicated mobile app
+
+development increased implementation complexity and maintenance costs.
+
+3. Online-to-Offline (O2O) Food Delivery Platforms
+
+Research by Johnson and Lee (2021) examined large-scale platforms such as Zomato and similar services.
+
+These platforms integrated online ordering, digital payments, and delivery management. While highly
+
+effective, they often imposed commission charges on restaurants and reduced direct customer interaction,
+
+making them less suitable for small independent restaurants.
+
+4. Web-Based Restaurant Management Systems
+
+Samal and Sindhu (2023) demonstrated that PHP and MySQL-based web applications provide a practical
+
+solution for small restaurants. Their research showed that lightweight systems can efficiently manage
+
+menus, customer orders, and inventory while remaining cost-effective and easy to deploy. This approach
+
+closely aligns with the proposed project architecture.
+
+5. Post-Pandemic Digital Transformation
+
+According to the Food Service Association (2022), the COVID-19 pandemic accelerated the adoption of
+
+online ordering systems. Restaurants increasingly relied on digital menus and online ordering platforms
+
+to maintain business continuity. Studies reported that simple web-based systems with cash-on-delivery
+
+options achieved higher adoption among small and medium-sized restaurants than complex enterprise
+
+solutions.
+
+Project Planning and Scheduling
+
+The project follows the Agile methodology to ensure a flexible, iterative implementation. The lifecycle includes requirement analysis, design, development, testing, and deployment. This framework allows the team to continuously refine the product based on feedback and evolving requirements throughout the development cycle.
+
+Project Duration:
+
+The estimated project duration is six months, from July 2026 to December 2026.
+
+Gantt Chart
+
+A Gantt Chart is a project scheduling tool used to represent activity duration, milestones, implementation phases, and estimated completion timelines.
+
+W1: Requirements Analysis
+
+W2-3: System Analysis (DFD/ERD)
+
+W4: Database Design
+
+W5-6: Frontend (HTML/CSS/JS)
+
+W6-8: Backend (PHP/MySQL)
+
+W9-10: Testing + Bug Fixes
+
+W11-12: Documentation + Demo Pres
+
+PERT Chart
+
+PERT (Program Evaluation and Review Technique) is used to identify task dependencies, project critical path, and estimated completion duration.
+
+Scope of the Solution
+
+The major scope of the project includes:
+
+The proposed E-Commerce Platform for Food Order provides a complete web-based solution for
+
+managing restaurant food orders digitally. It is designed specifically for small and medium-sized restaurants
+
+that want to replace manual order-taking methods with an efficient online system.
+
+Customer Features
+
+Browse food items through categorized online menus.
+
+Add food items to a shopping cart.
+
+Modify quantities before placing an order.
+
+Submit orders using customer details such as name, phone number, and address.
+
+Track order status using a unique order ID.
+
+Access the platform through mobile phones, tablets, or computers.
+
+Restaurant/Admin Features
+
+Receive customer orders instantly through an admin dashboard.
+
+View all orders in chronological order.
+
+Update order status (Received, Cooking, Ready, Delivered).
+
+Add, edit, and delete menu items.
+
+Simple user management for staff accounts
+
+Monitor daily sales and generate basic reports.
+
+Technical Scope
+
+Uses PHP and MySQL for web application development.
+
+Maintains customer, menu, and order information in a relational database.
+
+Supports secure login and role-based access control.
+
+Performs complete CRUD (Create, Read, Update, Delete) operations.
+
+Runs locally using XAMPP without requiring internet hosting.
+
+Business Benefits
+
+Reduces order-processing errors.
+
+Speeds up order placement and confirmation.
+
+Improves customer convenience and satisfaction.
+
+Provides better control over menu and inventory management.
+
+Enables restaurants to handle more orders efficiently.
+
+Generates useful sales information for decision-making.
+
+Future Expansion Scope
+
+Online payment integration.
+
+GPS-based delivery tracking.
+
+Multi-restaurant support.
+
+Customer feedback and rating module.
+
+Mobile application development.
+
+SMS and email notifications.
+
+Cloud-based deployment and analytics dashboard.
+
+This solution digitizes the complete food ordering process, making restaurant operations faster, more
+
+accurate, and more customer-friendly while remaining simple and cost-effective.
+
+Analysis
+
+System analysis defines the functional requirements, data flow, AI processing, and interactions between system components. The E-Commerce Platform for Food Order is a web-based application designed to automate the food ordering process for restaurants. The system allows customers to browse menus, place
+
+orders, and track order status, while administrators manage menu items, inventory, and customer orders through a centralized dashboard. The system replaces manual order-taking methods and improves operational efficiency.
+
+Data Flow Diagram (DFD)
+
+DFD (Data Flow Diagram) is a graphical representation of how data moves through a system. It shows:
+
+Input data entering the system
+
+Processes that transform the data
+
+Data stores where information is saved
+
+Output data produced by the system
+
+For your Food Ordering E-Commerce Platform, the DFD explains how customer orders are processed and managed.
+
+DFD Level 0
+
+The Level 0 DFD represents the entire Food Order System as a single process and shows how it interacts
+
+with external entities, namely the Customer and the Admin. The customer browses the menu, selects
+
+food items, and places an order through the system. After processing the order, the system sends
+
+confirmation and status updates back to the customer. The admin updates the menu and manages
+
+customer orders. Whenever an order is received, the admin can change its status, and the updated status
+
+is reflected to the customer through the system.
+
+DFD Level 1
+
+The Level 1 DFD decomposes the Food Ordering System into three main processes: View Menu, Place
+
+Order, and Manage Orders. Customers retrieve menu information from the Menu Database, place orders
+
+that are stored in the Orders Database, and administrators manage these orders by updating their status
+
+and maintaining menu information. The system uses three data stores: Menu DB, Orders DB, and Users DB.
+
+DFD Level 2
+
+The Level 2 DFD further decomposes major modules into smaller sub-processes for detailed workflow understanding.
+
+Entity Relationship Diagram (ER Diagram)
+
+Entity Relationship Diagrams (ER Diagrams) are used to model database entities and relationships within relational database systems.
+
+Use Case Diagram
+
+Use Case Diagrams are used to represent interactions between external actors and software functionalities.
+
+Activity Diagram
+
+Activity Diagrams represent workflow execution and sequential control flow within the application.
+
+Class Diagram
+
+Class Diagrams represent object-oriented entities, attributes, methods, and relationships within the application architecture.
+
+State Diagram
+
+State Diagrams represent lifecycle transitions of entities during execution.
+
+Complete Database and Table Details
+
+The proposed project uses PostgreSQL relational database management system.
+
+The database design follows Third Normal Form (3NF) normalization principles to eliminate redundancy and maintain data consistency.
+
+USERS
+
+Stores authentication and user profile information.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+user_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Unique user ID
+
+name
+
+VARCHAR(150)
+
+NOT NULL
+
+User full name
+
+email
+
+VARCHAR(150)
+
+UNIQUE, NOT NULL
+
+Email address
+
+address
+
+VARCHAR(150)
+
+NULL
+
+Delivery address
+
+phone_number
+
+VARCHAR(20)
+
+UNIQUE
+
+Contact number
+
+password
+
+VARCHAR(255)
+
+NOT NULL
+
+Encrypted password
+
+role
+
+VARCHAR(30)
+
+DEFAULT CUSTOMER
+
+User role
+
+created_at
+
+TIMESTAMP
+
+DEFAULT CURRENT_TIMESTAMP
+
+Creation time
+
+ADMIN
+
+Stores administrator login credentials.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+admin_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Unique user ID
+
+username
+
+VARCHAR(50)
+
+NOT NULL
+
+Admin username
+
+password
+
+VARCHAR(50)
+
+NOT NULL
+
+Admin password
+
+email
+
+VARCHAR(100)
+
+NOT NULL
+
+Admin email
+
+CATEGORY_TABLE
+
+Classifies food items into categories.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+category_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Category ID
+
+category_name
+
+VARCHAR(100)
+
+NOT NULL
+
+Food category name
+
+description
+
+BIGINT
+
+NOT NULL
+
+Category description
+
+MENU_TABLE
+
+Stores menu details displayed to customers.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+item_id
+
+INT(PK)
+
+PRIMARY KEY, AUTO_INCREMENT
+
+Food item ID
+
+category_id
+
+INT(FK)
+
+FOREIGN KEY, NOT NULL
+
+Category reference
+
+Item_name
+
+VARCHAR(500)
+
+NOT NULL
+
+Name of the food item
+
+description
+
+VARCHAR(500)
+
+NULL
+
+Detailed description of the food item.
+
+price
+
+VARCHAR(30)
+
+NOT NULL, CHECK (price > 0)
+
+Item price
+
+image
+
+INTEGER
+
+NULL
+
+Food image path
+
+availability
+
+VARCHAR(255)
+
+NOT NULL
+
+Availability status
+
+ORDER_Table
+
+Stores overall order information.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+order_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Unique order ID
+
+user_id
+
+INT(FK)
+
+FOREIGN KEY, NOT NULL
+
+References the customer who placed the order ID
+
+total_amount
+
+INT(PK)
+
+NOT NULL
+
+Total amount payable for the order
+
+status
+
+ENUM(‘received’,’cooking’,’ready’,’delivered’
+
+DEFAULT ‘received’
+
+Current status of the order
+
+order_date
+
+TIMESTAMP
+
+DEFAULT CURRENT_TIMESTAMP
+
+Date and time when the order was placed
+
+customer_name
+
+VARCHAR(500)
+
+NOT NULL
+
+Name of the customer placing the order
+
+customer_phone
+
+VARCHAR(15)
+
+NOT NULL
+
+Contact number of the customer
+
+delivery_address
+
+VARCHAR(500)
+
+NULL
+
+Address where the order should be delivered
+
+ORDER DETAILS_Table
+
+Stores individual items within an order.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+order_detail_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Detail ID
+
+order_id
+
+INT(FK)
+
+FOREIGN KEY
+
+Order reference
+
+item_id
+
+INT(FK)
+
+FOREIGN KEY
+
+Food item reference
+
+quantity
+
+INT
+
+NOT NULL
+
+Quantity ordered
+
+price_at_order
+
+DECIMAL(10,2)
+
+NOT NULL
+
+Item price
+
+PAYMENT_Table
+
+Stores payment transaction details.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+payment_id
+
+INT(PK)
+
+PRIMARY KEY
+
+Payment ID
+
+order_id
+
+INT(FK)
+
+FOREIGN KEY
+
+Order reference
+
+payment_method
+
+VARCHAR(50)
+
+FOREIGN KEY
+
+Cash, UPI, Card
+
+amount
+
+DECIMAL(10,2)
+
+NOT NULL
+
+Payment amount
+
+payment_date
+
+VARCHAR(50)
+
+NOT NULL
+
+Paid, Pending
+
+DELIVERY_Table
+
+Tracks food delivery information.
+
+Field Name
+
+Data Type
+
+Constraints
+
+Description
+
+notification_id
+
+BIGSERIAL
+
+PRIMARY KEY
+
+Unique notification ID
+
+user_id
+
+BIGINT
+
+FOREIGN KEY REFERENCES users(user_id)
+
+User receiving the notification
+
+notification_title
+
+VARCHAR(200)
+
+NOT NULL
+
+Notification title
+
+notification_message
+
+TEXT
+
+NOT NULL
+
+Notification content
+
+notification_status
+
+VARCHAR(20)
+
+DEFAULT 'UNREAD'
+
+Read/Unread status
+
+created_at
+
+TIMESTAMP
+
+DEFAULT CURRENT_TIMESTAMP
+
+Notification creation date and time
+
+Complete Structure
+
+Modules and Description
+
+The proposed application consists of multiple interconnected modules and sub-modules.
+
+Each module is designed independently in order to simplify implementation, maintenance, scalability, and testing activities.
+
+The major modules of E-Commerce Platform for Food Order are:
+
+User Module
+
+Admin Module
+
+Category Module
+
+Menu Module
+
+Order Module
+
+Order Details Module
+
+Payment Module
+
+Delivery Module
+
+User Module
+
+This module is responsible for managing customer registration, login, profile management, address details, and account-related activities. Users can browse menus, place orders, and track their order status.
+
+Process Logic:
+
+User registers by providing personal details.
+
+System validates the entered information.
+
+User account is created and stored in the database.
+
+User logs in using valid credentials.
+
+System authenticates the user and grants access.
+
+User can view and update profile information.
+
+User browses menu items and places orders.
+
+Admin Module
+
+This module provides administrative control over the system. The admin can manage users, categories, menus, orders, payments, deliveries, and generate reports.
+
+Process Logic:
+
+Admin logs into the system.
+
+System verifies admin credentials.
+
+Admin manages users, categories, menus, orders, payments, and deliveries.
+
+Admin monitors system activities and generates reports.
+
+Admin updates record whenever necessary.
+
+System saves all modifications to the database.
+
+Category Module
+
+This module organizes food items into different categories such as Breakfast, Lunch, Dinner, Beverages, Snacks, etc., making it easier for users to browse and search for food items.
+
+Process Logic:
+
+Admin creates a new food category.
+
+System validates category information.
+
+Category details are stored in the database.
+
+Admin can update or delete existing categories.
+
+Menu items are linked to their respective categories.
+
+Categories are displayed to users for easy navigation.
+
+Menu Module
+
+This module stores and manages food item details including item name, description, price, availability status, and category information.
+
+Process Logic:
+
+Admin adds food items to the menu.
+
+System validates item details such as name, price, and category.
+
+Food item information is stored in the database.
+
+Admin updates item availability and prices when required.
+
+Users browse available menu items.
+
+Selected items are added to the shopping cart.
+
+Order Module
+
+This module handles order placement and processing. It records customer orders, order dates, total amounts, and current order status.
+
+Process Logic:
+
+User selects food items and proceeds to checkout.
+
+System calculates the total order amount.
+
+User confirms the order.
+
+Order information is stored in the database.
+
+System generates a unique order ID.
+
+Order status is initially marked as "Received."
+
+Order status is updated throughout the order lifecycle.
+
+Order Details Module
+
+This module maintains detailed information about each order, including food items ordered, quantity, unit price, and subtotal amount for each item.
+
+Process Logic:
+
+System records each item included in an order.
+
+Quantity and unit price of each item are stored.
+
+Subtotal for each item is calculated.
+
+Order detail records are linked to the corresponding order.
+
+System retrieves order details whenever users or administrators view an order.
+
+Order details are used for billing and reporting purposes.
+
+Payment Module
+
+This module manages payment transactions, payment methods, payment status, transaction details, and payment confirmations.
+
+Process Logic:
+
+User selects a payment method.
+
+System displays the payable amount.
+
+Payment information is submitted for processing.
+
+Payment status is verified.
+
+Successful transactions are recorded in the database.
+
+Payment confirmation is sent to the user.
+
+Order status is updated after successful payment.
+
+Delivery Module
+
+This module tracks delivery information, including delivery status, assigned delivery personnel, delivery address, and delivery completion time.
+
+Process Logic:
+
+After payment confirmation, the order is forwarded for delivery.
+
+Delivery information is created and linked to the order.
+
+Delivery status is initialized as "Assigned."
+
+Delivery personnel pick up the order.
+
+Status is updated to "In Transit."
+
+Order is delivered to the customer's address.
+
+Delivery status is updated to "Delivered."
+
+System records the delivery completion time and updates the order status.
+
+s
+
+Data Structures
+
+The project uses multiple data structures and storage mechanisms suitable for enterprise-grade AI-assisted applications.
+
+Relational Database Tables
+
+DTO Objects
+
+JSON API Responses
+
+JWT Tokens
+
+Image Metadata Objects
+
+Segmentation Polygon Coordinates
+
+Audit Log Records
+
+Chatbot Conversation Records
+
+Implementation Methodology
+
+The proposed application follows Agile software development methodology with iterative implementation cycles. The development process begins with requirement analysis and database design, followed by backend implementation, frontend integration, AI model training, testing, and deployment.
+
+The implementation workflow includes:
+
+Requirement Analysis
+
+Database Design
+
+Backend API Development
+
+Frontend Development
+
+AI Model Training
+
+Microservices Integration
+
+System Testing
+
+Deployment and Documentation
+
+The application architecture follows microservices principles where business workflows and AI inference operations are isolated into separate services for scalability and maintainability.
+
+List of Reports Generated
+
+The proposed system generates various operational and analytical reports including:
+
+Vehicle Damage Assessment Report
+
+Repair Cost Estimation Report
+
+Fraud Detection Report
+
+Claim Status Report
+
+Analytics Dashboard Report
+
+AI Prediction Audit Report
+
+Chatbot Interaction Report
+
+PDF Insurance Claim Report
+
+Overall Network Architecture
+
+The proposed system uses distributed microservices architecture consisting of frontend, backend, AI services, database systems, and storage layers.
+
+Client Layer:
+
+The Client Layer is the front-end part of the system where users interact with the platform.
+
+Internet:
+
+The Internet serves as the communication medium between users and the server.
+
+Functions:
+
+Transfers requests from users to the server.
+
+Sends responses back to users.
+
+Enables remote access to the application.
+
+Firewall Layer:
+
+The Firewall protects the application from unauthorized access.
+
+Functions:
+
+Filters incoming and outgoing traffic.
+
+Blocks malicious requests.
+
+Protects servers from cyber-attacks.
+
+Application Layer:
+
+This layer receives requests from users and serves web pages.
+
+Responsibilities:
+
+Handles HTTP/HTTPS requests.
+
+Delivers web pages to users.
+
+Communicates with the Application Logic Layer.
+
+Application Logic Layer:
+
+This is the core processing layer of the system.
+
+Functions:
+
+User Authentication
+
+Order Processing
+
+Menu Management
+
+Business Rule Validation
+
+Report Generation
+
+Data Layer:
+
+The Database Layer stores all application data.
+
+External Services:
+
+These are third-party services integrated with the system.
+
+Backup & Monitoring Layer:
+
+This layer ensures reliability and availability.
+
+Benefits:
+
+Prevents data loss. ss
+
+Improves system reliability.
+
+Detects issues early.
+
+Implementation of Security Mechanisms at Various Levels
+
+Security is an essential aspect of the E-Commerce Platform for Food Order because the system handles
+
+customer information, order details, and administrative data. Various security mechanisms are implemented
+
+at different levels to ensure confidentiality, integrity, and availability of information.
+
+User Authentication Security:
+
+Login Authentication
+
+Password Protection
+
+Session Management
+
+Application-level Security:
+
+Input Validation
+
+Output Encoding
+
+Error Handling
+
+Database Security:
+
+Prepared Statements
+
+Data Validation
+
+Access Control
+
+Database Backup
+
+File Upload Security:
+
+File type validation
+
+File size restrictions
+
+Metadata verification
+
+Communication Security:
+
+Secure Data transmission
+
+Data Confidentiality
+
+File and Server Security:
+
+Restricted File Access
+
+Server Authentication
+
+Security Updates
+
+Order and Transaction Security:
+
+Order Validation
+
+Status Monitoring
+
+Audit Trail
+
+Future Scope and Further Enhancement of the Project
+
+The proposed E-Commerce Platform for Food Order provides an efficient web-based solution for managing
+
+food orders and restaurant operations. However, there are several opportunities for future enhancements
+
+to improve functionality, scalability, and user experience.
+
+Some future enhancements can include:
+
+Mobile application development
+
+Online payment integration
+
+Real- time order tracking
+
+Multi- Restaurant support
+
+Customer reviews and ratings
+
+Notification system.
+
+Bibliography
+
+[1] Pressman, R.S., "Software Engineering: A Practitioner's Approach", 8th Edition, McGraw-Hill, 2014.
+
+[2] Welling, L. & Thomson, L., "PHP and MySQL Web Development", 5th Edition, Addison-Wesley, 2016.
+
+[3] Date, C.J., "An Introduction to Database Systems", 8th Edition, Pearson, 2003.
+
+[4] Deitel, P.J. & Deitel, H.M., "Internet & World Wide Web: How to Program", 5th Edition, Pearson, 2011.
+
+[5] "Online Food Ordering System using PHP/MySQL", International Journal of Computer Applications, Vol 180, No 6, 2018
+
+[6] Bootstrap 5 Documentation, https://getbootstrap.com/docs/5.3/, Accessed Dec 2025.
+
+[7] MySQL 8.0 Reference Manual, https://dev.mysql.com/doc/, Accessed Dec 2025.
