@@ -8,7 +8,6 @@ $pageTitle = 'Meghana Foods - Menu & Online Ordering';
 $activePage = 'restaurant';
 
 require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/../includes/AprioriEngine.php';
 
 // Fetch Categories and Menu Items
 $categories = db_fetch_all("
@@ -29,8 +28,6 @@ foreach ($categories as $cat) {
         ORDER BY `price` ASC
     ", [':cid' => $cat['category_id']]);
 }
-
-$recommendations = AprioriEngine::getRecommendations([], 3);
 ?>
 
 <main class="py-4">

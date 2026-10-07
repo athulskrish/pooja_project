@@ -146,24 +146,27 @@ php database/seed.php
 ```
 
 ### What the Seeder Automatically Executes:
-1. **Creates All 10 Normalized 3NF Relational Tables:**
+1. **Creates All 13 Normalized 3NF Relational Tables:**
    - `roles`: Role-Based Access Control catalog (`ADMIN`, `CUSTOMER`, `KITCHEN`, `RIDER`).
    - `users`: User profiles with Argon2id / Bcrypt password hashing and active flags.
    - `user_addresses`: 1-to-many customer delivery addresses with default indicators.
    - `categories`: Menu categorization with slugs, display order, and active toggles.
-   - `menu_items`: Dish catalog with pricing, live stock, prep time, veg/non-veg tags, and spice indicators.
-   - `orders`: Master order ledger with subtotal, 5% GST, platform fee, delivery charge, and real-time status.
-   - `order_items`: Immutable transactional line items capturing ordered quantities and historical prices.
-   - `payments`: Payment transaction records (COD, UPI, Card, NetBanking) with gateway references.
+   - `menu_items`: Dish catalog with pricing (`CHECK (price > 0)`), live stock, prep time, veg/non-veg tags, and kitchen station routing.
+   - `orders`: Master order ledger with human-friendly `#ZIP-` code, subtotal, 5% GST, platform fee, coupon code, and real-time status.
+   - `order_items`: Immutable transactional line items capturing quantities (`CHECK (quantity > 0)`) and historical unit prices.
+   - `payments`: Payment transaction records (COD, UPI, Card, NetBanking) with gateway references and refund tracking (`REFUNDED`).
    - `delivery_dispatches`: Last-mile dispatch logs containing assigned riders, 6-digit verification OTPs, and timestamps.
    - `order_audit_trail`: Immutable chronological audit log recording every lifecycle status transition and event actor.
+   - `order_reviews`: Post-delivery feedback capturing food culinary rating (1-5), courier rating (1-5), optional tips, and qualitative comments.
+   - `faqs`: Dynamic knowledge base and help desk categories managed via Admin.
+   - `support_tickets`: Customer support inquiry tickets with status workflow (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `CLOSED`).
 2. **Installs ACID MySQL Triggers:**
    - `trg_order_status_audit`: Automatically inserts an audit entry whenever `orders.order_status` transitions.
    - `trg_deduct_menu_stock`: Real-time stock balance adjustments upon order placement.
 3. **Populates Seed Data & Sample Transactions:**
    - Pre-seeds authentic Indian culinary categories (Biryanis, Curries, Breads, Beverages, Desserts).
    - Seeds popular dishes with prep times and initial inventory reserves.
-   - Seeds historical multi-item orders to initialize the **Apriori Recommendation Engine** and **SES Demand Forecast Model**.
+   - Seeds historical multi-item orders to initialize the **Weighted Shortest Job First (WSJF)** queue and **SES Demand Forecast Model**.
    - Encrypts all user passwords securely (`password123`).
 
 ---
@@ -175,12 +178,17 @@ Open your browser to test and evaluate each specialized subsystem:
 | Portal | Direct URL | Description & Key Responsibilities |
 |:---|:---|:---|
 | 🚀 **Master Launchpad Hub** | [http://127.0.0.1:8080/index.php](http://127.0.0.1:8080/index.php) | Central portal switcher, system health diagnostics, database connection status, and project overview. |
-| 🛒 **Customer Storefront** | [http://127.0.0.1:8080/customer/index.php](http://127.0.0.1:8080/customer/index.php) | Customer menu browsing, live search, veg filters, Apriori cross-sell recommendations, cart drawer, coupons, and ACID checkout. |
+| 🛒 **Customer Storefront** | [http://127.0.0.1:8080/customer/index.php](http://127.0.0.1:8080/customer/index.php) | Customer menu browsing, live search, veg filters, dynamic category tabs, cart drawer, coupons, 60s cancellation, and ACID checkout. |
+| 💬 **Customer Help Desk & Tickets** | [http://127.0.0.1:8080/customer/help.php](http://127.0.0.1:8080/customer/help.php) | Dynamic accordion FAQs from `faqs` table, customer support ticket submission persisted in `support_tickets`. |
 | 🍳 **Kitchen Display (KDS)** | [http://127.0.0.1:8080/kitchen/index.php](http://127.0.0.1:8080/kitchen/index.php) | Chef workspace with dynamic Weighted Shortest Job First (WSJF) priority Kanban, live audio alerts, stove timers, and handover controls. |
 | 🧾 **Thermal KOT Slip** | [http://127.0.0.1:8080/kitchen/kot.php?order_id=1](http://127.0.0.1:8080/kitchen/kot.php?order_id=1) | Clean, print-ready 80mm thermal Kitchen Order Ticket generator for kitchen line cooks. |
 | 🚴 **Delivery Partner Fleet** | [http://127.0.0.1:8080/delivery/index.php](http://127.0.0.1:8080/delivery/index.php) | Courier app with Online/Offline duty toggle, dispatch claiming, turn-by-turn simulated GPS map, 6-digit OTP doorstep verification, and shift earnings. |
 | 👨‍💼 **Admin Operations Console** | [http://127.0.0.1:8080/admin/index.php](http://127.0.0.1:8080/admin/index.php) | Executive KPI dashboard, full order lifecycle dispatcher, category/dish CRUD with 86-list toggle, staff RBAC management, and BI analytics. |
-| 📊 **BI & SES Forecasts** | [http://127.0.0.1:8080/admin/reports.php](http://127.0.0.1:8080/admin/reports.php) | Business intelligence charts (Chart.js) and Single Exponential Smoothing demand forecasts. |
+| 🍲 **Menu & Stock Management** | [http://127.0.0.1:8080/admin/dishes.php](http://127.0.0.1:8080/admin/dishes.php) | Catalog CRUD for dishes, real-time portion inventory adjustments, pricing, and vegetarian toggles. |
+| 👥 **Staff RBAC Administration** | [http://127.0.0.1:8080/admin/users.php](http://127.0.0.1:8080/admin/users.php) | User & staff role management with self-deactivation protection preventing admin lockouts. |
+| 📜 **Regulatory Audit Logs** | [http://127.0.0.1:8080/admin/audit-logs.php](http://127.0.0.1:8080/admin/audit-logs.php) | Immutable chronological ledger of order lifecycle transitions, actor IDs, and timestamps. |
+| ❓ **Dynamic FAQ Manager** | [http://127.0.0.1:8080/admin/faqs.php](http://127.0.0.1:8080/admin/faqs.php) | Knowledge base management to add, update, reorder, or toggle storefront FAQs. |
+| 📊 **BI & SES Forecasts** | [http://127.0.0.1:8080/admin/reports.php](http://127.0.0.1:8080/admin/reports.php) | Business intelligence charts (Chart.js) and Single Exponential Smoothing ($\alpha=0.3$) demand forecasts. |
 
 ---
 
@@ -232,11 +240,11 @@ sequenceDiagram
    - Use the **Veg Only** toggle to filter vegetarian dishes.
    - Search for dishes (e.g., "Biryani" or "Paneer") via [`customer/search.php`](http://127.0.0.1:8080/customer/search.php).
    - Add **Hyderabadi Chicken Biryani** to cart.
-   - Notice the **Apriori Recommendation Card** proposing frequently paired items (e.g., Garlic Naan or Mango Lassi).
+   - Review dish culinary descriptions, preparation times, vegetarian badges, and live portion availability.
 4. Open the Cart Drawer or go to [`customer/cart.php`](http://127.0.0.1:8080/customer/cart.php):
    - Enter promo code `LUSHFOREST` or `ZIPPY50` to apply promotional discounts.
 5. Click **"Proceed to Checkout"** ([`customer/checkout.php`](http://127.0.0.1:8080/customer/checkout.php)):
-   - Select a saved delivery address (or enter a new address).
+   - Select a saved delivery address (or enter a new address via [`customer/manage-addresses.php`](http://127.0.0.1:8080/customer/manage-addresses.php)).
    - Under **"4. Select Payment Method"**, choose any **Razorpay Online Sandbox** option:
      * ⚡ **Instant UPI via Razorpay:** Test VPA `success@razorpay` (or 1-click Pay).
      * 💳 **Credit / Debit Card via Razorpay:** Test card `4111 1111 1111 1111`, Expiry `12/28`, CVV `123`, OTP `123456`.
@@ -245,11 +253,12 @@ sequenceDiagram
    - Click **"Pay & Place Order"**:
      * The official **Razorpay Checkout Sandbox Modal** (or built-in offline test sandbox modal) will appear with the calculated bill amount in paise.
      * Click **"Simulate Successful Payment (Instant)"** or enter test credentials to authorize the payment.
-   - *Technical Note:* The checkout executes inside a MySQL `START TRANSACTION`, acquiring row-level pessimistic locks (`SELECT ... FOR UPDATE`) on dishes to verify and decrement stock atomically, records the Razorpay payment token (`pay_...`) in `payments` with status `SUCCESSFUL`, logs to `order_audit_trail`, and generates the 6-digit delivery OTP.
+   - *Technical Note:* The checkout executes inside a MySQL `START TRANSACTION`, acquiring row-level pessimistic locks (`SELECT ... FOR UPDATE`) on dishes to verify and decrement stock atomically, records the human-friendly `#ZIP-` order number, platform fee, coupon code, Razorpay payment token (`pay_...`) in `payments` with status `SUCCESSFUL`, logs to `order_audit_trail`, and generates the 6-digit delivery OTP.
 6. On [`customer/order-success.php`](http://127.0.0.1:8080/customer/order-success.php):
    - Note the **🌿 Razorpay Test Verified** badge displaying your generated transaction reference (e.g. `pay_rzp_test_...`).
    - Note the **6-digit Secret Delivery OTP** (e.g. `852914`).
    - Click **"Track Live Order"** to view real-time status at [`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php).
+   - *Cancellation Safety Feature:* On [`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php), observe the live **60-Second Cancellation Timer**. If clicked within 60s, the system cancels the order atomically, marks the payment as `REFUNDED`, restores inventory portions, and logs the transition in `order_audit_trail`.
 
 ### Stage 2: Kitchen Display System (KDS) & Thermal KOT
 1. Open a new window or tab: [http://127.0.0.1:8080/kitchen/login.php](http://127.0.0.1:8080/kitchen/login.php).
@@ -266,7 +275,7 @@ sequenceDiagram
 ### Stage 3: Delivery Partner Dispatch & Route Navigation
 1. Open a new window or tab: [http://127.0.0.1:8080/delivery/login.php](http://127.0.0.1:8080/delivery/login.php).
 2. Click **"1-Click Rider Login"** (`rider@zippy.com`).
-3. Ensure the duty switch in the top bar is set to **ONLINE**.
+3. Ensure the duty switch in the top bar is set to **ONLINE**. (Note: An on-duty security guard prevents couriers from claiming tickets while set to OFFLINE).
 4. In the active dispatch section:
    - Under "Bagged & Ready for Pickup at Kitchen", click **"Accept & Pick Up Order"**.
    - The ticket shifts into active transit.
@@ -286,18 +295,24 @@ sequenceDiagram
 
 ### Stage 5: Customer Post-Order Experience & Invoice
 1. Return to the customer's tracking page tab ([`customer/order-status.php`](http://127.0.0.1:8080/customer/order-status.php)):
-   - The AJAX status poller automatically detects the delivery completion and shows the **Delivered** milestone.
-2. Click **"Download Tax Invoice"** ([`customer/invoice.php`](http://127.0.0.1:8080/customer/invoice.php)):
+   - The AJAX status poller automatically detects the delivery completion, updates the milestone stepper to **Delivered**, and automatically pops open the **5-Star Rating Prompt Modal** (`#autoRatingPromptModal`).
+2. Rate the order:
+   - Submit culinary quality rating (1-5 stars), delivery service rating (1-5 stars), optional tip, and feedback comments (persisted in `order_reviews`).
+3. Click **"Download Tax Invoice"** ([`customer/invoice.php`](http://127.0.0.1:8080/customer/invoice.php)):
    - View the official Indian GST Tax Invoice with SAC Service Code `996331`, 2.5% CGST, 2.5% SGST, and restaurant tax details.
-3. Click **"Rate Order & Delivery Partner"** ([`customer/rate-order.php`](http://127.0.0.1:8080/customer/rate-order.php)):
-   - Submit 5-star ratings for food and delivery, add optional courier tips, and leave feedback comments.
+4. Visit the **Customer Help Desk ([`customer/help.php`](http://127.0.0.1:8080/customer/help.php))**:
+   - Browse dynamic accordion FAQs loaded from the database or submit support inquiries saved directly to the `support_tickets` table.
 
-### Stage 6: Admin BI Analytics & Demand Forecasting
+### Stage 6: Admin Operations, RBAC & Demand Forecasting
 1. Open [http://127.0.0.1:8080/admin/login.php](http://127.0.0.1:8080/admin/login.php) and sign in as Admin (`admin@zippy.com`).
 2. Explore the executive features:
    - **Dashboard ([`admin/index.php`](http://127.0.0.1:8080/admin/index.php)):** View real-time sales KPIs, active orders, customer counts, and order audit stream.
-   - **Orders Dispatcher ([`admin/orders.php`](http://127.0.0.1:8080/admin/orders.php)):** Inspect complete order histories and override status transitions.
-   - **Menu & Stock Management ([`admin/dishes.php`](http://127.0.0.1:8080/admin/dishes.php)):** Update pricing, adjust prep times, and toggle 86-list availability.
+   - **Orders Dispatcher ([`admin/orders.php`](http://127.0.0.1:8080/admin/orders.php)):** Inspect complete order histories, manual cancellation with inventory restock, and lifecycle transitions.
+   - **Menu & Stock Management ([`admin/dishes.php`](http://127.0.0.1:8080/admin/dishes.php)):** Update pricing, adjust prep times, edit dish details, and toggle 86-list availability.
+   - **Category Taxonomy ([`admin/categories.php`](http://127.0.0.1:8080/admin/categories.php)):** Manage category titles, slugs, and display sorting order.
+   - **Staff RBAC & Security ([`admin/users.php`](http://127.0.0.1:8080/admin/users.php)):** Create and manage staff accounts (Admins, Chefs, Couriers) with a built-in self-deactivation guard preventing administrator lockout.
+   - **Regulatory Audit Trail ([`admin/audit-logs.php`](http://127.0.0.1:8080/admin/audit-logs.php)):** Inspect immutable chronological audit logs tracking actors, timestamps, and status changes.
+   - **Dynamic FAQ Desk ([`admin/faqs.php`](http://127.0.0.1:8080/admin/faqs.php)):** Add, edit, reorder, or toggle visibility of storefront FAQs.
    - **BI Reports & SES Forecasting ([`admin/reports.php`](http://127.0.0.1:8080/admin/reports.php)):** Review Chart.js sales visuals and Single Exponential Smoothing ($\alpha = 0.3$) demand forecasts to predict ingredient requirements and prevent stockouts.
 
 ---
@@ -333,25 +348,27 @@ The system integrates the **Razorpay Standard Checkout** workflow with full dual
 
 ## 🧠 Master's Degree (MCA) Algorithmic Implementations
 
-The platform features 5 core computational algorithms and software engineering patterns designed to satisfy MCA major project evaluation standards:
+The platform features 6 core computational algorithms and advanced software engineering patterns designed to satisfy MCA major project evaluation standards:
 
-1. **Market Basket Analysis (Apriori Algorithm) — `includes/AprioriEngine.php`:**
-   - Evaluates transactional co-occurrences in `order_items`.
-   - Computes Item Support and Confidence metrics to recommend complementary food pairings (e.g., recommending Garlic Naan and Mango Lassi when Chicken Biryani is added).
-
-2. **Dynamic Kitchen Queue Scheduling (WSJF) — `includes/WSJFQueue.php`:**
+1. **Dynamic Kitchen Queue Scheduling (WSJF) — `includes/WSJFQueue.php`:**
    $$\text{WSJF Priority Score} = \frac{\text{Cost of Delay (Elapsed Wait Time)}}{\text{Job Duration (Max Prep Time + Portions)}}$$
    - Dynamically reorders kitchen tickets so that orders experiencing delay automatically bubble up the stove queue.
 
-3. **Single Exponential Smoothing (SES) Demand Forecasting — `includes/SESDemandForecast.php`:**
+2. **Single Exponential Smoothing (SES) Demand Forecasting — `includes/SESDemandForecast.php`:**
    $$\hat{Y}_{t+1} = \alpha Y_t + (1 - \alpha)\hat{Y}_t \quad (\alpha = 0.3)$$
    - Analyzes dish order velocities to project next-day and weekend culinary demand, highlighting dishes at risk of stock depletion.
 
-4. **High-Concurrency ACID Checkout with Row-Level Locking — `customer/checkout.php`:**
+3. **High-Concurrency ACID Checkout with Row-Level Locking — `customer/checkout.php`:**
    - Utilizes `SELECT ... FOR UPDATE` within database transactions to ensure two concurrent users cannot purchase the final portion of a dish under race conditions.
 
-5. **Cryptographic Doorstep Handshake (6-Digit OTP) — `delivery/index.php`:**
+4. **Cryptographic Doorstep Handshake (6-Digit OTP) — `delivery/index.php`:**
    - Generates a cryptographically random 6-digit OTP stored in `delivery_dispatches.delivery_otp`. Couriers cannot close delivery tickets without entering the customer's code, eliminating dispute anomalies.
+
+5. **Atomic 60-Second Order Cancellation & Automated Refund Engine — `customer/order-status.php`:**
+   - Enforces a temporal threshold ($\le 60\text{s}$) where customers can trigger an atomic cancellation that transitions order status to `CANCELLED`, reverses the payment to `REFUNDED`, restores dish stock quantities, and records an audit trail event.
+
+6. **Real-Time Asynchronous State Polling & Multi-Actor Synchronization — `customer/ajax/order-status-api.php` & `kitchen/ajax/poll-orders.php`:**
+   - Non-blocking client polling engine providing responsive status synchronization across Customer, Kitchen, Delivery, and Admin portals without heavy daemon socket infrastructure.
 
 ---
 
@@ -367,20 +384,22 @@ pooja_project/
 ├── README.md                          # Comprehensive project & architecture overview
 ├── run.md                             # ← Local execution guide (This Document)
 │
+├── api/                               # 🌐 External API & Webhook Endpoints
+│   └── payment-webhook.php            # Asynchronous payment capture & webhook listener
+│
 ├── config/                            # Global System Configuration
 │   ├── config.php                     # App constants, URLs, sessions, CSRF helpers, formatting
 │   └── database.php                   # Canonical PDO MySQL singleton & automatic .env loader
 │
 ├── database/                          # Relational Database Engine
-│   ├── schema.sql                     # Canonical 10-table 3NF schema with triggers & seeds
+│   ├── schema.sql                     # Canonical 13-table 3NF schema with triggers & seeds
 │   └── seed.php                       # One-click CLI & web automated database installer
 │
 ├── includes/                          # Shared Services & Computational Algorithms
 │   ├── functions.php                  # Shared DB query wrappers, bill totals, coupon engine
 │   ├── auth.php                       # Session-based RBAC authentication & authorization
-│   ├── AprioriEngine.php              # Algorithm 1: Market Basket Analysis Cross-Selling
-│   ├── WSJFQueue.php                  # Algorithm 2: Dynamic WSJF Kitchen Queue Scheduling
-│   └── SESDemandForecast.php          # Algorithm 3: Exponential Smoothing Demand Forecast
+│   ├── WSJFQueue.php                  # Algorithm 1: Dynamic WSJF Kitchen Queue Scheduling
+│   └── SESDemandForecast.php          # Algorithm 2: Exponential Smoothing Demand Forecast
 │
 ├── assets/                            # Shared Client Assets (Figma "Lush Forest" Palette)
 │   ├── css/style.css                  # Design system CSS (custom properties, responsive layout)
@@ -388,11 +407,11 @@ pooja_project/
 │
 ├── customer/                          # 🛒 Customer Food Ordering Storefront
 │   ├── index.php                      # Storefront home (Hero, categories, popular dishes)
-│   ├── restaurant.php                 # Restaurant menu, veg switch, Apriori cross-sell
+│   ├── restaurant.php                 # Restaurant menu, veg switch, dietary filters
 │   ├── cart.php                       # Dedicated cart page & coupon application
 │   ├── checkout.php                   # Multi-step checkout with ACID transaction & row locking
 │   ├── order-success.php              # Order confirmation with generated OTP & tracker link
-│   ├── order-status.php               # Live tracking stepper with dynamic ETA
+│   ├── order-status.php               # Live tracking stepper with dynamic ETA, 60s cancellation & auto-rating
 │   ├── order-history.php              # Past order history with Repeat Order & Invoice
 │   ├── invoice.php                    # GST Tax Invoice (Print-ready layout, SAC 996331)
 │   ├── search.php                     # Live search & multi-facet filters
@@ -400,7 +419,7 @@ pooja_project/
 │   ├── profile.php                    # Customer profile management
 │   ├── manage-addresses.php           # Saved delivery addresses CRUD (user_addresses)
 │   ├── rate-order.php                 # Post-delivery rating & tips
-│   ├── help.php                       # FAQs accordions & support chatbot simulator
+│   ├── help.php                       # Dynamic FAQs accordions & support ticket submission (support_tickets)
 │   ├── login.php                      # Customer authentication with demo autofill
 │   ├── signup.php                     # Customer registration
 │   ├── logout.php                     # Session termination
@@ -434,8 +453,10 @@ pooja_project/
 │   ├── orders.php                     # Full order lifecycle management & status transitions
 │   ├── categories.php                 # Food Category CRUD (display orders, status)
 │   ├── dishes.php                     # Menu Catalog CRUD (prices, stock, prep times)
-│   ├── users.php                      # User & staff RBAC administration
+│   ├── users.php                      # User & staff RBAC administration (with self-deactivation guard)
 │   ├── reports.php                    # BI analytics reports (Chart.js + SES forecasting)
+│   ├── audit-logs.php                 # Regulatory immutable order audit trail log viewer
+│   ├── faqs.php                       # Dynamic knowledge base FAQ desk management
 │   ├── kitchen.php                    # Quick redirect bridge to Kitchen Station
 │   ├── login.php                      # Admin/staff login
 │   ├── logout.php                     # Admin signout
@@ -474,7 +495,7 @@ pooja_project/
 | Symptom / Error | Root Cause | Solution |
 |:---|:---|:---|
 | **"Cannot connect to MySQL server at 127.0.0.1:3306"** | MySQL or MariaDB daemon is not running. | Start MySQL via XAMPP Control Panel or run `mysqld --console` (Step 1). |
-| **"Database tables are not yet created" banner** | `zippy_db` is empty or not yet seeded. | Visit [http://127.0.0.1:8080/database/seed.php](http://127.0.0.1:8080/database/seed.php) to install all 10 3NF tables and sample data. |
+| **"Database tables are not yet created" banner** | `zippy_db` is empty or not yet seeded. | Visit [http://127.0.0.1:8080/database/seed.php](http://127.0.0.1:8080/database/seed.php) to install all 13 3NF tables and sample data. |
 | **"Access denied for user 'root'@'localhost'"** | MySQL root user has a password set that doesn't match `.env`. | Open `.env` and set `DB_PASS=your_password`. If running without `.env`, update credentials in `config/database.php`. |
 | **"Failed to listen on 127.0.0.1:8080 (reason: ...)"** | Another application is already using port 8080. | Launch PHP on an alternate port: `php -S 127.0.0.1:9090 -t .` and access via `http://127.0.0.1:9090`. |
 | **"Class 'PDO' not found" or "could not find driver"** | The `pdo_mysql` extension is disabled in `php.ini`. | Open `php.ini`, uncomment `extension=pdo_mysql`, save the file, and restart the PHP development server. |

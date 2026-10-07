@@ -159,25 +159,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $orderStmt = $pdo->prepare("
                         INSERT INTO `orders` (
                             `user_id`, `address_id`, `subtotal`, `tax_amount`, 
-                            `delivery_fee`, `discount_amount`, `total_amount`, 
-                            `order_status`, `order_notes`, `placed_at`, `estimated_delivery_time`
+                            `delivery_fee`, `platform_fee`, `discount_amount`, `total_amount`, 
+                            `coupon_code`, `order_status`, `order_notes`, `placed_at`, `estimated_delivery_time`
                         ) VALUES (
-                            :uid, :aid, :sub, :tax, :del, :disc, :tot, 
-                            'CONFIRMED', :notes, NOW(), DATE_ADD(NOW(), INTERVAL :eta MINUTE)
+                            :uid, :aid, :sub, :tax, 
+                            :del, :plat, :disc, :tot, 
+                            :coupon, 'CONFIRMED', :notes, NOW(), DATE_ADD(NOW(), INTERVAL :eta MINUTE)
                         )
                     ");
+                    $appliedCoupon = !empty($bill['coupon_code']) ? $bill['coupon_code'] : (!empty($couponCode) ? strtoupper(trim($couponCode)) : null);
+                    $platformFee = (float)($bill['platform_fee'] ?? 5.00);
+
                     $orderStmt->execute([
                         ':uid' => $userId,
                         ':aid' => $selectedAddressId,
                         ':sub' => $subtotal,
                         ':tax' => $taxAmount,
                         ':del' => $deliveryFee,
+                        ':plat' => $platformFee,
                         ':disc' => $discountAmount,
                         ':tot' => $totalAmount,
+                        ':coupon' => $appliedCoupon,
                         ':notes' => $orderNotes,
                         ':eta' => $etaMinutes
                     ]);
                     $orderId = (int)$pdo->lastInsertId();
+
+                    // Store standardized human-friendly tracking number (#ZIP-xxxx)
+                    $orderNumber = '#ZIP-' . $orderId;
+                    $pdo->prepare("UPDATE `orders` SET `order_number` = :onum WHERE `order_id` = :oid")->execute([
+                        ':onum' => $orderNumber,
+                        ':oid' => $orderId
+                    ]);
 
                     // Step 6: Insert Order Items & Deduct Stock
                     $itemInsertStmt = $pdo->prepare("

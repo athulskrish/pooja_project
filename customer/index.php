@@ -8,7 +8,6 @@ $pageTitle = 'Order Food Online | Zippy Lush Forest Edition';
 $activePage = 'home';
 
 require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/../includes/AprioriEngine.php';
 
 // Fetch Active Categories
 $categories = db_fetch_all("
@@ -28,9 +27,6 @@ $menuItems = db_fetch_all("
     WHERE m.is_available = 1
     ORDER BY m.stock_quantity DESC, m.item_id ASC
 ");
-
-// Fetch Apriori Cross-sell Recommendations
-$recommendations = AprioriEngine::getRecommendations([], 4);
 ?>
 
 <main>
@@ -395,52 +391,6 @@ $recommendations = AprioriEngine::getRecommendations([], 4);
 
     </div>
   </section>
-
-  <!-- =========================================================================
-       APRIORI ALGORITHM: FREQUENTLY ORDERED TOGETHER (MARKET BASKET ANALYSIS)
-       ========================================================================= -->
-  <?php if (!empty($recommendations)): ?>
-    <section class="apriori-section py-5" style="background: #EDFBF2;">
-      <div class="container-xl">
-        <div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
-          <div>
-            <div class="d-flex align-items-center gap-2 mb-1">
-              <span class="badge rounded-pill px-3 py-1" style="background: #2E6F40; color: #CEFFDC;">
-                🧠 APRIORI ALGORITHM
-              </span>
-              <span class="small text-muted fw-bold">Market Basket Recommendation Engine</span>
-            </div>
-            <h3 class="fw-bold mb-0 font-outfit">Frequently Ordered Combos & Add-ons</h3>
-          </div>
-          <span class="text-muted small">Computed from historical transaction support & confidence</span>
-        </div>
-
-        <div class="row g-3">
-          <?php foreach ($recommendations as $rec): ?>
-            <div class="col-md-6 col-lg-3">
-              <div class="card h-100 border-0 rounded-4 shadow-sm p-3 bg-white d-flex flex-column justify-content-between">
-                <div class="d-flex gap-3 align-items-center mb-2">
-                  <img src="<?= e($rec['image_url']) ?>" alt="<?= e($rec['item_name']) ?>" class="rounded-3 object-fit-cover" style="width: 65px; height: 65px;">
-                  <div class="overflow-hidden">
-                    <span class="badge bg-light text-success border small mb-1" style="font-size: 0.65rem;">Popular Combo</span>
-                    <h6 class="fw-bold mb-0 text-truncate text-dark" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></h6>
-                    <div class="small fw-bold text-forest"><?= format_inr($rec['price']) ?></div>
-                  </div>
-                </div>
-                <button 
-                  type="button" 
-                  class="btn btn-outline-success btn-sm w-100 rounded-pill fw-semibold mt-2"
-                  onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= addslashes(e($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
-                >
-                  <i class="bi bi-plus-circle me-1"></i> Add Combo Item
-                </button>
-              </div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      </div>
-    </section>
-  <?php endif; ?>
 
   <!-- =========================================================================
        APP DOWNLOAD & LOYALTY CTA

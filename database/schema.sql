@@ -8,6 +8,9 @@ CREATE DATABASE IF NOT EXISTS `zippy_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_u
 USE `zippy_db`;
 
 -- Drop tables in reverse FK dependency order
+DROP TABLE IF EXISTS `order_reviews`;
+DROP TABLE IF EXISTS `support_tickets`;
+DROP TABLE IF EXISTS `faqs`;
 DROP TABLE IF EXISTS `order_audit_trail`;
 DROP TABLE IF EXISTS `delivery_dispatches`;
 DROP TABLE IF EXISTS `payments`;
@@ -84,7 +87,7 @@ CREATE TABLE `menu_items` (
     `category_id` INT NOT NULL,
     `item_name` VARCHAR(150) NOT NULL,
     `description` TEXT NULL,
-    `price` DECIMAL(10,2) NOT NULL,
+    `price` DECIMAL(10,2) NOT NULL CHECK (`price` > 0),
     `stock_quantity` INT NOT NULL DEFAULT 50,
     `is_available` TINYINT(1) NOT NULL DEFAULT 1,
     `is_veg` TINYINT(1) NOT NULL DEFAULT 1,
@@ -125,7 +128,7 @@ CREATE TABLE `order_items` (
     `order_item_id` INT AUTO_INCREMENT PRIMARY KEY,
     `order_id` INT NOT NULL,
     `item_id` INT NOT NULL,
-    `quantity` INT NOT NULL DEFAULT 1,
+    `quantity` INT NOT NULL DEFAULT 1 CHECK (`quantity` > 0),
     `unit_price` DECIMAL(10,2) NOT NULL,
     `line_total` DECIMAL(10,2) NOT NULL,
     CONSTRAINT `fk_order_items_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
@@ -174,6 +177,50 @@ CREATE TABLE `order_audit_trail` (
     `change_timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_audit_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
     CONSTRAINT `fk_audit_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 11: ORDER_REVIEWS (Customer Feedback & Courier Ratings)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `order_reviews` (
+    `review_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `order_id` INT NOT NULL UNIQUE,
+    `user_id` INT NOT NULL,
+    `food_rating` INT NOT NULL CHECK (`food_rating` BETWEEN 1 AND 5),
+    `rider_rating` INT NOT NULL CHECK (`rider_rating` BETWEEN 1 AND 5),
+    `rider_tip` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `comments` TEXT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_reviews_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_reviews_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 12: FAQS (Dynamic Help Desk & Customer Knowledge Base)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `faqs` (
+    `faq_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `question` VARCHAR(255) NOT NULL,
+    `answer` TEXT NOT NULL,
+    `category` VARCHAR(50) NOT NULL DEFAULT 'General',
+    `display_order` INT NOT NULL DEFAULT 0,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 13: SUPPORT_TICKETS (Customer Help Desk & Inquiry Tracking - UC-11)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `support_tickets` (
+    `ticket_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NULL,
+    `customer_name` VARCHAR(120) NOT NULL,
+    `customer_email` VARCHAR(150) NOT NULL,
+    `subject` VARCHAR(200) NOT NULL,
+    `message` TEXT NOT NULL,
+    `ticket_status` ENUM('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED') NOT NULL DEFAULT 'OPEN',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_tickets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -303,3 +350,16 @@ INSERT INTO `order_audit_trail` (`audit_id`, `order_id`, `old_status`, `new_stat
 (10, 1003, 'PLACED', 'CONFIRMED', 1, DATE_SUB(NOW(), INTERVAL 14 MINUTE)),
 (11, 1003, 'CONFIRMED', 'COOKING', 4, DATE_SUB(NOW(), INTERVAL 12 MINUTE)),
 (12, 1004, 'PLACED', 'CONFIRMED', 1, DATE_SUB(NOW(), INTERVAL 4 MINUTE));
+
+-- Order Reviews & Ratings
+INSERT INTO `order_reviews` (`review_id`, `order_id`, `user_id`, `food_rating`, `rider_rating`, `rider_tip`, `comments`, `created_at`) VALUES
+(1, 1001, 2, 5, 5, 30.00, 'The Meghana special biryani was piping hot and authentic! Suresh delivered it 5 minutes ahead of schedule.', DATE_SUB(NOW(), INTERVAL 2 DAY) + INTERVAL 45 MINUTE);
+
+-- Dynamic FAQs
+INSERT INTO `faqs` (`faq_id`, `question`, `answer`, `category`, `display_order`, `is_active`) VALUES
+(1, 'What is the cancellation policy on food orders?', 'Orders can be cancelled with 100% refund within 60 seconds of placement. Once the restaurant kitchen accepts the ticket and marks status as COOKING, cancellations are non-refundable as fresh meals are perishable under FSSAI rules.', 'Orders & Cancellation', 1, 1),
+(2, 'How does the 6-Digit Delivery OTP handshake work?', 'Every order generates an immutable 6-digit cryptographic OTP stored in the delivery_dispatches table. The delivery partner cannot mark the delivery complete without receiving and submitting this code, guaranteeing secure doorstep delivery handshakes.', 'Delivery & Tracking', 2, 1),
+(3, 'How are delivery ETAs calculated?', 'Our platform utilizes a multi-factor heuristic: ETA = Buffer + Max(Prep Time) + Concurrency Factor + Distance Zone Travel Time. In addition, the kitchen prioritizes tickets via the Weighted Shortest Job First (WSJF) algorithm.', 'Delivery & Tracking', 3, 1),
+(4, 'Are GST charges included in the final bill?', 'Yes, 5% GST is split equally into 2.5% CGST and 2.5% SGST under SAC code 996331. An official printable GST Tax Invoice is generated for every completed transaction.', 'Billing & Payments', 4, 1),
+(5, 'What payment modes are supported and are they secure?', 'We support UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Net Banking, and Cash on Delivery (COD). Digital transactions are secured via Razorpay sandbox payment tokens and encrypted session verification.', 'Billing & Payments', 5, 1),
+(6, 'How are food hygiene and temperature maintained during transit?', 'All meals are prepared fresh upon order confirmation and packaged in thermal spill-proof food-grade containers. Our riders use insulated carrier bags to ensure meals arrive piping hot.', 'General', 6, 1);

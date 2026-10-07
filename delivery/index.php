@@ -47,6 +47,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     // 2. Claim / Pick Up Order from Kitchen
     if ($action === 'claim_order') {
+        // Enforce online duty status check (UC-14 Alternative Flow)
+        if (empty($_SESSION['rider_on_duty'])) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'You are currently OFFLINE. Please toggle duty to ONLINE before claiming orders.']);
+                exit;
+            }
+            set_flash('danger', 'You are currently OFFLINE. Please toggle your duty to ONLINE before claiming orders.');
+            header("Location: " . DELIVERY_URL . "/index.php");
+            exit;
+        }
+
         $orderId = (int)($_POST['order_id'] ?? 0);
         $order = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
 

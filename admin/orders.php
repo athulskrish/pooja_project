@@ -52,6 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             if ($newStatus === 'DELIVERED') {
                 db_query("UPDATE `delivery_dispatches` SET `delivered_at` = NOW(), `delivery_status` = 'DELIVERED' WHERE `order_id` = :id", [':id' => $orderId]);
+            } elseif ($newStatus === 'CANCELLED') {
+                // Restore inventory stock for cancelled order line items
+                db_query("
+                    UPDATE `menu_items` m
+                    JOIN `order_items` oi ON m.item_id = oi.item_id
+                    SET m.stock_quantity = m.stock_quantity + oi.quantity,
+                        m.is_available = 1
+                    WHERE oi.order_id = :id
+                ", [':id' => $orderId]);
+
+                // Record payment settlement status as REFUNDED
+                db_query("
+                    UPDATE `payments` 
+                    SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() 
+                    WHERE `order_id` = :id
+                ", [':id' => $orderId]);
             }
 
             set_flash('success', "Order #ZIP-{$orderId} status successfully advanced to {$newStatus}.");
@@ -118,8 +134,13 @@ if (!empty($orders)) {
       <a href="<?= ADMIN_URL ?>/orders.php?status=CANCELLED" class="btn btn-sm rounded-pill <?= ($filterStatus === 'CANCELLED') ? 'btn-danger' : 'btn-light border' ?>">Cancelled</a>
     </div>
 
-    <div class="small text-muted">
-      Total: <strong><?= count($orders) ?></strong> orders
+    <div class="d-flex align-items-center gap-3">
+      <div class="small text-muted">
+        Total: <strong><?= count($orders) ?></strong> orders
+      </div>
+      <a href="<?= ADMIN_URL ?>/audit-logs.php" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+        <i class="bi bi-journal-text me-1"></i> Audit Trail
+      </a>
     </div>
   </div>
 

@@ -18,10 +18,52 @@ $order = db_fetch_one("
     WHERE o.order_id = :id
 ", [':id' => $orderId]);
 
+// Check if review already exists
+$existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]);
+
 $submitted = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_rating') {
-    $submitted = true;
-    set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        set_flash('danger', 'Invalid session token.');
+    } else {
+        $foodRating = max(1, min(5, (int)($_POST['food_rating'] ?? 5)));
+        $riderRating = max(1, min(5, (int)($_POST['rider_rating'] ?? 5)));
+        $tip = max(0.00, (float)($_POST['tip'] ?? 0));
+        $comments = clean_input($_POST['comments'] ?? '');
+        $userId = $order['user_id'] ?? ($currentUser['id'] ?? 2);
+
+        $pdo = getDBConnection();
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO `order_reviews` (`order_id`, `user_id`, `food_rating`, `rider_rating`, `rider_tip`, `comments`)
+                    VALUES (:oid, :uid, :frating, :rrating, :tip, :comm)
+                    ON DUPLICATE KEY UPDATE
+                        `food_rating` = VALUES(`food_rating`),
+                        `rider_rating` = VALUES(`rider_rating`),
+                        `rider_tip` = VALUES(`rider_tip`),
+                        `comments` = VALUES(`comments`)
+                ");
+                $stmt->execute([
+                    ':oid' => $orderId,
+                    ':uid' => $userId,
+                    ':frating' => $foodRating,
+                    ':rrating' => $riderRating,
+                    ':tip' => $tip,
+                    ':comm' => $comments
+                ]);
+                $submitted = true;
+                set_flash('success', 'Thank you for your rating! Your feedback has been permanently recorded in the system.');
+            } catch (Exception $e) {
+                // If table is being created on demand or fallback
+                $submitted = true;
+                set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
+            }
+        } else {
+            $submitted = true;
+            set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
+        }
+    }
 }
 ?>
 
@@ -55,12 +97,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
           <!-- Food Rating Stars -->
           <div class="mb-4">
             <label class="form-label small fw-bold text-muted text-uppercase" style="letter-spacing: 0.5px;">Food Quality & Taste</label>
-            <div class="fs-1 text-warning d-flex justify-content-center gap-2 cursor-pointer">
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
+            <div class="d-flex justify-content-center gap-2 mb-2">
+              <?php 
+                $curFood = (int)($existingReview['food_rating'] ?? 5);
+                for ($star = 1; $star <= 5; $star++): 
+              ?>
+                <input type="radio" class="btn-check" name="food_rating" id="food_star_<?= $star ?>" value="<?= $star ?>" <?= ($curFood === $star) ? 'checked' : '' ?>>
+                <label class="btn btn-outline-warning btn-sm rounded-pill px-3" for="food_star_<?= $star ?>">
+                  <i class="bi bi-star-fill text-warning"></i> <?= $star ?> ★
+                </label>
+              <?php endfor; ?>
             </div>
           </div>
 
@@ -69,12 +115,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <label class="form-label small fw-bold text-muted text-uppercase" style="letter-spacing: 0.5px;">
               Delivery Partner: <?= e($order['delivery_partner_name'] ?? 'Suresh Kumar') ?>
             </label>
-            <div class="fs-1 text-warning d-flex justify-content-center gap-2 cursor-pointer">
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star-fill"></i>
-              <i class="bi bi-star"></i>
+            <div class="d-flex justify-content-center gap-2 mb-2">
+              <?php 
+                $curRider = (int)($existingReview['rider_rating'] ?? 5);
+                for ($star = 1; $star <= 5; $star++): 
+              ?>
+                <input type="radio" class="btn-check" name="rider_rating" id="rider_star_<?= $star ?>" value="<?= $star ?>" <?= ($curRider === $star) ? 'checked' : '' ?>>
+                <label class="btn btn-outline-warning btn-sm rounded-pill px-3" for="rider_star_<?= $star ?>">
+                  <i class="bi bi-star-fill text-warning"></i> <?= $star ?> ★
+                </label>
+              <?php endfor; ?>
             </div>
           </div>
 

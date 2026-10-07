@@ -42,6 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'toggle_active') {
         $uid = (int)$_POST['user_id'];
         $newStatus = (int)$_POST['is_active'];
+
+        // Guard: Prevent self-deactivation by active administrator to prevent system lockout (UC-20)
+        if ($uid === (int)($currentUser['id'] ?? 0) && $newStatus === 0) {
+            set_flash('danger', 'Security Restriction: Self-deactivation by the active administrator is prohibited to prevent lockout.');
+            header("Location: " . ADMIN_URL . "/users.php");
+            exit;
+        }
+
         db_query("UPDATE `users` SET `is_active` = :act WHERE `user_id` = :id", [
             ':act' => $newStatus,
             ':id' => $uid

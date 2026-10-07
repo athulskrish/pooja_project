@@ -228,7 +228,7 @@
             <div class="small text-white-50 mb-1">Student: <strong class="text-white">Pooja JP</strong></div>
             <div class="small text-white-50 mb-1">Course: <span class="text-white">MCSP-232 | MCA Project</span></div>
             <div class="small text-white-50 mb-1">Enrollment No: <span class="text-white font-monospace">2500051247</span></div>
-            <div class="small text-white-50 mb-2">Algorithms: <span class="badge bg-success bg-opacity-50 text-mint">Apriori</span> <span class="badge bg-info bg-opacity-50 text-white">WSJF</span> <span class="badge bg-warning bg-opacity-50 text-white">SES</span></div>
+            <div class="small text-white-50 mb-2">Algorithms: <span class="badge bg-info bg-opacity-50 text-white">WSJF (KDS)</span> <span class="badge bg-warning bg-opacity-50 text-white">SES (Demand Forecast)</span></div>
             <a href="<?= BASE_URL ?>/database/seed.php" class="btn btn-sm btn-outline-success w-100 rounded-pill py-1 mt-1 text-mint border-success">
               <i class="bi bi-database me-1"></i> Reset / Re-seed Database
             </a>

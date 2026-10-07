@@ -48,7 +48,7 @@ try {
             $pdo->exec($stmt);
         }
     }
-    $messages[] = "All 10 Relational Tables (3NF) & Seed records imported successfully.";
+    $messages[] = "All 13 Relational Tables (3NF) & Seed records imported successfully.";
 
     // Update demo user passwords with fresh system bcrypt hash
     $updateStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash");

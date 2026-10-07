@@ -8,10 +8,8 @@ $pageTitle = 'Shopping Cart & Order Summary';
 $activePage = 'cart';
 
 require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/../includes/AprioriEngine.php';
 
 $coupons = get_available_coupons();
-$recommendations = AprioriEngine::getRecommendations([], 4);
 ?>
 
 <main class="py-4">
@@ -72,36 +70,6 @@ $recommendations = AprioriEngine::getRecommendations([], 4);
             <label class="form-check-label small text-muted" for="noCutleryCheck">
               <strong>Opt-out of disposable plastic cutlery</strong> (Help us keep our forests lush & green 🌿)
             </label>
-          </div>
-        </div>
-
-        <!-- Apriori Combos & Add-ons -->
-        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
-          <div class="d-flex align-items-center gap-2 mb-3">
-            <span class="badge" style="background:#2E6F40; color:#CEFFDC;">APRIORI RECOMMENDATIONS</span>
-            <h6 class="fw-bold mb-0 text-dark">Complete Your Meal with Popular Add-ons</h6>
-          </div>
-          <div class="row g-3">
-            <?php foreach ($recommendations as $rec): ?>
-              <div class="col-md-6">
-                <div class="p-3 rounded-3 border d-flex align-items-center justify-content-between gap-2">
-                  <div class="d-flex align-items-center gap-2 overflow-hidden">
-                    <img src="<?= e($rec['image_url']) ?>" alt="<?= e($rec['item_name']) ?>" class="rounded-2 object-fit-cover flex-shrink-0" style="width: 50px; height: 50px;">
-                    <div class="overflow-hidden">
-                      <div class="fw-bold small text-truncate text-dark" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></div>
-                      <div class="text-forest small fw-bold"><?= format_inr($rec['price']) ?></div>
-                    </div>
-                  </div>
-                  <button 
-                    type="button" 
-                    class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 fw-bold flex-shrink-0"
-                    onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= addslashes(e($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 1 : 0 ?>, 'Meghana Foods'); renderDedicatedCart();"
-                  >
-                    + ADD
-                  </button>
-                </div>
-              </div>
-            <?php endforeach; ?>
           </div>
         </div>
 

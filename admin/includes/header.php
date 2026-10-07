@@ -126,6 +126,20 @@ $activeOrdersCount = db_fetch_val("
           </a>
         </li>
 
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/audit-logs.php" class="admin-nav-link <?= ($activePage === 'audit_logs') ? 'active' : '' ?>">
+            <i class="bi bi-journal-text"></i>
+            <span>Order Audit Trail</span>
+          </a>
+        </li>
+
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/faqs.php" class="admin-nav-link <?= ($activePage === 'faqs') ? 'active' : '' ?>">
+            <i class="bi bi-question-diamond"></i>
+            <span>Dynamic FAQs Desk</span>
+          </a>
+        </li>
+
         <li class="admin-nav-item mt-3 pt-3 border-top border-secondary border-opacity-25">
           <a href="<?= CUSTOMER_URL ?>/index.php" class="admin-nav-link text-mint">
             <i class="bi bi-shop"></i>

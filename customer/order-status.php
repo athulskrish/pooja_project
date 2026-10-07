@@ -7,6 +7,78 @@
 $pageTitle = 'Live Order Status Tracker';
 $activePage = 'orders';
 
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+$currentUser = current_user();
+
+// Handle Customer Order Cancellation (within 60s of placement - Statechart 4.1 & UC-09)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_order') {
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        set_flash('danger', 'Invalid or expired session token.');
+    } else {
+        $cancelOrderId = (int)($_POST['order_id'] ?? 0);
+        $orderToCancel = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $cancelOrderId]);
+
+        if ($orderToCancel) {
+            $placedTs = strtotime($orderToCancel['placed_at']);
+            $elapsedSec = time() - $placedTs;
+
+            if ($elapsedSec <= 60 && in_array($orderToCancel['order_status'], ['PLACED', 'CONFIRMED'])) {
+                $pdo = getDBConnection();
+                if ($pdo) {
+                    try {
+                        $pdo->beginTransaction();
+
+                        // 1. Mark status as CANCELLED
+                        $pdo->prepare("UPDATE `orders` SET `order_status` = 'CANCELLED' WHERE `order_id` = :id")->execute([':id' => $cancelOrderId]);
+
+                        // 2. Restore inventory portions
+                        $pdo->prepare("
+                            UPDATE `menu_items` m
+                            JOIN `order_items` oi ON m.item_id = oi.item_id
+                            SET m.stock_quantity = m.stock_quantity + oi.quantity,
+                                m.is_available = 1
+                            WHERE oi.order_id = :id
+                        ")->execute([':id' => $cancelOrderId]);
+
+                        // 3. Mark payment as REFUNDED
+                        $pdo->prepare("UPDATE `payments` SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() WHERE `order_id` = :id")->execute([':id' => $cancelOrderId]);
+
+                        // 4. Audit trail entry
+                        $pdo->prepare("
+                            INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
+                            VALUES (:oid, :old, 'CANCELLED', :uid, NOW())
+                        ")->execute([
+                            ':oid' => $cancelOrderId,
+                            ':old' => $orderToCancel['order_status'],
+                            ':uid' => $currentUser['id'] ?? $orderToCancel['user_id']
+                        ]);
+
+                        $pdo->commit();
+                        set_flash('success', "Order #ZIP-{$cancelOrderId} cancelled within 60s. 100% refund has been credited to your payment method and inventory restored.");
+                        header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
+                        exit;
+                    } catch (Exception $e) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        set_flash('danger', 'Cancellation error: ' . $e->getMessage());
+                    }
+                }
+            } else {
+                if ($elapsedSec > 60) {
+                    set_flash('danger', 'Cancellation window expired: orders can only be cancelled within 60s of placement. The kitchen has already started cooking.');
+                } else {
+                    set_flash('danger', 'Order cannot be cancelled as kitchen preparation has already begun.');
+                }
+                header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
+                exit;
+            }
+        }
+    }
+}
+
 require_once __DIR__ . '/includes/header.php';
 
 $uid = $currentUser['id'] ?? null;
@@ -94,11 +166,47 @@ if ($remainingSeconds <= 0 && !$isDelivered && !$isCancelled) {
 $initMins = floor($remainingSeconds / 60);
 $initSecs = $remainingSeconds % 60;
 $initialCountdownText = sprintf('%02d:%02d', $initMins, $initSecs);
+$existingReview = db_fetch_one("SELECT review_id FROM `order_reviews` WHERE `order_id` = :id", [':id' => $order['order_id']]);
+$hasReviewed = !empty($existingReview);
+
+$placedTs = strtotime($order['placed_at']);
+$cancellationSecondsLeft = max(0, 60 - (time() - $placedTs));
+$canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_status']), ['PLACED', 'CONFIRMED']));
 ?>
 
 <main class="py-4">
   <div class="container-xl">
     
+    <?php if ($isCancelled): ?>
+      <div class="alert alert-danger rounded-4 p-3 mb-4 d-flex align-items-center gap-3 border-danger shadow-xs">
+        <i class="bi bi-x-octagon-fill fs-2 text-danger"></i>
+        <div>
+          <h5 class="fw-bold mb-1 text-danger">Order Cancelled & 100% Refund Issued</h5>
+          <p class="small mb-0 text-dark">This order was cancelled within the permissible 60-second window. A full refund of <strong><?= format_inr($order['total_amount']) ?></strong> has been initiated (Status: <strong>REFUNDED</strong>) and all ordered items have been restored to restaurant inventory.</p>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($canCancel): ?>
+      <div id="cancellationBanner" class="alert alert-warning rounded-4 p-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3 border-warning shadow-xs">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-clock-history fs-3 text-warning"></i>
+          <div>
+            <h6 class="fw-bold mb-0 text-dark">Changed your mind? Cancel within <span id="cancelSecondsRemaining" class="badge bg-danger font-monospace fs-6"><?= $cancellationSecondsLeft ?>s</span></h6>
+            <span class="small text-muted">100% full refund before kitchen preparation locks in (FSSAI 60-Second Policy).</span>
+          </div>
+        </div>
+        <form method="POST" action="<?= CUSTOMER_URL ?>/order-status.php?order_id=<?= (int)$order['order_id'] ?>" onsubmit="return confirm('Are you sure you want to cancel Order #ZIP-<?= (int)$order['order_id'] ?>? You will receive a 100% instant refund.');" class="m-0">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="cancel_order">
+          <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
+          <button type="submit" id="btnCancelOrder" class="btn btn-danger rounded-pill px-4 fw-bold shadow-xs">
+            <i class="bi bi-x-circle me-1"></i> Cancel Order (100% Refund)
+          </button>
+        </form>
+      </div>
+    <?php endif; ?>
+
     <?php if (!empty($otherActiveOrders)): ?>
       <div class="alert alert-warning py-2 px-3 rounded-4 mb-4 d-flex justify-content-between align-items-center shadow-xs">
         <div>
@@ -353,10 +461,34 @@ $initialCountdownText = sprintf('%02d:%02d', $initMins, $initSecs);
 
       </div>
 
-    </div>
-
   </div>
 </main>
+
+<!-- Automatic Rating Prompt Modal (Sequence Diagram 4.4-B) -->
+<div class="modal fade" id="autoRatingPromptModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+    <div class="modal-content border-0 rounded-4 shadow-lg text-center p-4">
+      <div class="rounded-circle d-inline-flex align-items-center justify-content-center mx-auto mb-3" style="width:70px; height:70px; background:#CEFFDC; color:#2E6F40;">
+        <i class="bi bi-star-fill fs-2"></i>
+      </div>
+      <h4 class="fw-bold font-outfit text-dark mb-1">Order Delivered!</h4>
+      <p class="text-muted small mb-3">Your meal for Order #ZIP-<?= (int)$order['order_id'] ?> has arrived safely. Please take 10 seconds to rate food quality and courier service.</p>
+      <div class="d-flex justify-content-center gap-2 mb-4 text-warning fs-3">
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+      </div>
+      <div class="d-flex justify-content-center gap-2">
+        <button type="button" class="btn btn-light rounded-pill px-4 text-muted" data-bs-dismiss="modal">Later</button>
+        <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+          Rate Meal & Tip &rarr;
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 // Mark tracking active so generic app.js simulation does not conflict or run
@@ -447,6 +579,15 @@ window.orderTrackingActive = true;
         </div>
       `;
     }
+
+    // Prompt automatic rating modal (Sequence Diagram 4.4-B Step 15)
+    setTimeout(() => {
+      const modalEl = document.getElementById('autoRatingPromptModal');
+      if (modalEl && typeof bootstrap !== 'undefined') {
+        const rateModal = new bootstrap.Modal(modalEl);
+        rateModal.show();
+      }
+    }, 1200);
   }
 
   // If already delivered or cancelled, do not start countdown timer or polling
@@ -508,8 +649,38 @@ window.orderTrackingActive = true;
     } catch (e) {
       // silent network catch
     }
-  }, 4000);
 })();
+
+  // Live 60-Second Cancellation Countdown Timer
+  let cancelSecs = <?= (int)($cancellationSecondsLeft ?? 0) ?>;
+  if (cancelSecs > 0) {
+    const cancelTimerInterval = setInterval(() => {
+      cancelSecs--;
+      const el = document.getElementById('cancelSecondsRemaining');
+      if (el) el.textContent = cancelSecs + 's';
+      if (cancelSecs <= 0) {
+        clearInterval(cancelTimerInterval);
+        const banner = document.getElementById('cancellationBanner');
+        if (banner) {
+          banner.className = 'alert alert-light border rounded-4 p-3 mb-4 text-muted small';
+          banner.innerHTML = '<i class="bi bi-info-circle me-1"></i> 60-second cancellation window closed. Order is locked and being prepared in the kitchen.';
+        }
+      }
+    }, 1000);
+  }
+
+  // Automatic Rating Prompt on Page Load if already DELIVERED and not yet reviewed
+  <?php if ($isDelivered && !$hasReviewed): ?>
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const modalEl = document.getElementById('autoRatingPromptModal');
+      if (modalEl && typeof bootstrap !== 'undefined') {
+        const rateModal = new bootstrap.Modal(modalEl);
+        rateModal.show();
+      }
+    }, 1500);
+  });
+  <?php endif; ?>
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
