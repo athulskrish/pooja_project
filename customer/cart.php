@@ -59,6 +59,28 @@ $coupons = get_available_coupons();
           </div>
         </div>
 
+        <!-- =======================================================================
+             ALGORITHM 1: APRIORI CROSS-SELLING (FREQUENTLY ORDERED TOGETHER)
+             ======================================================================= -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4" id="cartAprioriCard">
+          <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+            <div>
+              <span class="badge rounded-pill px-2 py-1 fw-bold" style="background:#CEFFDC; color:#243E2C; font-size:0.7rem;">
+                <i class="fa-solid fa-brain me-1"></i> APRIORI ALGORITHM
+              </span>
+              <h6 class="fw-bold text-dark mb-0 mt-1">Frequently Ordered Together (Complete Your Meal)</h6>
+              <div class="small text-muted" id="cartAprioriSubtitle">Complementary dishes recommended by Market Basket Analysis</div>
+            </div>
+            <span class="badge bg-light text-success border px-2 py-1 small">
+              <i class="bi bi-stars me-1"></i> Smart Pairings
+            </span>
+          </div>
+
+          <div class="row g-3" id="cartAprioriContainer">
+            <!-- Dynamically populated via loadCartAprioriRecommendations() -->
+          </div>
+        </div>
+
         <!-- Cooking Instructions & Delivery Notes -->
         <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
           <h6 class="fw-bold text-dark mb-3"><i class="bi bi-pencil-square text-success me-2"></i>Cooking & Delivery Preferences</h6>
@@ -237,6 +259,51 @@ function renderDedicatedCart() {
   } else {
     discountRow.style.setProperty('display', 'none', 'important');
   }
+
+  // Load Apriori Market Basket Recommendations
+  loadCartAprioriRecommendations();
+}
+
+function loadCartAprioriRecommendations() {
+  const container = document.getElementById('cartAprioriContainer');
+  if (!container) return;
+  const cartIds = (cart && cart.length > 0) ? cart.map(i => i.id).join(',') : '';
+  fetch('<?= CUSTOMER_URL ?>/ajax/apriori-api.php?item_ids=' + encodeURIComponent(cartIds) + '&limit=4')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.recommendations && data.recommendations.length > 0) {
+        const subtitle = document.getElementById('cartAprioriSubtitle');
+        if (subtitle && cart && cart.length > 0) {
+          subtitle.textContent = `Apriori basket analysis calculated from ${cart.length} item(s) in your cart`;
+        }
+        container.innerHTML = data.recommendations.map(rec => `
+          <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border rounded-3 p-2 bg-light bg-opacity-50 text-center d-flex flex-column justify-content-between">
+              <div class="position-relative mb-2">
+                <img src="${rec.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'}" 
+                     alt="${rec.item_name}" 
+                     class="rounded-3 w-100 object-fit-cover" 
+                     style="height: 90px;">
+                <span class="position-absolute top-0 start-0 m-1 badge bg-white text-dark shadow-sm" style="font-size:0.6rem;">
+                  ${rec.is_veg == 1 ? '🟢 VEG' : '🔴 NON-VEG'}
+                </span>
+              </div>
+              <h6 class="fw-bold text-dark small mb-1 text-truncate" title="${rec.item_name}">${rec.item_name}</h6>
+              <div class="text-muted small mb-2">₹${parseFloat(rec.price).toFixed(2)}</div>
+              <button type="button" 
+                      class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
+                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}); showToast('Added ${rec.item_name.replace(/'/g, "\\'")} to cart'); renderDedicatedCart();">
+                <i class="bi bi-plus-lg me-1"></i> Add
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        const card = document.getElementById('cartAprioriCard');
+        if (card) card.style.display = 'none';
+      }
+    })
+    .catch(err => console.log('Cart Apriori error:', err));
 }
 
 document.addEventListener('DOMContentLoaded', () => {

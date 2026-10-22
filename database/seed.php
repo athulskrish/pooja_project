@@ -87,6 +87,152 @@ try {
         $messages[] = "Notice: Triggers skipped (database user may lack SUPER/TRIGGER privileges): " . $trgEx->getMessage();
     }
 
+    // Install Stored Procedures (sp_GenerateDailySalesReport & sp_ProcessOrderCheckout)
+    try {
+        $pdo->exec("DROP PROCEDURE IF EXISTS `sp_GenerateDailySalesReport`;");
+        $pdo->exec("
+            CREATE PROCEDURE `sp_GenerateDailySalesReport`(IN p_report_date DATE)
+            BEGIN
+                DECLARE target_date DATE;
+                SET target_date = COALESCE(p_report_date, CURDATE());
+
+                SELECT 
+                    target_date AS report_date,
+                    COUNT(order_id) AS total_orders,
+                    COALESCE(SUM(CASE WHEN order_status = 'DELIVERED' THEN 1 ELSE 0 END), 0) AS delivered_orders,
+                    COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelled_orders,
+                    COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN subtotal ELSE 0.00 END), 0.00) AS net_food_sales,
+                    COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN tax_amount ELSE 0.00 END), 0.00) AS total_gst_collected,
+                    COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN delivery_fee ELSE 0.00 END), 0.00) AS total_delivery_fees,
+                    COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN discount_amount ELSE 0.00 END), 0.00) AS total_discounts_given,
+                    COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN total_amount ELSE 0.00 END), 0.00) AS gross_revenue,
+                    ROUND(COALESCE(AVG(CASE WHEN order_status NOT IN ('CANCELLED') THEN total_amount ELSE NULL END), 0.00), 2) AS average_order_value
+                FROM `orders`
+                WHERE DATE(placed_at) = target_date;
+
+                SELECT 
+                    m.item_id,
+                    m.item_name,
+                    c.category_name,
+                    SUM(oi.quantity) AS units_sold,
+                    SUM(oi.line_total) AS item_revenue
+                FROM `order_items` oi
+                JOIN `orders` o ON oi.order_id = o.order_id
+                JOIN `menu_items` m ON oi.item_id = m.item_id
+                JOIN `categories` c ON m.category_id = c.category_id
+                WHERE DATE(o.placed_at) = target_date
+                  AND o.order_status NOT IN ('CANCELLED')
+                GROUP BY m.item_id, m.item_name, c.category_name
+                ORDER BY units_sold DESC
+                LIMIT 5;
+            END;
+        ");
+
+        $pdo->exec("DROP PROCEDURE IF EXISTS `sp_ProcessOrderCheckout`;");
+        $pdo->exec("
+            CREATE PROCEDURE `sp_ProcessOrderCheckout`(
+                IN p_user_id INT,
+                IN p_address_id INT,
+                IN p_subtotal DECIMAL(10,2),
+                IN p_tax_amount DECIMAL(10,2),
+                IN p_delivery_fee DECIMAL(10,2),
+                IN p_platform_fee DECIMAL(10,2),
+                IN p_discount_amount DECIMAL(10,2),
+                IN p_total_amount DECIMAL(10,2),
+                IN p_coupon_code VARCHAR(50),
+                IN p_order_notes TEXT,
+                IN p_payment_mode VARCHAR(20),
+                IN p_tx_ref VARCHAR(100),
+                IN p_eta_minutes INT,
+                OUT p_order_id INT,
+                OUT p_order_number VARCHAR(50),
+                OUT p_delivery_otp VARCHAR(6),
+                OUT p_status_message VARCHAR(255)
+            )
+            proc_label: BEGIN
+                DECLARE v_order_id INT;
+                DECLARE v_otp VARCHAR(6);
+                DECLARE v_pay_status VARCHAR(20);
+                DECLARE v_order_num VARCHAR(50);
+
+                DECLARE EXIT HANDLER FOR SQLEXCEPTION
+                BEGIN
+                    ROLLBACK;
+                    SET p_order_id = 0;
+                    SET p_order_number = '';
+                    SET p_delivery_otp = '';
+                    SET p_status_message = 'ERROR: Database transaction rolled back due to SQL exception';
+                END;
+
+                START TRANSACTION;
+
+                IF NOT EXISTS (SELECT 1 FROM `users` WHERE `user_id` = p_user_id) THEN
+                    SET p_order_id = 0;
+                    SET p_order_number = '';
+                    SET p_delivery_otp = '';
+                    SET p_status_message = 'ERROR: User ID does not exist';
+                    ROLLBACK;
+                    LEAVE proc_label;
+                END IF;
+
+                SET v_otp = LPAD(FLOOR(RAND() * 900000 + 100000), 6, '0');
+
+                INSERT INTO `orders` (
+                    `user_id`, `address_id`, `subtotal`, `tax_amount`,
+                    `delivery_fee`, `platform_fee`, `discount_amount`, `total_amount`,
+                    `coupon_code`, `order_status`, `order_notes`, `placed_at`, `estimated_delivery_time`
+                ) VALUES (
+                    p_user_id, p_address_id, p_subtotal, p_tax_amount,
+                    p_delivery_fee, p_platform_fee, p_discount_amount, p_total_amount,
+                    p_coupon_code, 'CONFIRMED', p_order_notes, NOW(), DATE_ADD(NOW(), INTERVAL COALESCE(p_eta_minutes, 30) MINUTE)
+                );
+
+                SET v_order_id = LAST_INSERT_ID();
+                SET v_order_num = CONCAT('#ZIP-', v_order_id);
+
+                UPDATE `orders` SET `order_number` = v_order_num WHERE `order_id` = v_order_id;
+
+                IF p_payment_mode = 'COD' THEN
+                    SET v_pay_status = 'PENDING';
+                ELSE
+                    SET v_pay_status = 'SUCCESSFUL';
+                END IF;
+
+                INSERT INTO `payments` (
+                    `order_id`, `payment_mode`, `transaction_reference`,
+                    `amount_paid`, `payment_status`, `payment_timestamp`
+                ) VALUES (
+                    v_order_id, p_payment_mode, COALESCE(p_tx_ref, CONCAT('TXN-', v_order_id, '-', UNIX_TIMESTAMP())),
+                    p_total_amount, v_pay_status, NOW()
+                );
+
+                INSERT INTO `delivery_dispatches` (
+                    `order_id`, `delivery_partner_name`, `delivery_partner_phone`,
+                    `delivery_otp`, `assigned_at`, `delivery_status`
+                ) VALUES (
+                    v_order_id, 'Suresh Kumar (Zippy Express)', '+91 96320 98765',
+                    v_otp, NOW(), 'ASSIGNED'
+                );
+
+                INSERT INTO `order_audit_trail` (
+                    `order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`
+                ) VALUES (
+                    v_order_id, 'PLACED', 'CONFIRMED', p_user_id, NOW()
+                );
+
+                COMMIT;
+
+                SET p_order_id = v_order_id;
+                SET p_order_number = v_order_num;
+                SET p_delivery_otp = v_otp;
+                SET p_status_message = 'SUCCESS: Order placed and confirmed atomically';
+            END;
+        ");
+        $messages[] = "Stored procedures (sp_GenerateDailySalesReport & sp_ProcessOrderCheckout) installed successfully.";
+    } catch (Exception $spEx) {
+        $messages[] = "Notice: Stored procedures skipped: " . $spEx->getMessage();
+    }
+
     $success = true;
 } catch (Exception $e) {
     $messages[] = "Error: " . $e->getMessage();

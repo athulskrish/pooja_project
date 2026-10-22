@@ -8,6 +8,10 @@ $pageTitle = 'Meghana Foods - Menu & Online Ordering';
 $activePage = 'restaurant';
 
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/../includes/AprioriEngine.php';
+
+// Algorithm 1: Apriori Market Basket Analysis Dynamic Cross-Selling
+$aprioriRecs = AprioriEngine::getRecommendations([1], 4);
 
 // Fetch Categories and Menu Items
 $categories = db_fetch_all("
@@ -103,6 +107,52 @@ foreach ($categories as $cat) {
             <label class="form-check-label fw-bold small text-success mb-0" for="vegOnlySwitch" style="cursor: pointer;">
               Pure Veg Only
             </label>
+          </div>
+        </div>
+
+        <!-- =======================================================================
+             ALGORITHM 1: APRIORI MARKET BASKET ANALYSIS (FREQUENTLY ORDERED TOGETHER)
+             ======================================================================= -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 mb-4 bg-white" id="aprioriRecommendationsCard">
+          <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+            <div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge rounded-pill px-2 py-1 fw-bold" style="background:#CEFFDC; color:#243E2C; font-size:0.7rem;">
+                  <i class="fa-solid fa-brain me-1"></i> APRIORI ALGORITHM
+                </span>
+                <span class="text-muted small">Market Basket Analysis</span>
+              </div>
+              <h5 class="fw-bold mb-0 text-dark mt-1">Frequently Ordered Together</h5>
+              <div class="small text-muted" id="aprioriSubtitle">Complementary dishes frequently paired with items in your basket</div>
+            </div>
+            <span class="badge bg-light text-success border px-2 py-1 small">
+              <i class="bi bi-stars me-1"></i> Smart Pairings
+            </span>
+          </div>
+
+          <div class="row g-3" id="aprioriItemsContainer">
+            <?php foreach ($aprioriRecs as $rec): ?>
+              <div class="col-sm-6 col-md-3">
+                <div class="card h-100 border rounded-3 p-2 bg-light bg-opacity-50 text-center d-flex flex-column justify-content-between">
+                  <div class="position-relative mb-2">
+                    <img src="<?= e($rec['image_url'] ?: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300') ?>" 
+                         alt="<?= e($rec['item_name']) ?>" 
+                         class="rounded-3 w-100 object-fit-cover" 
+                         style="height: 100px;">
+                    <span class="position-absolute top-0 start-0 m-1 badge bg-white text-dark shadow-sm" style="font-size:0.65rem;">
+                      <?= $rec['is_veg'] ? '🟢 VEG' : '🔴 NON-VEG' ?>
+                    </span>
+                  </div>
+                  <h6 class="fw-bold text-dark small mb-1 text-truncate" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></h6>
+                  <div class="text-muted small mb-2"><?= format_inr($rec['price']) ?></div>
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
+                          onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= e(addslashes($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>); showToast('Added <?= e(addslashes($rec['item_name'])) ?> to cart'); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
+                    <i class="bi bi-plus-lg me-1"></i> Add
+                  </button>
+                </div>
+              </div>
+            <?php endforeach; ?>
           </div>
         </div>
 
@@ -237,7 +287,52 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Dynamically update Apriori cross-sell recommendations based on active cart
+  if (typeof cart !== 'undefined' && cart.length > 0) {
+    refreshAprioriRecommendations();
+  }
 });
+
+function refreshAprioriRecommendations() {
+  if (typeof cart === 'undefined' || cart.length === 0) return;
+  const cartIds = cart.map(i => i.id).join(',');
+  fetch('<?= CUSTOMER_URL ?>/ajax/apriori-api.php?item_ids=' + encodeURIComponent(cartIds) + '&limit=4')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.recommendations && data.recommendations.length > 0) {
+        const container = document.getElementById('aprioriItemsContainer');
+        const subtitle = document.getElementById('aprioriSubtitle');
+        if (!container) return;
+        if (subtitle) {
+          subtitle.textContent = 'Apriori recommendations calculated from ' + cart.length + ' item(s) in your cart';
+        }
+        container.innerHTML = data.recommendations.map(rec => `
+          <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border rounded-3 p-2 bg-light bg-opacity-50 text-center d-flex flex-column justify-content-between">
+              <div class="position-relative mb-2">
+                <img src="${rec.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'}" 
+                     alt="${rec.item_name}" 
+                     class="rounded-3 w-100 object-fit-cover" 
+                     style="height: 100px;">
+                <span class="position-absolute top-0 start-0 m-1 badge bg-white text-dark shadow-sm" style="font-size:0.65rem;">
+                  ${rec.is_veg == 1 ? '🟢 VEG' : '🔴 NON-VEG'}
+                </span>
+              </div>
+              <h6 class="fw-bold text-dark small mb-1 text-truncate" title="${rec.item_name}">${rec.item_name}</h6>
+              <div class="text-muted small mb-2">₹${parseFloat(rec.price).toFixed(2)}</div>
+              <button type="button" 
+                      class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
+                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}); showToast('Added ${rec.item_name.replace(/'/g, "\\'")} to cart'); refreshAprioriRecommendations();">
+                <i class="bi bi-plus-lg me-1"></i> Add
+              </button>
+            </div>
+          </div>
+        `).join('');
+      }
+    })
+    .catch(err => console.log('Apriori refresh error:', err));
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -618,7 +618,7 @@ State Diagrams represent lifecycle transitions of entities during execution.
 
 Complete Database and Table Details
 
-The proposed project uses PostgreSQL relational database management system.
+The proposed project uses MySQL 8.0 / MariaDB relational database management system with the InnoDB storage engine.
 
 The database design follows Third Normal Form (3NF) normalization principles to eliminate redundancy and maintain data consistency.
 
@@ -1282,7 +1282,7 @@ JWT Tokens
 
 Image Metadata Objects
 
-Segmentation Polygon Coordinates
+Order Item Cart Structures & Catalog Trees
 
 Audit Log Records
 
@@ -1316,13 +1316,13 @@ List of Reports Generated
 
 The proposed system generates various operational and analytical reports including:
 
-Vehicle Damage Assessment Report
+Daily Sales & Revenue Report
 
-Repair Cost Estimation Report
+Item Velocity & Stockout Risk Report
 
-Fraud Detection Report
+Kitchen Preparation & WSJF Queue Time Analysis
 
-Claim Status Report
+Delivery Dispatch & Courier Turnaround Log
 
 Analytics Dashboard Report
 
@@ -1330,7 +1330,7 @@ AI Prediction Audit Report
 
 Chatbot Interaction Report
 
-PDF Insurance Claim Report
+Printable Indian GST Tax Invoice (SAC 996331)
 
 Overall Network Architecture
 
