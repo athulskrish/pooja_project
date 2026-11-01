@@ -161,7 +161,7 @@ $countCooking = count($laneCooking);
 $countReady = count($laneReady);
 $countHandedOver = count($recentHandedOver);
 $totalActive = $countNew + $countCooking + $countReady;
-?>
+
 require_once __DIR__ . '/includes/header.php';
 ?>
 

@@ -278,7 +278,7 @@ $deliveredCount = count($historyOrders);
 $baseFare = 45.00;
 $todayEarnings = ($deliveredCount * $baseFare) + ($deliveredCount * 15.00); // base + distance incentive
 $totalTips = $deliveredCount * 20.00;
-?>
+
 require_once __DIR__ . '/includes/header.php';
 ?>
     <div class="duty-card mb-3">
