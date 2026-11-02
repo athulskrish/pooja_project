@@ -1879,6 +1879,188 @@ body.modal-open .mobile-bottom-nav,
 }
 
 /* ==========================================================================
+   ADMIN LIVE OPERATIONS & DISPATCH CONSOLE EXTENSIONS
+   ========================================================================== */
+.live-pulse-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+.live-pulse-dot.green {
+  background-color: #229947;
+  box-shadow: 0 0 0 0 rgba(34, 153, 71, 0.7);
+  animation: livePulseGreen 1.8s infinite;
+}
+.live-pulse-dot.amber {
+  background-color: #F57F17;
+  box-shadow: 0 0 0 0 rgba(245, 127, 23, 0.7);
+  animation: livePulseAmber 1.8s infinite;
+}
+.live-pulse-dot.blue {
+  background-color: #2563EB;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  animation: livePulseBlue 1.8s infinite;
+}
+@keyframes livePulseGreen {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 153, 71, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(34, 153, 71, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 153, 71, 0); }
+}
+@keyframes livePulseAmber {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 127, 23, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(245, 127, 23, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 127, 23, 0); }
+}
+@keyframes livePulseBlue {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+/* Cook load summary pills */
+.cook-load-badge {
+  background: #FFFFFF;
+  border: 1px solid var(--lush-border);
+  border-radius: 30px;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--lush-pine);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: all 0.2s ease;
+}
+.cook-load-badge:hover {
+  border-color: var(--lush-forest);
+  background-color: var(--lush-mint-soft);
+  transform: translateY(-1px);
+}
+.cook-load-badge .badge-count {
+  background: var(--lush-forest);
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+}
+
+/* Order live cards */
+.order-live-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid var(--lush-border);
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(36, 62, 44, 0.04);
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.order-live-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(36, 62, 44, 0.1);
+  border-color: var(--lush-sage);
+}
+.order-live-card.stage-preparing {
+  border-left: 5px solid #F59E0B !important;
+}
+.order-live-card.stage-ready {
+  border-left: 5px solid #10B981 !important;
+}
+.order-live-card.stage-delivering {
+  border-left: 5px solid #3B82F6 !important;
+}
+.order-live-card.stage-delivered {
+  border-left: 5px solid #059669 !important;
+}
+.order-live-card.stage-cancelled {
+  border-left: 5px solid #EF4444 !important;
+  opacity: 0.85;
+}
+
+/* Delivery Handshake OTP Pill */
+.delivery-otp-pill {
+  background: #FEF3C7;
+  border: 1px dashed #D97706;
+  color: #92400E;
+  font-family: 'Outfit', monospace;
+  font-weight: 800;
+  letter-spacing: 2px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Search Highlights */
+.search-highlight {
+  background-color: #FEF08A;
+  color: #854D0E;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* Search Input Box */
+.admin-search-box {
+  background: #FFFFFF;
+  border: 1.5px solid var(--lush-border);
+  border-radius: 50px;
+  padding: 8px 18px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+.admin-search-box:focus-within {
+  border-color: var(--lush-forest);
+  box-shadow: 0 0 0 3px rgba(46, 111, 64, 0.15);
+}
+.admin-search-box input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 0.92rem;
+  color: var(--lush-text-main);
+}
+.admin-search-box input::placeholder {
+  color: var(--lush-text-light);
+}
+
+/* Nav filter pills */
+.nav-pills-modern .nav-link {
+  color: var(--lush-text-muted);
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 8px 16px;
+  border-radius: 50px;
+  border: 1px solid var(--lush-border);
+  background: #FFFFFF;
+  transition: all 0.2s ease;
+}
+.nav-pills-modern .nav-link:hover {
+  background: var(--lush-bg);
+  color: var(--lush-pine);
+}
+.nav-pills-modern .nav-link.active {
+  background: var(--lush-pine);
+  color: #FFFFFF;
+  border-color: var(--lush-pine);
+  box-shadow: 0 2px 8px rgba(36, 62, 44, 0.2);
+}
+.nav-pills-modern .nav-link.active .badge {
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #FFFFFF !important;
+}
+
+/* ==========================================================================
    NEW ARCHITECTURE EXTENSIONS (16 MODULES)
    ========================================================================== */
 
@@ -1938,7 +2120,32 @@ body.modal-open .mobile-bottom-nav,
 .star-rating .bi-star-fill.active,
 .star-rating .bi-star-fill:hover,
 .star-rating .bi-star-fill.hover {
-  color: #F59E0B;
+  color: #FFB800;
+  filter: drop-shadow(0 2px 5px rgba(255, 184, 0, 0.45));
+}
+.interactive-star-group .star-item {
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.15s ease, filter 0.15s ease;
+}
+.interactive-star-group .star-item:hover {
+  transform: scale(1.22) !important;
+  color: #FFB800 !important;
+  filter: drop-shadow(0 3px 8px rgba(255, 184, 0, 0.6)) !important;
+}
+.star-rating-box {
+  transition: all 0.2s ease;
+}
+.star-rating-box:hover {
+  background: #EDFBF2 !important;
+  border-color: #2E6F40 !important;
+}
+.open-dish-reviews-btn {
+  color: #4B6354;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+.open-dish-reviews-btn:hover {
+  color: #2E6F40 !important;
+  text-decoration: underline !important;
 }
 .feedback-chip {
   padding: 8px 16px;
@@ -2391,5 +2598,189 @@ body.modal-open .mobile-bottom-nav,
     font-size: 0.72rem;
   }
 }
+
+/* ==========================================================================
+   MATERIAL DESIGN 3 (M3) ADMIN ENHANCEMENTS
+   Minimalist, Ergonomic, Low-Fatigue Operations UI
+   ========================================================================== */
+
+:root {
+  --m3-surface: #FFFFFF;
+  --m3-surface-dim: #F2F5F3;
+  --m3-surface-container: #F8FAF8;
+  --m3-surface-tonal: #EDF4EE;
+  --m3-primary: #2E6F40;
+  --m3-primary-container: #D6ECD9;
+  --m3-on-primary-container: #0E361A;
+  --m3-outline: #DDE5DF;
+  --m3-outline-variant: #E8EFEA;
+  --m3-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --m3-elevation-2: 0 4px 10px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* Material 3 Sidebar Subheaders */
+.m3-nav-subheader {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #7D9B86;
+  text-transform: uppercase;
+  padding: 14px 16px 6px 16px;
+  list-style: none;
+}
+
+/* Material 3 Pill Nav Links */
+.admin-nav-link {
+  border-radius: 28px !important;
+  padding: 10px 18px !important;
+  font-size: 0.88rem !important;
+  color: #C2D5C8 !important;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+.admin-nav-link:hover {
+  background-color: rgba(206, 255, 220, 0.1) !important;
+  color: #FFFFFF !important;
+}
+
+.admin-nav-link.active {
+  background-color: rgba(104, 186, 127, 0.22) !important;
+  color: #CEFFDC !important;
+  font-weight: 700 !important;
+}
+
+.admin-nav-link.active i {
+  color: #68BA7F !important;
+}
+
+/* Material 3 Card Structure */
+.m3-card {
+  background: var(--m3-surface);
+  border: 1px solid var(--m3-outline);
+  border-radius: 20px;
+  box-shadow: var(--m3-elevation-1);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease;
+}
+
+.m3-card:hover {
+  box-shadow: var(--m3-elevation-2);
+}
+
+/* Material 3 Filter Chips */
+.m3-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid var(--m3-outline);
+  background: var(--m3-surface-container);
+  color: #243E2C;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.m3-chip:hover {
+  background: #E8EFEA;
+}
+
+.m3-chip.active {
+  background: var(--m3-primary) !important;
+  color: #FFFFFF !important;
+  border-color: var(--m3-primary) !important;
+}
+
+/* Material 3 Segmented Button Tabs */
+.m3-segmented-nav {
+  background: var(--m3-surface-dim);
+  border-radius: 24px;
+  padding: 4px;
+  display: inline-flex;
+  border: 1px solid var(--m3-outline);
+}
+
+.m3-segmented-btn {
+  border-radius: 20px !important;
+  padding: 7px 20px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  color: #4A6352 !important;
+  border: none !important;
+  background: transparent !important;
+  transition: all 0.2s ease !important;
+}
+
+.m3-segmented-btn.active {
+  background: #FFFFFF !important;
+  color: #1C2B20 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Material 3 Mobile Bottom Navigation Bar (< 992px) */
+.m3-mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: #FFFFFF;
+  border-top: 1px solid #E2ECE5;
+  box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.06);
+  z-index: 1045;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 4px 6px;
+}
+
+.m3-bottom-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: #576E5F;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+}
+
+.m3-bottom-icon-pill {
+  width: 48px;
+  height: 28px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  transition: all 0.2s ease;
+}
+
+.m3-bottom-item.active .m3-bottom-icon-pill {
+  background: #D1E8D5;
+  color: #1E3A26;
+}
+
+.m3-bottom-item.active .m3-bottom-label {
+  font-weight: 700;
+  color: #1E3A26;
+}
+
+.m3-bottom-label {
+  font-size: 0.68rem;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+@media (max-width: 991px) {
+  .admin-content {
+    padding-bottom: 84px !important;
+  }
+}
+
 
 

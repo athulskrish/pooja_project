@@ -9,5 +9,6 @@ require_once __DIR__ . '/../includes/auth.php';
 
 logout_user();
 set_flash('info', 'You have been successfully signed out from the Delivery Fleet App.');
+session_write_close();
 header("Location: " . DELIVERY_URL . "/login.php");
 exit;

@@ -41,6 +41,7 @@ $menuItems = db_fetch_all("
           <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="0" class="active" aria-current="true"></button>
           <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="1"></button>
           <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="2"></button>
+          <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="3"></button>
         </div>
         
         <div class="carousel-inner">
@@ -73,7 +74,35 @@ $menuItems = db_fetch_all("
             </div>
           </div>
 
-          <!-- Slide 2: Free Delivery -->
+          <!-- Slide 2: Lush Green Organic Healthy Gourmet -->
+          <div class="carousel-item">
+            <div class="hero-slide-bg p-4 p-md-5 d-flex align-items-center" style="background: linear-gradient(135deg, #18331E 0%, #2E6F40 100%); min-height: 280px;">
+              <div class="row align-items-center w-100 g-4">
+                <div class="col-lg-7 text-white">
+                  <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #CEFFDC; color: #1C2B20;">
+                    🌿 100% ORGANIC & NUTRITIOUS
+                  </span>
+                  <h1 class="display-6 fw-bold mb-2 text-white">Farm Fresh Salads & Superfood Bowls</h1>
+                  <p class="text-white-50 mb-3 fs-6">
+                    Curated micronutrient-dense Mediterranean quinoa bowls, lean grilled herb chicken, and cold-pressed detox juices.
+                  </p>
+                  <div class="d-flex flex-wrap gap-2">
+                    <a href="<?= CUSTOMER_URL ?>/search.php?category=healthy" class="btn btn-mint fw-bold rounded-pill px-4 py-2" style="background:#CEFFDC; color:#243E2C;">
+                      Explore Healthy Menu <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                    <a href="#dishes" class="btn btn-outline-light rounded-pill px-4 py-2" onclick="setTimeout(function(){ document.getElementById('healthyOnlyToggle')?.click(); }, 300);">
+                      Filter Healthy Dishes
+                    </a>
+                  </div>
+                </div>
+                <div class="col-lg-5 d-none d-lg-block text-center">
+                  <img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80" alt="Fresh Healthy Salad" class="img-fluid rounded-4 shadow-lg hero-img-glow" style="max-height: 220px; object-fit: cover;">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slide 3: Free Delivery -->
           <div class="carousel-item">
             <div class="hero-slide-bg p-4 p-md-5 d-flex align-items-center" style="background: linear-gradient(135deg, #243E2C 0%, #1a4d2e 100%); min-height: 280px;">
               <div class="row align-items-center w-100 g-4">
@@ -155,7 +184,7 @@ $menuItems = db_fetch_all("
         <?php foreach ($categories as $cat): ?>
           <a href="<?= CUSTOMER_URL ?>/search.php?category=<?= urlencode($cat['category_slug']) ?>" class="category-pill-card text-center text-decoration-none flex-shrink-0">
             <div class="category-pill-img-wrap rounded-circle shadow-sm mx-auto mb-2 overflow-hidden" style="width: 80px; height: 80px;">
-              <img src="<?= e($cat['image_url']) ?>" alt="<?= e($cat['category_name']) ?>" class="w-100 h-100 object-fit-cover" loading="lazy">
+              <img src="<?= e(get_category_image_url($cat['image_url'])) ?>" alt="<?= e($cat['category_name']) ?>" class="w-100 h-100 object-fit-cover" loading="lazy">
             </div>
             <span class="category-name d-block fw-bold small text-dark text-truncate" style="max-width: 90px;"><?= e($cat['category_name']) ?></span>
             <span class="text-muted" style="font-size: 0.65rem;"><?= (int)$cat['total_dishes'] ?> items</span>
@@ -282,9 +311,15 @@ $menuItems = db_fetch_all("
         <div class="d-flex flex-wrap align-items-center gap-2">
           
           <!-- Veg Only Toggle Button -->
-          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2" id="vegOnlyToggle">
+          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="vegOnlyToggle">
             <span class="food-badge-dot veg" style="width:10px; height:10px; border-radius:50%; background:#229947; display:inline-block;"></span>
             <span>Pure Veg Only</span>
+          </button>
+
+          <!-- Healthy Food Option Toggle Button -->
+          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="healthyOnlyToggle">
+            <i class="fa-solid fa-leaf text-success"></i>
+            <span>Healthy Food</span>
           </button>
 
           <!-- Sort / Fast Filter -->
@@ -302,15 +337,18 @@ $menuItems = db_fetch_all("
       <div class="row g-4" id="dishesGrid">
         <?php if (!empty($menuItems)): ?>
           <?php foreach ($menuItems as $dish): ?>
-            <div class="col-xl-3 col-lg-4 col-md-6 dish-card-wrapper" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-category="<?= e($dish['category_slug']) ?>">
+            <?php 
+              $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+            ?>
+            <div class="col-xl-3 col-lg-4 col-md-6 dish-card-wrapper" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-category="<?= e($dish['category_slug']) ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-rating="<?= (float)($dish['rating'] ?? 4.8) ?>">
               <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden dish-catalog-card hover-lift">
                 
                 <!-- Dish Image Box -->
                 <div class="dish-card-img-container position-relative overflow-hidden" style="height: 190px;">
-                  <img src="<?= e($dish['image_url']) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
+                  <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
                   
-                  <!-- Veg / Non-Veg Indicator -->
-                  <div class="position-absolute top-0 start-0 m-2">
+                  <!-- Indicators (Veg/Non-Veg + Healthy) -->
+                  <div class="position-absolute top-0 start-0 m-2 d-flex flex-column gap-1 align-items-start">
                     <?php if ($dish['is_veg']): ?>
                       <span class="badge bg-white text-success border border-success d-flex align-items-center gap-1 shadow-sm px-2 py-1" style="font-size: 0.7rem;">
                         <span style="width: 8px; height: 8px; border-radius: 50%; background: #229947; display: inline-block;"></span>
@@ -320,6 +358,12 @@ $menuItems = db_fetch_all("
                       <span class="badge bg-white text-danger border border-danger d-flex align-items-center gap-1 shadow-sm px-2 py-1" style="font-size: 0.7rem;">
                         <span style="width: 8px; height: 8px; border-radius: 50%; background: #D32F2F; display: inline-block;"></span>
                         NON-VEG
+                      </span>
+                    <?php endif; ?>
+
+                    <?php if ($isHealthyDish): ?>
+                      <span class="badge shadow-sm px-2 py-1" style="background: #CEFFDC; color: #1C2B20; font-size: 0.65rem; border: 1px solid #68BA7F;">
+                        <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
                       </span>
                     <?php endif; ?>
                   </div>
@@ -350,6 +394,19 @@ $menuItems = db_fetch_all("
                     <h6 class="fw-bold mb-1 text-dark dish-title" title="<?= e($dish['item_name']) ?>">
                       <?= e($dish['item_name']) ?>
                     </h6>
+
+                    <!-- Star Rating & Customer Reviews Link -->
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                      <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill" style="font-size: 0.75rem;">
+                        <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                      </span>
+                      <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
+                              style="font-size: 0.75rem;" 
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                        (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
+                      </button>
+                    </div>
+
                     <p class="text-muted small mb-3 dish-desc-clamp" style="min-height: 38px;">
                       <?= e($dish['description']) ?>
                     </p>
@@ -411,8 +468,8 @@ $menuItems = db_fetch_all("
               <a href="<?= CUSTOMER_URL ?>/cart.php" class="btn btn-mint fw-bold rounded-pill px-4 py-2" style="background: #CEFFDC; color: #243E2C;">
                 <i class="bi bi-bag-check-fill me-1"></i> Go to Your Cart
               </a>
-              <a href="<?= ADMIN_URL ?>/index.php" class="btn btn-outline-light rounded-pill px-4 py-2">
-                <i class="bi bi-speedometer2 me-1"></i> Open Store Admin Portal
+              <a href="<?= CUSTOMER_URL ?>/search.php" class="btn btn-outline-light rounded-pill px-4 py-2">
+                <i class="bi bi-search me-1"></i> Explore Full Menu
               </a>
             </div>
           </div>

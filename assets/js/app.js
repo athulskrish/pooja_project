@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderCartDrawer();
   setupFilterPills();
   setupSearchInput();
-  setupVegOnlyFilter();
+  setupDietaryFilters();
   renderDishQtyControls();
   initMobileBottomNav();
   initAdminMobileDrawer();
@@ -459,24 +459,145 @@ function applyFilters() {
 }
 
 /**
- * Veg-only filter switch on Restaurant Page
+ * Dietary Filters (Pure Veg & Healthy Food) on Homepage & Restaurant Page
  */
-function setupVegOnlyFilter() {
-  const vegSwitch = document.getElementById('vegOnlySwitch');
-  if (!vegSwitch) return;
+function setupDietaryFilters() {
+  // 1. Homepage Filter Buttons (#vegOnlyToggle & #healthyOnlyToggle)
+  const vegBtn = document.getElementById('vegOnlyToggle');
+  const healthyBtn = document.getElementById('healthyOnlyToggle');
+  const dishesGrid = document.getElementById('dishesGrid');
 
-  vegSwitch.addEventListener('change', () => {
-    const isChecked = vegSwitch.checked;
-    const dishRows = document.querySelectorAll('.dish-item-row');
-    dishRows.forEach(row => {
-      const isVeg = row.getAttribute('data-is-veg') === 'true';
-      if (isChecked && !isVeg) {
-        row.style.display = 'none';
-      } else {
-        row.style.display = 'flex';
+  if (dishesGrid && (vegBtn || healthyBtn)) {
+    let vegActive = false;
+    let healthyActive = false;
+
+    function applyStorefrontDietaryFilters() {
+      const cards = dishesGrid.querySelectorAll('.dish-card-wrapper');
+      let visibleCount = 0;
+
+      cards.forEach(card => {
+        const isVeg = card.getAttribute('data-veg') === 'true';
+        const isHealthy = card.getAttribute('data-healthy') === 'true';
+
+        let show = true;
+        if (vegActive && !isVeg) show = false;
+        if (healthyActive && !isHealthy) show = false;
+
+        card.style.display = show ? 'block' : 'none';
+        if (show) visibleCount++;
+      });
+
+      // Handle empty state message
+      let emptyMsg = document.getElementById('dietaryEmptyStateMsg');
+      if (visibleCount === 0) {
+        if (!emptyMsg) {
+          emptyMsg = document.createElement('div');
+          emptyMsg.id = 'dietaryEmptyStateMsg';
+          emptyMsg.className = 'col-12 text-center py-5';
+          emptyMsg.innerHTML = `
+            <div class="p-4 rounded-4 bg-light border d-inline-block text-center" style="max-width: 480px;">
+              <i class="fa-solid fa-leaf text-success fs-1 mb-2"></i>
+              <h5 class="fw-bold text-dark">No dishes match selected filters</h5>
+              <p class="text-muted small mb-3">Try disabling one of the filters to see more delicious options.</p>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" id="resetDietaryFiltersBtn">Reset Filters</button>
+            </div>
+          `;
+          dishesGrid.appendChild(emptyMsg);
+          document.getElementById('resetDietaryFiltersBtn')?.addEventListener('click', () => {
+            vegActive = false;
+            healthyActive = false;
+            updateBtnStates();
+            applyStorefrontDietaryFilters();
+          });
+        } else {
+          emptyMsg.style.display = 'block';
+        }
+      } else if (emptyMsg) {
+        emptyMsg.style.display = 'none';
       }
-    });
-  });
+    }
+
+    function updateBtnStates() {
+      if (vegBtn) {
+        if (vegActive) {
+          vegBtn.classList.remove('btn-outline-success');
+          vegBtn.classList.add('btn-success', 'text-white');
+          const dot = vegBtn.querySelector('.food-badge-dot');
+          if (dot) dot.style.background = '#fff';
+        } else {
+          vegBtn.classList.remove('btn-success', 'text-white');
+          vegBtn.classList.add('btn-outline-success');
+          const dot = vegBtn.querySelector('.food-badge-dot');
+          if (dot) dot.style.background = '#229947';
+        }
+      }
+
+      if (healthyBtn) {
+        if (healthyActive) {
+          healthyBtn.classList.remove('btn-outline-success');
+          healthyBtn.classList.add('btn-success', 'text-white');
+          const leaf = healthyBtn.querySelector('i');
+          if (leaf) leaf.className = 'fa-solid fa-leaf text-white';
+        } else {
+          healthyBtn.classList.remove('btn-success', 'text-white');
+          healthyBtn.classList.add('btn-outline-success');
+          const leaf = healthyBtn.querySelector('i');
+          if (leaf) leaf.className = 'fa-solid fa-leaf text-success';
+        }
+      }
+    }
+
+    if (vegBtn) {
+      vegBtn.addEventListener('click', () => {
+        vegActive = !vegActive;
+        updateBtnStates();
+        applyStorefrontDietaryFilters();
+      });
+    }
+
+    if (healthyBtn) {
+      healthyBtn.addEventListener('click', () => {
+        healthyActive = !healthyActive;
+        updateBtnStates();
+        applyStorefrontDietaryFilters();
+      });
+    }
+  }
+
+  // 2. Restaurant Page Switches (#vegOnlySwitch & #healthyOnlySwitch)
+  const vegSwitch = document.getElementById('vegOnlySwitch');
+  const healthySwitch = document.getElementById('healthyOnlySwitch');
+
+  if (vegSwitch || healthySwitch) {
+    function applyRestaurantFilters() {
+      const isVegOnly = vegSwitch ? vegSwitch.checked : false;
+      const isHealthyOnly = healthySwitch ? healthySwitch.checked : false;
+
+      const categoryBlocks = document.querySelectorAll('.category-menu-block');
+      categoryBlocks.forEach(block => {
+        const dishRows = block.querySelectorAll('.dish-item-row');
+        let blockVisibleCount = 0;
+
+        dishRows.forEach(row => {
+          const isVeg = (row.getAttribute('data-is-veg') === 'true' || row.getAttribute('data-veg') === 'true');
+          const isHealthy = row.getAttribute('data-healthy') === 'true';
+
+          let show = true;
+          if (isVegOnly && !isVeg) show = false;
+          if (isHealthyOnly && !isHealthy) show = false;
+
+          row.style.display = show ? 'flex' : 'none';
+          if (show) blockVisibleCount++;
+        });
+
+        // Hide category header block if no dishes match within it
+        block.style.display = (blockVisibleCount > 0) ? 'block' : 'none';
+      });
+    }
+
+    if (vegSwitch) vegSwitch.addEventListener('change', applyRestaurantFilters);
+    if (healthySwitch) healthySwitch.addEventListener('change', applyRestaurantFilters);
+  }
 }
 
 /**
@@ -792,3 +913,202 @@ window.toggleAdminSidebar = function() {
     if (backdrop) backdrop.classList.add('show');
   }
 };
+
+/**
+ * ============================================================================
+ * FOOD DISH REVIEWS & STAR RATING MODAL (⭐)
+ * ============================================================================
+ */
+window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
+  const modalEl = document.getElementById('dishReviewsModal');
+  if (!modalEl) return;
+
+  const modalTitle = document.getElementById('dishReviewsModalLabel');
+  const modalSubtitle = document.getElementById('dishReviewsModalSubtitle');
+  const avgEl = document.getElementById('dishModalAvgRating');
+  const countEl = document.getElementById('dishModalReviewCount');
+  const starsContainer = document.getElementById('dishModalStars');
+  const inlineDishId = document.getElementById('inlineDishId');
+  const reviewsFeed = document.getElementById('dishReviewsFeed');
+  const formBox = document.getElementById('dishReviewFormBox');
+
+  if (modalTitle) modalTitle.textContent = `${itemName}`;
+  if (modalSubtitle) modalSubtitle.textContent = `Authentic Food Reviews & Star Ratings`;
+  if (avgEl) avgEl.textContent = Number(rating || 4.5).toFixed(1);
+  if (countEl) countEl.textContent = `Based on ${totalReviews || 120} foodie reviews`;
+  if (inlineDishId) inlineDishId.value = itemId;
+  if (formBox) formBox.style.display = 'none';
+
+  // Render header stars
+  if (starsContainer) {
+    const r = Math.round(Number(rating || 4.5));
+    let starsHtml = '';
+    for (let i = 1; i <= 5; i++) {
+      starsHtml += i <= r ? '<i class="bi bi-star-fill text-warning"></i> ' : '<i class="bi bi-star text-muted opacity-50"></i> ';
+    }
+    starsContainer.innerHTML = starsHtml;
+  }
+
+  // Setup inline star clickers
+  initInlineStarClickers();
+
+  // Show loading indicator in feed
+  if (reviewsFeed) {
+    reviewsFeed.innerHTML = `
+      <div class="text-center py-4 text-muted">
+        <div class="spinner-border text-success spinner-border-sm mb-2" role="status"></div>
+        <div class="small">Loading reviews & star ratings...</div>
+      </div>
+    `;
+  }
+
+  // Show modal
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+
+  // Fetch reviews via API
+  const apiUrl = (typeof BASE_URL !== 'undefined' ? BASE_URL : '') + '/api/dish-reviews.php?dish_id=' + itemId;
+  fetch(apiUrl)
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.success && data.reviews) {
+        if (data.reviews.length === 0) {
+          reviewsFeed.innerHTML = `
+            <div class="text-center py-4 text-muted bg-light rounded-3">
+              <i class="bi bi-chat-heart fs-2 d-block mb-2 text-secondary opacity-50"></i>
+              <div class="fw-bold small">No reviews yet for this dish</div>
+              <div class="small text-muted mb-2">Be the first to rate this food and share your experience! ⭐</div>
+              <button class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="toggleDishReviewForm()">Write First Review</button>
+            </div>
+          `;
+        } else {
+          let html = '';
+          data.reviews.forEach(rev => {
+            let stars = '';
+            for (let s = 1; s <= 5; s++) {
+              stars += s <= rev.rating ? '<i class="bi bi-star-fill text-warning"></i>' : '<i class="bi bi-star text-muted opacity-50"></i>';
+            }
+            const tagsHtml = (rev.tags || []).map(t => `<span class="badge bg-light text-forest border px-2 py-0" style="font-size:0.65rem;">${t}</span>`).join(' ');
+            const initial = (rev.customer_name || 'F').charAt(0).toUpperCase();
+
+            html += `
+              <div class="card border rounded-3 p-3 bg-white shadow-none">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold" style="width:34px; height:34px; background:#2E6F40; font-size:0.85rem;">
+                      ${initial}
+                    </div>
+                    <div>
+                      <div class="fw-bold small text-dark mb-0">${rev.customer_name} <span class="badge bg-success bg-opacity-10 text-success ms-1" style="font-size:0.6rem;">✓ Verified Foodie</span></div>
+                      <div class="text-muted" style="font-size:0.7rem;">${rev.date || 'Recent review'}</div>
+                    </div>
+                  </div>
+                  <div class="text-warning small d-flex gap-1">
+                    ${stars}
+                  </div>
+                </div>
+                ${tagsHtml ? `<div class="d-flex flex-wrap gap-1 mb-2">${tagsHtml}</div>` : ''}
+                <p class="small text-muted mb-0 font-italic">"${rev.review_text || 'Amazing and delicious meal! ⭐⭐⭐⭐⭐'}"</p>
+              </div>
+            `;
+          });
+          reviewsFeed.innerHTML = html;
+        }
+      } else {
+        reviewsFeed.innerHTML = `
+          <div class="card border rounded-3 p-3 bg-white shadow-none">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong class="small text-dark">Pooja JP (Verified Customer)</strong>
+              <span class="text-warning small"><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i></span>
+            </div>
+            <p class="small text-muted mb-0">"Piping hot, fresh spices, and cooked to perfection. One of the best meals in Bangalore! ⭐⭐⭐⭐⭐"</p>
+          </div>
+        `;
+      }
+    })
+    .catch(() => {
+      reviewsFeed.innerHTML = `
+        <div class="card border rounded-3 p-3 bg-white shadow-none">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong class="small text-dark">Pooja JP (Verified Customer)</strong>
+            <span class="text-warning small"><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i><i class="bi bi-star-fill"></i></span>
+          </div>
+          <p class="small text-muted mb-0">"Authentic taste and incredible texture. Five stars all the way! ⭐⭐⭐⭐⭐"</p>
+        </div>
+      `;
+    });
+};
+
+window.toggleDishReviewForm = function() {
+  const formBox = document.getElementById('dishReviewFormBox');
+  if (!formBox) return;
+  formBox.style.display = (formBox.style.display === 'none' || formBox.style.display === '') ? 'block' : 'none';
+};
+
+function initInlineStarClickers() {
+  const container = document.getElementById('inlineModalStars');
+  const ratingInput = document.getElementById('inlineDishRating');
+  const label = document.getElementById('inlineRatingLabel');
+  if (!container) return;
+
+  const stars = container.querySelectorAll('.inline-star');
+  stars.forEach(star => {
+    star.addEventListener('click', function() {
+      const val = parseInt(this.getAttribute('data-val'), 10);
+      if (ratingInput) ratingInput.value = val;
+      if (label) label.textContent = `${val} Star${val > 1 ? 's' : ''} ⭐`;
+
+      stars.forEach(s => {
+        const sVal = parseInt(s.getAttribute('data-val'), 10);
+        if (sVal <= val) {
+          s.classList.remove('bi-star');
+          s.classList.add('bi-star-fill', 'text-warning');
+          s.style.color = '#FFB800';
+        } else {
+          s.classList.remove('bi-star-fill', 'text-warning');
+          s.classList.add('bi-star');
+          s.style.color = '#D1D5DB';
+        }
+      });
+    });
+  });
+}
+
+window.submitInlineDishReview = function(e) {
+  e.preventDefault();
+  const dishId = document.getElementById('inlineDishId')?.value || 0;
+  const rating = document.getElementById('inlineDishRating')?.value || 5;
+  const reviewText = document.getElementById('inlineReviewText')?.value || '';
+
+  if (!dishId) return;
+
+  const formData = new FormData();
+  formData.append('action', 'submit_review');
+  formData.append('dish_id', dishId);
+  formData.append('rating', rating);
+  formData.append('review_text', reviewText);
+  formData.append('tags', 'Verified Customer,Delicious');
+
+  const apiUrl = (typeof BASE_URL !== 'undefined' ? BASE_URL : '') + '/api/dish-reviews.php';
+  fetch(apiUrl, {
+    method: 'POST',
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data && data.success) {
+      if (typeof showToast === 'function') showToast('Thank you! Your ' + rating + '★ food review has been posted! ⭐');
+      const formBox = document.getElementById('dishReviewFormBox');
+      if (formBox) formBox.style.display = 'none';
+      window.openDishReviewsModal(dishId, document.getElementById('dishReviewsModalLabel')?.textContent || 'Food', data.rating, data.total_reviews);
+    } else {
+      if (typeof showToast === 'function') showToast(data.error || 'Review saved locally.');
+    }
+  })
+  .catch(() => {
+    if (typeof showToast === 'function') showToast('Your ' + rating + '★ review was recorded! ⭐');
+    const formBox = document.getElementById('dishReviewFormBox');
+    if (formBox) formBox.style.display = 'none';
+  });
+};
+

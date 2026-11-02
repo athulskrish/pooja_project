@@ -3,7 +3,60 @@ MCA LEVEL PROJECT IMPROVEMENT ROADMAP & TECHNICAL SPECIFICATIONS
 Project Title: E-Commerce Platform for Food Order
 Course Code: MCSP-232 (MCA Project) | IGNOU
 Student: Pooja JP | Enrollment No: 2500051247
+Status: [COMPLETED & VERIFIED ACROSS CODEBASE AND ALL DOCUMENTS]
 ================================================================================
+
+DOCUMENTATION AUDIT & EXECUTION LOG (NOVEMBER 2026):
+--------------------------------------------------------------------------------
+[x] Error 1: Copy-Pasted Foreign Project Content
+    - STATUS: RESOLVED & VERIFIED
+    - All vehicle insurance, damage assessment, fraud detection, polygon, and claim
+      reports removed from PROJECT SYNOPSIS.docx, Project Report MCA.docx, and
+      synopsis_extracted.txt.
+    - Synchronized with food platform reports: Daily Sales & Revenue Report,
+      Item Velocity & Stockout Risk Report, SES Demand Forecasting Report,
+      Kitchen WSJF Queue Performance Report, Delivery Dispatch Handshake Log,
+      and Indian GST Tax Invoice (SAC 996331).
+
+[x] Error 2: Database Engine Inconsistency
+    - STATUS: RESOLVED & VERIFIED
+    - Completely standardized on MySQL 8.0 InnoDB engine with ACID transactions,
+      row-level pessimistic locking, triggers, and stored procedures.
+    - Eliminated PostgreSQL artifacts (BIGSERIAL, etc.) from Table 8 in synopsis.
+
+[x] Error 3: Schema Design & Data Type Errors
+    - STATUS: RESOLVED & VERIFIED
+    - Table 8 (DELIVERY_Table / delivery_dispatches) completely reconstructed with
+      proper food order dispatch fields (dispatch_id, order_id, rider_id,
+      delivery_status, otp_code, assigned_at, delivered_at).
+    - Table 7 (PAYMENT_Table) corrected: removed invalid FK on payment_method,
+      separated payment_status (ENUM) from payment_date (TIMESTAMP).
+    - Table 3 (CATEGORY_TABLE), Table 4 (MENU_TABLE), Table 5 (ORDER_Table)
+      aligned with DECIMAL(10,2) pricing, TEXT descriptions, and 3NF normalization.
+
+[x] Error 4: Architectural Inconsistency
+    - STATUS: RESOLVED & VERIFIED
+    - Reconciled all false claims of "AI microservices/models/JWT/chatbots" into a
+      rigorous, truthful Modular 3-Tier Layered Architecture with RESTful JSON API
+      endpoints and strict Role-Based Access Control (RBAC) across 4 production portals
+      (Customer, Kitchen Display System, Delivery Fleet, Admin Console).
+
+[x] Academic Computational Depth (MCA Level)
+    - STATUS: FULLY IMPLEMENTED & DOCUMENTED
+    - Algorithm 1: Apriori Association Rule Mining (Market Basket Cross-Selling)
+    - Algorithm 2: Weighted Shortest Job First (WSJF) Kitchen Priority Scheduling
+    - Algorithm 3: Single Exponential Smoothing (SES, alpha=0.3) Demand Forecasting
+    - Algorithm 4: Concurrency-Controlled ACID Checkout with Pessimistic Row Locking
+    - Algorithm 5: 6-Digit Cryptographic Doorstep OTP Delivery Handshake
+
+[x] Sample Reports & Analytics Layouts
+    - STATUS: POPULATED & COMPLETED
+    - Replaced the placeholder at Section 5.3 in Project Report MCA.docx with
+      comprehensive tabular sample layouts, metrics, and CBIC GST tax invoice formats.
+    - Added full Technical Glossary and Appendices (Schema, Selenium Test Log, Credentials).
+--------------------------------------------------------------------------------
+
+
 
 1. EXECUTIVE SUMMARY & COMPLIANCE
 --------------------------------------------------------------------------------
@@ -176,4 +229,81 @@ A3: Show how separating user addresses, order headers, line items, and audit
 Q4: "Why use PDO instead of mysqli_query?"
 A4: PDO provides driver-independent database abstraction, native prepared 
     statements to eliminate SQL injection, and unified exception handling.
+
+
+9. STREAMLINED REAL-TIME ORDER FULFILLMENT & TELEMETRY ARCHITECTURE
+--------------------------------------------------------------------------------
+The complete order-to-delivery lifecycle is orchestrated in real-time across four
+distinct role-based actors:
+
+[Customer Cart & Checkout]
+        │
+        ▼ (ACID Transaction, 6-digit Secret OTP generated)
+[Kitchen KDS Hub]  ◄─── (Instant 4s Polling & Web Audio Chime)
+        │
+        ├─► [Cooking on Stoves] ──► Customer sees "Chef is cooking your hot meal"
+        │
+        ▼ (Order Marked READY & Handed Over)
+[Delivery Fleet App]
+        │
+        ├─► [Rider Claims Order] ──► Status transitions to OUT_FOR_DELIVERY
+        ├─► [Turn-by-Turn GPS Navigation] ──► Leaflet interactive map with simulated driving
+        │
+        ▼ (Real-time updates delivered concurrently to 2 actors)
+  ┌─────────────────────────────────┴─────────────────────────────────┐
+  ▼                                                                   ▼
+[Customer Live Tracking]                                    [Admin Operations Hub]
+- Interactive Leaflet GPS map with moving courier bike     - Real-time Live Orders HUD & metrics ticker
+- Real-time status stepper (Placed -> Cooking -> Transit)  - Live GPS tracking modal for any active rider
+- Dynamic distance (km) & ETA countdown timer              - Web Audio order arrival chimes & toggle
+- Doorstep arrival chime & 6-digit secret OTP display      - Comprehensive order audit trail
+  │                                                                   │
+  └─────────────────────────────────┬─────────────────────────────────┘
+                                    │
+                                    ▼
+[Doorstep Handshake & Settlement]
+- Delivery boy enters customer's 6-digit OTP into mobile app
+- Cryptographic verification transitions order to DELIVERED
+- Cash on Delivery (COD) / Razorpay settlement confirmed
+- Rider wallet immediately credited (₹55.00 delivery payout)
+- Customer tracking switches to DELIVERED celebration screen with 5-star rating modal prompt
+
+
+10. DEDICATED REAL-TIME APIS
+--------------------------------------------------------------------------------
+1. Unified Live Location API (`api/live-location.php`):
+   - Geodesic spatial calculation tracking rider coordinates from kitchen hub (12.9784, 77.6408)
+     to customer delivery address.
+   - Interpolates transit milestones, calculating dynamic ETA, remaining distance (km),
+     and route progress percentages in real time.
+   - `GET ?order_id=...`: Returns current rider GPS coordinates, hub coordinates,
+     customer coordinates, bearing, remaining distance, dynamic ETA, and delivery status.
+   - `POST action=simulate_step`: Advances rider position by 15-20% along street waypoints.
+   - `POST action=update_location`: Accepts raw GPS telemetry (lat, lng) from mobile devices.
+
+2. Unified Live Stream Poller (`api/live-stream.php`):
+   - High-performance, lightweight JSON poller servicing all three operations portals:
+     - `?portal=kitchen`: Returns incoming orders needing acceptance, active stove timers, and instant counts.
+     - `?portal=delivery`: Returns available ready orders awaiting pickup and active transit coordinates.
+     - `?portal=admin`: Returns real-time metrics (confirmed, cooking, out for delivery, delivered today, revenue today).
+
+
+11. MULTI-ACTOR ISOLATED SESSION SCOPE ARCHITECTURE
+--------------------------------------------------------------------------------
+Independent cookie session tokens prevent account overwriting across tabs in the same browser:
+- Customer Session: `ZIPPY_CUSTOMER_SESS` (`ZIPPY_ACTOR_CUSTOMER`)
+- Kitchen Session:  `ZIPPY_KITCHEN_SESS`  (`ZIPPY_ACTOR_KITCHEN`)
+- Delivery Session: `ZIPPY_RIDER_SESS`    (`ZIPPY_ACTOR_DELIVERY`)
+- Admin Session:    `ZIPPY_ADMIN_SESS`    (`ZIPPY_ACTOR_ADMIN`)
+
+
+12. AUTOMATED REGRESSION & END-TO-END VERIFICATION TEST SUITES
+--------------------------------------------------------------------------------
+- `tests/test_streamlined_lifecycle.py`: 9-step automated Selenium test validating
+  Customer Order placement -> Kitchen KDS preparation -> Rider transit simulation ->
+  Admin monitoring HUD -> Doorstep OTP handshake verification -> Customer delivered celebration.
+- `tests/test_all_portals_selenium.py`: 13-test regression suite covering all 4 portals.
+- `tests/test_multi_browser_sessions.py`: 4 tests validating concurrent session tokens
+  and single-portal logout isolation without session cross-contamination.
+- `tests/test_rbac.py`: Validates RBAC permissions matrix and route-level protection.
 ================================================================================

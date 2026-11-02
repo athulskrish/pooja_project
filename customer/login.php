@@ -13,6 +13,16 @@ if (is_logged_in()) {
     exit;
 }
 
+// 1-Click Presentation Access Mode (?demo=1)
+if (isset($_GET['demo']) && $_GET['demo'] == '1') {
+    $authResult = attempt_login('pooja@example.com', 'password123');
+    if ($authResult['success']) {
+        set_flash('success', 'Authenticated as Customer (Pooja JP) in dedicated Storefront session.');
+        header("Location: " . CUSTOMER_URL . "/index.php");
+        exit;
+    }
+}
+
 $redirectTarget = clean_input($_GET['redirect'] ?? '');
 $loginError = null;
 
@@ -27,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($authResult['success']) {
             set_flash('success', 'Welcome back, ' . $authResult['user']['full_name'] . '!');
+            session_write_close();
             if ($redirectTarget === 'checkout') {
                 header("Location: " . CUSTOMER_URL . "/checkout.php");
             } else {
@@ -104,11 +115,6 @@ require_once __DIR__ . '/includes/header.php';
           <div class="text-center mt-4 pt-3 border-top small text-muted">
             Don't have an account yet? 
             <a href="<?= CUSTOMER_URL ?>/signup.php" class="text-success fw-bold text-decoration-none ms-1">Sign Up Free</a>
-          </div>
-
-          <div class="text-center mt-3 pt-2 border-top small text-muted">
-            Are you a Store Administrator? 
-            <a href="<?= ADMIN_URL ?>/login.php" class="text-dark fw-bold text-decoration-none ms-1">Admin Portal &rarr;</a>
           </div>
 
         </div>

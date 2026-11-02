@@ -11,6 +11,7 @@ $activePage = 'audit_logs';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_admin();
 $currentUser = current_user();
 
 require_once __DIR__ . '/includes/header.php';

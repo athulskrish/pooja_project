@@ -16,6 +16,16 @@ if (is_admin()) {
     exit;
 }
 
+// 1-Click Presentation Access Mode (?demo=1)
+if (isset($_GET['demo']) && $_GET['demo'] == '1') {
+    $authResult = attempt_login('admin@zippy.com', 'password123');
+    if ($authResult['success']) {
+        set_flash('success', 'Authenticated as Admin (Pooja JP) in dedicated Admin session.');
+        header("Location: " . ADMIN_URL . "/index.php");
+        exit;
+    }
+}
+
 $loginError = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -29,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($authResult['success']) {
             $roleName = $authResult['user']['role_name'] ?? '';
+            session_write_close();
             if ($roleName === 'ADMIN') {
                 set_flash('success', 'Authenticated as ' . $roleName . '. Welcome to Zippy Operations.');
                 header("Location: " . ADMIN_URL . "/index.php");

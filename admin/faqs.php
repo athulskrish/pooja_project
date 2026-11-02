@@ -10,6 +10,7 @@ $activePage = 'faqs';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_admin();
 $currentUser = current_user();
 
 // Handle Form Submissions

@@ -174,6 +174,99 @@ To initialize or reset the database:
    - Accepts test card `4111 1111 1111 1111` (CVV `123`, OTP `123456`) and dummy UPI `success@razorpay`.
    - Persists verified payment IDs (`pay_...`) to `payments.transaction_reference`, stamps status `SUCCESSFUL`, and generates print-ready Indian GST Tax Invoice (`SAC 996331`).
 
+7. **Real-Time Live GPS Telemetry & Dynamic Spatial Interpolation — `api/live-location.php`:**
+   - Geodesic spatial calculation tracking rider coordinates from kitchen hub (`12.9784, 77.6408`) to customer delivery address.
+   - Interpolates transit milestones, calculating dynamic ETA, remaining distance in kilometers, and route progress percentages in real time.
+
+---
+
+## ⚡ Streamlined End-to-End Order Fulfillment Lifecycle
+
+The complete order-to-delivery lifecycle is orchestrated in real-time across four distinct role-based actors with zero operational bottlenecks:
+
+```
+[Customer Cart & Checkout]
+        │
+        ▼ (ACID Transaction, 6-digit Secret OTP generated)
+[Kitchen KDS Hub]  ◄─── (Instant 4s Polling & Web Audio Chime)
+        │
+        ├─► [Cooking on Stoves] ──► Customer sees "Chef is cooking your hot meal"
+        │
+        ▼ (Order Marked READY & Handed Over)
+[Delivery Fleet App]
+        │
+        ├─► [Rider Claims Order] ──► Status transitions to OUT_FOR_DELIVERY
+        ├─► [Turn-by-Turn GPS Navigation] ──► Leaflet interactive map with simulated driving
+        │
+        ▼ (Real-time updates delivered concurrently to 2 actors)
+  ┌─────────────────────────────────┴─────────────────────────────────┐
+  ▼                                                                   ▼
+[Customer Live Tracking]                                    [Admin Operations Hub]
+- Interactive Leaflet GPS map with moving courier bike     - Real-time Live Orders HUD & metrics ticker
+- Real-time status stepper (Placed -> Cooking -> Transit)  - Live GPS tracking modal for any active rider
+- Dynamic distance (km) & ETA countdown timer              - Web Audio order arrival chimes & toggle
+- Doorstep arrival chime & 6-digit secret OTP display      - Comprehensive order audit trail
+  │                                                                   │
+  └─────────────────────────────────┬─────────────────────────────────┘
+                                    │
+                                    ▼
+[Doorstep Handshake & Settlement]
+- Delivery boy enters customer's 6-digit OTP into mobile app
+- Cryptographic verification transitions order to DELIVERED
+- Cash on Delivery (COD) / Razorpay settlement confirmed
+- Rider wallet immediately credited (₹55.00 delivery payout)
+- Customer tracking switches to DELIVERED celebration screen with 5-star rating modal prompt
+```
+
+---
+
+## 🌐 Dedicated Real-Time APIs
+
+1. **Unified Live Location API (`api/live-location.php`):**
+   - `GET ?order_id=...`: Returns current rider GPS coordinates (`latitude`, `longitude`), restaurant coordinates, customer destination coordinates, bearing, remaining distance, dynamic ETA, and delivery status.
+   - `POST action=simulate_step`: Advances rider position by 15-20% along street waypoints, recalculating distance and ETA automatically.
+   - `POST action=update_location`: Accepts raw GPS telemetry (`lat`, `lng`) from mobile devices.
+
+2. **Unified Live Stream Poller (`api/live-stream.php`):**
+   - High-performance, lightweight JSON poller servicing all three operations portals:
+     - `?portal=kitchen`: Returns incoming orders needing acceptance, active stove timers, and instant counts.
+     - `?portal=delivery`: Returns available ready orders awaiting pickup and active transit coordinates.
+     - `?portal=admin`: Returns real-time metrics (confirmed, cooking, out for delivery, delivered today, revenue today).
+
+---
+
+## 🛡️ Multi-Actor Isolated Session Architecture
+
+To allow evaluators and developers to test all 4 portals simultaneously on a single computer without session collisions:
+- **Customer Session:** `ZIPPY_CUSTOMER_SESS` (`ZIPPY_ACTOR_CUSTOMER`)
+- **Kitchen Session:** `ZIPPY_KITCHEN_SESS` (`ZIPPY_ACTOR_KITCHEN`)
+- **Delivery Session:** `ZIPPY_RIDER_SESS` (`ZIPPY_ACTOR_DELIVERY`)
+- **Admin Session:** `ZIPPY_ADMIN_SESS` (`ZIPPY_ACTOR_ADMIN`)
+
+You can open 4 separate tabs in the same browser (Customer, Kitchen, Delivery, and Admin) and perform interleaved actions without any account overwriting or accidental logouts.
+
+---
+
+## 🧪 Comprehensive Automated Testing & Verification
+
+The platform includes a battery of comprehensive unit, integration, and browser automation test suites:
+
+```powershell
+# 1. Full Streamlined Lifecycle Automation (Customer -> Kitchen -> Rider -> Admin -> Delivery Handshake)
+python tests/test_streamlined_lifecycle.py
+
+# 2. Multi-Portal Selenium Regression Suite (13 tests across Admin, Kitchen, Rider, Customer)
+python tests/test_all_portals_selenium.py
+
+# 3. Multi-Actor Concurrent Browser Session Isolation Test
+python tests/test_multi_browser_sessions.py
+
+# 4. Role-Based Access Control (RBAC) Matrix Verification
+python tests/test_rbac.py
+```
+
+All test execution screenshots are automatically captured and archived under [`tests/screenshots/`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/tests/screenshots/).
+
 ---
 
 ## 🚴 Delivery Partner Fleet Portal (Delivery Boy)

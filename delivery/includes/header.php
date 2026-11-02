@@ -15,6 +15,10 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
   <!-- Custom Figma Lush Forest Palette Stylesheet -->
   <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css">
 
@@ -245,6 +249,11 @@
         <!-- Rider Profile & Shortcuts -->
         <div class="d-flex align-items-center gap-2">
           
+          <!-- Multi-Actor Session Scope Pill -->
+          <span class="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 px-2 py-1 rounded-pill small d-none d-lg-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_RIDER_SESS">
+            <i class="bi bi-bicycle text-primary"></i> Rider Scope
+          </span>
+
           <div class="d-none d-sm-flex align-items-center gap-2 bg-light px-3 py-1 rounded-pill border">
             <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold" style="width: 26px; height: 26px; font-size: 0.75rem; background-color: var(--rider-forest) !important;">
               <?= strtoupper(substr($currentUser['name'] ?? 'R', 0, 1)) ?>

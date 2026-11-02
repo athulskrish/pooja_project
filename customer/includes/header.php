@@ -82,6 +82,10 @@ $dbStatus = checkDBStatus();
             <i class="bi bi-search text-success"></i>
             <span>Search</span>
           </a>
+          <a href="<?= CUSTOMER_URL ?>/search.php?category=healthy" class="nav-link-custom">
+            <i class="fa-solid fa-leaf text-success"></i>
+            <span>Healthy</span>
+          </a>
           <a href="<?= CUSTOMER_URL ?>/offers.php" class="nav-link-custom <?= ($activePage === 'offers') ? 'active text-success' : '' ?>">
             <i class="fa-solid fa-percent text-success"></i>
             <span>Offers</span>
@@ -90,14 +94,6 @@ $dbStatus = checkDBStatus();
           <a href="<?= CUSTOMER_URL ?>/help.php" class="nav-link-custom <?= ($activePage === 'help') ? 'active text-success' : '' ?>">
             <i class="bi bi-question-circle text-success"></i>
             <span>Help</span>
-          </a>
-          <a href="<?= DELIVERY_URL ?>/index.php" class="nav-link-custom text-muted small border-start ps-3 ms-2">
-            <i class="bi bi-bicycle text-success"></i>
-            <span>Fleet</span>
-          </a>
-          <a href="<?= ADMIN_URL ?>/index.php" class="nav-link-custom text-muted small">
-            <i class="bi bi-speedometer2 text-success"></i>
-            <span>Admin</span>
           </a>
         </div>
 
@@ -115,7 +111,12 @@ $dbStatus = checkDBStatus();
 
           <!-- User Account Actions -->
           <?php if ($currentUser): ?>
-            <div class="dropdown">
+            <!-- Multi-Actor Session Scope Pill -->
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill small d-none d-xl-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_CUSTOMER_SESS">
+            <i class="bi bi-person-check-fill"></i> Customer Scope
+          </span>
+
+          <div class="dropdown">
               <button class="btn btn-outline-success dropdown-toggle d-flex align-items-center gap-2 rounded-pill px-3 py-2 fw-semibold" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-color: #68BA7F; color: #243E2C;">
                 <i class="bi bi-person-circle fs-5 text-success"></i>
                 <span class="d-none d-md-inline"><?= e($currentUser['name']) ?></span>
@@ -124,14 +125,23 @@ $dbStatus = checkDBStatus();
                 <li class="px-3 py-2 border-bottom">
                   <div class="fw-bold text-truncate"><?= e($currentUser['name']) ?></div>
                   <div class="small text-muted text-truncate"><?= e($currentUser['email']) ?></div>
-                  <span class="badge bg-success bg-opacity-25 text-success mt-1 small"><?= e($currentUser['role_name']) ?></span>
+                  <div class="mt-1"><?= get_role_badge($currentUser['role_name'] ?? 'CUSTOMER') ?></div>
                 </li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/profile.php"><i class="bi bi-person me-2 text-success"></i>My Profile</a></li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/order-history.php"><i class="bi bi-receipt me-2 text-success"></i>Orders & History</a></li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/manage-addresses.php"><i class="bi bi-geo-alt me-2 text-success"></i>Saved Addresses</a></li>
                 <?php if (is_admin()): ?>
                   <li><hr class="dropdown-divider"></li>
-                  <li><a class="dropdown-item py-2 text-primary" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2"></i>Admin Dashboard</a></li>
+                  <li><h6 class="dropdown-header small text-uppercase fw-bold text-muted" style="font-size:0.7rem;">Staff & Ops Portals</h6></li>
+                  <li><a class="dropdown-item py-2 text-danger fw-semibold" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2"></i>Admin Console</a></li>
+                  <li><a class="dropdown-item py-2 text-warning fw-semibold" href="<?= KITCHEN_URL ?>/index.php"><i class="fa-solid fa-fire-burner me-2"></i>Kitchen KDS</a></li>
+                  <li><a class="dropdown-item py-2 text-info fw-semibold" href="<?= DELIVERY_URL ?>/index.php"><i class="bi bi-bicycle me-2"></i>Delivery Fleet</a></li>
+                <?php elseif (is_kitchen()): ?>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item py-2 text-warning fw-semibold" href="<?= KITCHEN_URL ?>/index.php"><i class="fa-solid fa-fire-burner me-2"></i>Kitchen Station KDS</a></li>
+                <?php elseif (is_rider()): ?>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item py-2 text-info fw-semibold" href="<?= DELIVERY_URL ?>/index.php"><i class="bi bi-bicycle me-2"></i>Delivery Fleet App</a></li>
                 <?php endif; ?>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item py-2 text-danger" href="<?= CUSTOMER_URL ?>/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Sign Out</a></li>

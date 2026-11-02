@@ -142,7 +142,7 @@
 
     // 3. Auto Refresh Controller
     let autoRefreshActive = true;
-    let refreshTimerSeconds = 12;
+    let refreshTimerSeconds = 4;
     let refreshInterval = null;
 
     function startAutoRefresh() {
@@ -152,7 +152,7 @@
         document.getElementById('refreshText').innerText = `SYNC (${refreshTimerSeconds}s)`;
 
         if (refreshTimerSeconds <= 0) {
-          refreshTimerSeconds = 12;
+          refreshTimerSeconds = 4;
           pollKitchenOrders();
         }
       }, 1000);

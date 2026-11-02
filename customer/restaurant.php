@@ -97,16 +97,24 @@ foreach ($categories as $cat) {
       <div class="col-lg-8">
         
         <!-- Controls Bar: Search & Veg Only Filter -->
-        <div class="card border-0 rounded-4 shadow-sm p-3 mb-4 bg-white d-flex flex-row justify-content-between align-items-center">
+        <div class="card border-0 rounded-4 shadow-sm p-3 mb-4 bg-white d-flex flex-wrap flex-row justify-content-between align-items-center gap-2">
           <div class="fw-bold text-dark">
             <i class="fa-solid fa-book-open text-success me-2"></i> Menu Catalog
           </div>
           
-          <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
-            <input class="form-check-input" type="checkbox" role="switch" id="vegOnlySwitch" style="cursor: pointer;">
-            <label class="form-check-label fw-bold small text-success mb-0" for="vegOnlySwitch" style="cursor: pointer;">
-              Pure Veg Only
-            </label>
+          <div class="d-flex align-items-center gap-3">
+            <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="vegOnlySwitch" style="cursor: pointer;">
+              <label class="form-check-label fw-bold small text-success mb-0" for="vegOnlySwitch" style="cursor: pointer;">
+                Pure Veg Only
+              </label>
+            </div>
+            <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="healthyOnlySwitch" style="cursor: pointer;">
+              <label class="form-check-label fw-bold small text-success mb-0" for="healthyOnlySwitch" style="cursor: pointer;">
+                <i class="fa-solid fa-leaf text-success me-1"></i>Healthy Only
+              </label>
+            </div>
           </div>
         </div>
 
@@ -135,7 +143,7 @@ foreach ($categories as $cat) {
               <div class="col-sm-6 col-md-3">
                 <div class="card h-100 border rounded-3 p-2 bg-light bg-opacity-50 text-center d-flex flex-column justify-content-between">
                   <div class="position-relative mb-2">
-                    <img src="<?= e($rec['image_url'] ?: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300') ?>" 
+                    <img src="<?= e(get_dish_image_url($rec['image_url'] ?? '')) ?>" 
                          alt="<?= e($rec['item_name']) ?>" 
                          class="rounded-3 w-100 object-fit-cover" 
                          style="height: 100px;">
@@ -144,6 +152,9 @@ foreach ($categories as $cat) {
                     </span>
                   </div>
                   <h6 class="fw-bold text-dark small mb-1 text-truncate" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></h6>
+                  <div class="d-flex align-items-center justify-content-center gap-1 mb-1">
+                    <span class="badge bg-success bg-opacity-15 text-success small px-2 py-0" style="font-size:0.65rem;"><i class="bi bi-star-fill text-warning"></i> <?= number_format($rec['rating'] ?? 4.8, 1) ?></span>
+                  </div>
                   <div class="text-muted small mb-2"><?= format_inr($rec['price']) ?></div>
                   <button type="button" 
                           class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
@@ -172,7 +183,10 @@ foreach ($categories as $cat) {
             <!-- Dish Items List -->
             <div class="d-flex flex-column gap-4">
               <?php foreach ($catItems as $dish): ?>
-                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>">
+                <?php 
+                  $isHealthyDish = (!empty($dish['is_healthy']) || ($cat['category_slug'] ?? '') === 'healthy' || stripos($cat['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+                ?>
+                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>">
                   
                   <!-- Dish Info -->
                   <div class="flex-grow-1">
@@ -187,10 +201,29 @@ foreach ($categories as $cat) {
                         </span>
                       <?php endif; ?>
 
+                      <?php if ($isHealthyDish): ?>
+                        <span class="badge px-2 py-0 fw-semibold" style="background:#CEFFDC; color:#243E2C; font-size:0.65rem; border:1px solid #68BA7F;">
+                          <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
+                        </span>
+                      <?php endif; ?>
+
                       <span class="badge bg-light text-muted small"><i class="bi bi-clock me-1"></i><?= (int)$dish['prep_time_minutes'] ?>m</span>
                     </div>
 
                     <h5 class="fw-bold mb-1 text-dark"><?= e($dish['item_name']) ?></h5>
+                    
+                    <!-- Star Rating & Review Count -->
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-0 rounded-pill" style="font-size: 0.72rem;">
+                        <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                      </span>
+                      <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
+                              style="font-size: 0.72rem;" 
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                        (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
+                      </button>
+                    </div>
+
                     <div class="fw-bold text-forest fs-5 mb-1"><?= format_inr($dish['price']) ?></div>
                     <p class="text-muted small mb-0" style="max-width: 500px;">
                       <?= e($dish['description']) ?>
@@ -199,7 +232,7 @@ foreach ($categories as $cat) {
 
                   <!-- Dish Image & ADD Control -->
                   <div class="position-relative text-center flex-shrink-0" style="width: 130px;">
-                    <img src="<?= e($dish['image_url']) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
+                    <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
                     
                     <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" style="margin-bottom: -14px;">
                       <button 

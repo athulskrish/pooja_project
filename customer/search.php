@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/header.php';
 $query = clean_input($_GET['q'] ?? '');
 $categorySlug = clean_input($_GET['category'] ?? '');
 $vegOnly = !empty($_GET['veg_only']) ? true : false;
+$healthyOnly = !empty($_GET['healthy_only']) ? true : false;
 $sort = clean_input($_GET['sort'] ?? 'recommended');
 
 // Build SQL
@@ -30,6 +31,10 @@ if (!empty($categorySlug)) {
 
 if ($vegOnly) {
     $conditions[] = "m.is_veg = 1";
+}
+
+if ($healthyOnly) {
+    $conditions[] = "(c.category_slug = 'healthy' OR m.is_healthy = 1 OR LOWER(c.category_name) LIKE '%healthy%' OR LOWER(m.item_name) LIKE '%salad%' OR LOWER(m.item_name) LIKE '%quinoa%' OR LOWER(m.item_name) LIKE '%detox%')";
 }
 
 $orderBy = match($sort) {
@@ -61,7 +66,7 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
         <div class="col-lg-7">
           <div class="input-group">
             <span class="input-group-text bg-white border-end-0 text-success"><i class="bi bi-search fs-5"></i></span>
-            <input type="text" name="q" class="form-control border-start-0 py-3 ps-0" placeholder="Search for Biryani, Butter Chicken, Naan, Burger, Dosa..." value="<?= e($query) ?>">
+            <input type="text" name="q" class="form-control border-start-0 py-3 ps-0" placeholder="Search for Biryani, Quinoa Bowls, Healthy Salads, Butter Chicken, Dosa..." value="<?= e($query) ?>">
           </div>
         </div>
 
@@ -87,18 +92,24 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
           <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="small fw-bold text-muted">Quick Filters:</span>
             
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '0' : '1' ?>&sort=<?= urlencode($sort) ?>" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '0' : '1' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=<?= urlencode($sort) ?>" 
                class="btn btn-sm rounded-pill <?= $vegOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
               <span style="width:8px; height:8px; border-radius:50%; background:<?= $vegOnly ? '#fff' : '#229947' ?>; display:inline-block;"></span>
               Pure Veg <?= $vegOnly ? '✓' : '' ?>
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&sort=price_asc" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '0' : '1' ?>&sort=<?= urlencode($sort) ?>" 
+               class="btn btn-sm rounded-pill <?= $healthyOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
+              <i class="fa-solid fa-leaf"></i>
+              Healthy Food <?= $healthyOnly ? '✓' : '' ?>
+            </a>
+
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=price_asc" 
                class="btn btn-sm rounded-pill <?= ($sort === 'price_asc') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Price: Low to High
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&sort=prep_time" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=prep_time" 
                class="btn btn-sm rounded-pill <?= ($sort === 'prep_time') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Fastest Prep Time (< 15m)
             </a>
@@ -115,16 +126,24 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
     <div class="row g-4">
       <?php if (!empty($dishes)): ?>
         <?php foreach ($dishes as $dish): ?>
+          <?php 
+            $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+          ?>
           <div class="col-xl-3 col-lg-4 col-md-6">
             <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift">
               
               <div class="position-relative" style="height: 180px;">
-                <img src="<?= e($dish['image_url']) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
+                <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
                 
-                <div class="position-absolute top-0 start-0 m-2">
+                <div class="position-absolute top-0 start-0 m-2 d-flex flex-column gap-1 align-items-start">
                   <span class="badge bg-white text-<?= $dish['is_veg'] ? 'success border-success' : 'danger border-danger' ?> border px-2 py-1 shadow-sm" style="font-size:0.65rem;">
                     <?= $dish['is_veg'] ? 'VEG' : 'NON-VEG' ?>
                   </span>
+                  <?php if ($isHealthyDish): ?>
+                    <span class="badge shadow-sm px-2 py-1" style="background:#CEFFDC; color:#1C2B20; font-size:0.65rem; border:1px solid #68BA7F;">
+                      <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
+                    </span>
+                  <?php endif; ?>
                 </div>
 
                 <div class="position-absolute top-0 end-0 m-2">
@@ -138,6 +157,19 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
                 <div>
                   <div class="small text-muted text-uppercase mb-1" style="font-size:0.65rem;"><?= e($dish['category_name']) ?></div>
                   <h6 class="fw-bold mb-1 text-dark text-truncate" title="<?= e($dish['item_name']) ?>"><?= e($dish['item_name']) ?></h6>
+                  
+                  <!-- Star Rating & Reviews Link -->
+                  <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-0 rounded-pill" style="font-size: 0.72rem;">
+                      <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                    </span>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
+                            style="font-size: 0.72rem;" 
+                            onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                      (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
+                    </button>
+                  </div>
+
                   <p class="text-muted small mb-3 dish-desc-clamp" style="min-height:36px;"><?= e($dish['description']) ?></p>
                 </div>
 

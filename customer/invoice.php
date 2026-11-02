@@ -26,6 +26,12 @@ if (!$order) {
     die("Tax Invoice not found for Order ID #{$orderId}");
 }
 
+// RBAC Check: Ensure customer owns this order, or is an Administrator/Staff
+$currentUser = current_user();
+if ($currentUser && !can_access_order($order, (int)$currentUser['id'])) {
+    die("Access Denied: You do not have permission to inspect invoices for other customer accounts.");
+}
+
 // Fetch Items
 $items = db_fetch_all("
     SELECT oi.*, m.item_name 

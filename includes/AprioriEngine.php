@@ -20,7 +20,7 @@ class AprioriEngine {
     public static function getRecommendations(array $cartItemIds, int $limit = 4): array {
         if (empty($cartItemIds)) {
             // Default top rated / complementary items
-            return db_fetch_all("
+            $defaultItems = db_fetch_all("
                 SELECT m.*, c.category_name 
                 FROM `menu_items` m
                 JOIN `categories` c ON m.category_id = c.category_id
@@ -28,6 +28,12 @@ class AprioriEngine {
                 ORDER BY m.price ASC
                 LIMIT :limit
             ", [':limit' => $limit]);
+
+            foreach ($defaultItems as &$it) {
+                $it['image_url'] = get_dish_image_url($it['image_url'] ?? '');
+            }
+            unset($it);
+            return $defaultItems;
         }
 
         $placeholders = implode(',', array_fill(0, count($cartItemIds), '?'));
@@ -71,7 +77,12 @@ class AprioriEngine {
                     WHERE m.item_id IN ($recPlaceholders) AND m.is_available = 1
                 ");
                 $recStmt->execute($coOccurring);
-                return $recStmt->fetchAll();
+                $recs = $recStmt->fetchAll();
+                foreach ($recs as &$it) {
+                    $it['image_url'] = get_dish_image_url($it['image_url'] ?? '');
+                }
+                unset($it);
+                return $recs;
             }
         } catch (PDOException $e) {
             error_log("Apriori Engine Error: " . $e->getMessage());
@@ -95,6 +106,11 @@ class AprioriEngine {
         }
         $fallbackStmt->bindValue($idx, (int)$limit, PDO::PARAM_INT);
         $fallbackStmt->execute();
-        return $fallbackStmt->fetchAll();
+        $fallbackItems = $fallbackStmt->fetchAll();
+        foreach ($fallbackItems as &$it) {
+            $it['image_url'] = get_dish_image_url($it['image_url'] ?? '');
+        }
+        unset($it);
+        return $fallbackItems;
     }
 }

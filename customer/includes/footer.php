@@ -147,6 +147,119 @@
   <!-- =========================================================================
        MOBILE BOTTOM NAVIGATION
        ========================================================================= -->
+  <!-- =========================================================================
+       DISH FOOD REVIEWS & STAR RATINGS MODAL
+       ========================================================================= -->
+  <div class="modal fade" id="dishReviewsModal" tabindex="-1" aria-labelledby="dishReviewsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+        
+        <div class="modal-header border-bottom bg-light px-4 py-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="rounded-circle d-inline-flex align-items-center justify-content-center bg-warning bg-opacity-25 text-warning" style="width:36px; height:36px;">
+              <i class="bi bi-star-fill text-warning"></i>
+            </span>
+            <div>
+              <h5 class="modal-title fw-bold text-dark mb-0 font-outfit" id="dishReviewsModalLabel">Food Reviews & Ratings</h5>
+              <div class="small text-muted" id="dishReviewsModalSubtitle">Authentic customer feedback</div>
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body p-4">
+          
+          <!-- Dish Header Summary Card -->
+          <div class="card border-0 rounded-4 p-3 p-md-4 mb-4" style="background: #F7FAF8; border: 1px solid #E2ECE5 !important;">
+            <div class="row align-items-center g-3">
+              
+              <div class="col-md-5 text-center text-md-start border-end-md">
+                <div class="d-flex align-items-center justify-content-center justify-content-md-start gap-3">
+                  <div class="display-4 fw-bold font-outfit text-dark mb-0" id="dishModalAvgRating">4.9</div>
+                  <div>
+                    <div class="text-warning fs-5" id="dishModalStars">
+                      <i class="bi bi-star-fill"></i>
+                      <i class="bi bi-star-fill"></i>
+                      <i class="bi bi-star-fill"></i>
+                      <i class="bi bi-star-fill"></i>
+                      <i class="bi bi-star-fill"></i>
+                    </div>
+                    <div class="small text-muted" id="dishModalReviewCount">Based on 245 reviews</div>
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <span class="badge bg-success bg-opacity-15 text-success small px-2 py-1 rounded-pill">
+                    <i class="bi bi-shield-check me-1"></i> 100% Verified Customer Reviews
+                  </span>
+                </div>
+              </div>
+
+              <div class="col-md-7">
+                <!-- Write a review toggle button -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span class="small fw-bold text-muted text-uppercase">Have you tasted this dish?</span>
+                  <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold" id="toggleWriteReviewBtn" onclick="toggleDishReviewForm()">
+                    <i class="bi bi-pencil-fill me-1"></i> Rate This Food ⭐
+                  </button>
+                </div>
+
+                <!-- Quick Review Form Collapse -->
+                <div id="dishReviewFormBox" style="display: none;" class="p-3 bg-white rounded-3 border mt-2">
+                  <form id="inlineDishReviewForm" onsubmit="submitInlineDishReview(event)">
+                    <input type="hidden" id="inlineDishId" value="0">
+                    <input type="hidden" id="inlineDishRating" value="5">
+                    
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                      <span class="small fw-bold text-muted">Your Star Rating:</span>
+                      <div class="d-inline-flex gap-1" id="inlineModalStars">
+                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="1" style="cursor:pointer;"></i>
+                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="2" style="cursor:pointer;"></i>
+                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="3" style="cursor:pointer;"></i>
+                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="4" style="cursor:pointer;"></i>
+                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="5" style="cursor:pointer;"></i>
+                      </div>
+                      <span class="small fw-bold text-forest ms-2" id="inlineRatingLabel">5 Stars ⭐</span>
+                    </div>
+
+                    <div class="mb-2">
+                      <textarea id="inlineReviewText" class="form-control form-control-sm rounded-3" rows="2" placeholder="Tell us how delicious and flavorful this meal was..."></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                      <button type="button" class="btn btn-sm btn-light rounded-pill px-3" onclick="toggleDishReviewForm()">Cancel</button>
+                      <button type="submit" class="btn btn-sm btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+                        Post Review ⭐
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Reviews Feed List -->
+          <div class="dish-reviews-list-container">
+            <h6 class="fw-bold text-dark font-outfit mb-3"><i class="bi bi-chat-quote text-success me-2"></i>Recent Food Critic & Customer Reviews</h6>
+            <div id="dishReviewsFeed" class="d-flex flex-column gap-3" style="max-height: 360px; overflow-y: auto;">
+              <!-- Populated via AJAX -->
+              <div class="text-center py-4 text-muted">
+                <div class="spinner-border text-success spinner-border-sm mb-2" role="status"></div>
+                <div class="small">Loading dish reviews & star ratings...</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="modal-footer border-top bg-light px-4 py-2">
+          <button type="button" class="btn btn-secondary btn-sm rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <nav class="mobile-bottom-nav d-lg-none">
     <div class="container-fluid d-flex justify-content-around py-2">
       <a href="<?= CUSTOMER_URL ?>/index.php" class="mobile-nav-link <?= ($activePage === 'home') ? 'active' : '' ?>">
@@ -203,6 +316,7 @@
           <ul class="list-unstyled small mb-0 d-flex flex-column gap-2 text-white-50">
             <li><a href="<?= CUSTOMER_URL ?>/index.php" class="text-white-50 text-decoration-none">Home Storefront</a></li>
             <li><a href="<?= CUSTOMER_URL ?>/search.php" class="text-white-50 text-decoration-none">Search Menu</a></li>
+            <li><a href="<?= CUSTOMER_URL ?>/search.php?category=healthy" class="text-white-50 text-decoration-none"><i class="fa-solid fa-leaf me-1 text-mint" style="color:#CEFFDC;"></i>Healthy Bowls</a></li>
             <li><a href="<?= CUSTOMER_URL ?>/offers.php" class="text-white-50 text-decoration-none">Discount Offers</a></li>
             <li><a href="<?= CUSTOMER_URL ?>/cart.php" class="text-white-50 text-decoration-none">Shopping Cart</a></li>
             <li><a href="<?= CUSTOMER_URL ?>/order-history.php" class="text-white-50 text-decoration-none">Track Past Orders</a></li>

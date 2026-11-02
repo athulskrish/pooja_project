@@ -14,3 +14,9 @@ sess_*
 
 # Dependencies
 /vendor/
+
+# Python & Temporary Test Output
+__pycache__/
+*.pyc
+*.bak
+tests/debug_*.html

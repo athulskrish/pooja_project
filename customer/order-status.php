@@ -21,6 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $orderToCancel = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $cancelOrderId]);
 
         if ($orderToCancel) {
+            // RBAC Access Check: Ensure order belongs to logged-in customer or user is Administrator
+            if ($currentUser && (int)$orderToCancel['user_id'] !== (int)$currentUser['id'] && !is_admin()) {
+                set_flash('danger', 'Access Denied: You do not have permission to cancel orders belonging to other accounts.');
+                header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
+                exit;
+            }
+
             $placedTs = strtotime($orderToCancel['placed_at']);
             $elapsedSec = time() - $placedTs;
 
@@ -80,6 +87,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 require_once __DIR__ . '/includes/header.php';
+?>
+<!-- Leaflet Map CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  .leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+  .leaflet-popup-content { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.85rem; font-weight: 500; }
+  .pulse-dot { display: inline-block; width: 8px; height: 8px; background-color: #2E6F40; border-radius: 50%; animation: pulse-ring 1.4s infinite ease-out; }
+  @keyframes pulse-ring { 0% { transform: scale(0.9); opacity: 1; } 50% { transform: scale(1.6); opacity: 0.4; } 100% { transform: scale(0.9); opacity: 1; } }
+  .custom-rider-marker { text-align: center; }
+  .rider-bike-icon { background: #2E6F40; color: #fff; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(46,111,64,0.4); border: 2px solid #fff; font-size: 15px; }
+</style>
+<?php
 
 $uid = $currentUser['id'] ?? null;
 if (!isset($_GET['order_id'])) {
@@ -104,7 +124,9 @@ $order = db_fetch_one("
     SELECT o.*, u.full_name, u.phone_number,
            a.address_line, a.pincode,
            p.payment_mode, p.payment_status, p.transaction_reference,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status
+           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status,
+           d.current_latitude, d.current_longitude, d.delivery_latitude, d.delivery_longitude,
+           d.route_progress, d.distance_remaining_km, d.estimated_minutes_remaining
     FROM `orders` o
     JOIN `users` u ON o.user_id = u.user_id
     LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
@@ -364,6 +386,66 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
 
         </div>
 
+        <!-- Live Interactive GPS Delivery Map Card -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4" id="liveMapCard">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <div class="rounded-circle d-flex align-items-center justify-content-center text-white shadow-xs" style="width: 40px; height: 40px; background: #2E6F40;">
+                <i class="bi bi-geo-alt-fill fs-5"></i>
+              </div>
+              <div>
+                <h5 class="fw-bold text-dark mb-0 font-outfit">Live Delivery Route & GPS Tracking</h5>
+                <div class="small text-muted" id="mapLiveStatusText">
+                  <?php if ($order['order_status'] === 'OUT_FOR_DELIVERY'): ?>
+                    <span class="pulse-dot me-1"></span> Rider is in transit on Indiranagar 100ft corridor
+                  <?php elseif ($order['order_status'] === 'COOKING'): ?>
+                    <i class="bi bi-fire text-warning me-1"></i> Food being prepared at Zippy Kitchen Hub
+                  <?php elseif ($order['order_status'] === 'READY'): ?>
+                    <i class="bi bi-bag-check-fill text-primary me-1"></i> Food bagged at counter, assigning courier
+                  <?php elseif ($order['order_status'] === 'DELIVERED'): ?>
+                    <i class="bi bi-check-circle-fill text-success me-1"></i> Food delivered at your doorstep
+                  <?php else: ?>
+                    <i class="bi bi-clock me-1"></i> Order queued at restaurant kitchen
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-light text-dark border px-3 py-2 font-monospace shadow-xs" id="liveTelemetryBadge">
+                <i class="bi bi-speedometer2 text-success me-1"></i>
+                <span id="telemetryDist"><?= $isDelivered ? '0.0 km' : (number_format((float)($order['distance_remaining_km'] ?: 2.40), 1) . ' km') ?></span> •
+                <span id="telemetryEta"><?= $isDelivered ? 'Arrived' : (($order['estimated_minutes_remaining'] ?: 12) . 'm away') ?></span>
+              </span>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold" id="btnCenterMap" title="Center on Rider">
+                <i class="bi bi-crosshair"></i> Focus
+              </button>
+            </div>
+          </div>
+
+          <!-- Leaflet Interactive Map Container -->
+          <div id="customerLiveMap" style="height: 310px; border-radius: 14px; width: 100%; border: 1px solid #d8e5dc; position: relative; overflow: hidden; background: #f8faf9;">
+            <div id="mapFallbackContainer" class="d-none h-100 d-flex flex-column align-items-center justify-content-center text-center p-3 text-muted">
+              <i class="bi bi-map fs-1 text-success mb-2"></i>
+              <div class="fw-bold text-dark">Live GPS Map Simulator Active</div>
+              <div class="small">Zippy Kitchen Hub (Indiranagar) &rarr; <?= e($order['address_line'] ?: 'Customer Address') ?></div>
+            </div>
+          </div>
+
+          <!-- Route Highlights Bar -->
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-3 mt-3 border-top small">
+            <div class="d-flex align-items-center gap-3 text-muted">
+              <span><i class="fa-solid fa-store text-success me-1"></i> <strong>Kitchen:</strong> Indiranagar Hub</span>
+              <span><i class="fa-solid fa-motorcycle text-primary me-1"></i> <strong>Rider:</strong> <?= e($order['delivery_partner_name'] ?: 'Express Rider') ?></span>
+              <span><i class="bi bi-house-door-fill text-danger me-1"></i> <strong>Destination:</strong> <?= e($order['pincode'] ?: '560038') ?></span>
+            </div>
+            <div class="text-success fw-semibold">
+              <span class="badge bg-success bg-opacity-10 text-success border border-success rounded-pill px-2 py-1">
+                <i class="bi bi-shield-check me-1"></i> GPS Safe Transit
+              </span>
+            </div>
+          </div>
+        </div>
+
         <!-- Assigned Delivery Partner Card -->
         <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
           <div class="d-flex align-items-center justify-content-between">
@@ -494,6 +576,24 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
 // Mark tracking active so generic app.js simulation does not conflict or run
 window.orderTrackingActive = true;
 
+// Gentle Web Audio API status transition chime (zero external dependencies)
+function playStatusChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880.00, ctx.currentTime + 0.15); // A5
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch(e) {}
+}
+
 (function() {
   const orderId = <?= (int)$order['order_id'] ?>;
   let orderStatus = '<?= addslashes(strtoupper($order['order_status'])) ?>';
@@ -514,9 +614,147 @@ window.orderTrackingActive = true;
   };
   const otpContainer = document.getElementById('otpContainer');
   const topBadgeContainer = document.getElementById('topBadgeContainer');
+  const mapLiveStatusText = document.getElementById('mapLiveStatusText');
+  const telemetryDist = document.getElementById('telemetryDist');
+  const telemetryEta = document.getElementById('telemetryEta');
 
   let timerInterval = null;
   let pollInterval = null;
+
+  // ---------------------------------------------------------------------------
+  // Leaflet Live Geolocation Map Initialization
+  // ---------------------------------------------------------------------------
+  let liveMap = null;
+  let riderMarker = null;
+  let routePolyline = null;
+  const hubCoords = [12.9784, 77.6408];
+  const customerCoords = [<?= (float)($order['delivery_latitude'] ?: 12.9698) ?>, <?= (float)($order['delivery_longitude'] ?: 77.6499) ?>];
+
+  function initCustomerMap() {
+    const mapEl = document.getElementById('customerLiveMap');
+    if (!mapEl || typeof L === 'undefined') {
+      const fb = document.getElementById('mapFallbackContainer');
+      if (fb) fb.classList.remove('d-none');
+      return;
+    }
+
+    try {
+      liveMap = L.map('customerLiveMap', {
+        zoomControl: true,
+        scrollWheelZoom: false
+      }).setView(hubCoords, 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(liveMap);
+
+      // Restaurant Marker
+      const storeIcon = L.divIcon({
+        className: 'custom-hub-marker',
+        html: '<div style="background:#2E6F40; color:#fff; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.3); border:2px solid #fff;"><i class="fa-solid fa-store" style="font-size:14px;"></i></div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      L.marker(hubCoords, { icon: storeIcon }).addTo(liveMap)
+        .bindPopup('<strong>Zippy Kitchen Hub</strong><br>#544, 100 Feet Rd, Indiranagar');
+
+      // Customer Marker
+      const homeIcon = L.divIcon({
+        className: 'custom-home-marker',
+        html: '<div style="background:#dc3545; color:#fff; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(0,0,0,0.3); border:2px solid #fff;"><i class="bi bi-house-door-fill" style="font-size:15px;"></i></div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      L.marker(customerCoords, { icon: homeIcon }).addTo(liveMap)
+        .bindPopup('<strong>Delivery Destination</strong><br><?= e(addslashes($order['address_line'] ?: 'Customer Address')) ?>');
+
+      // Route Path
+      const defaultRoute = [
+        hubCoords,
+        [12.9765, 77.6415],
+        [12.9748, 77.6425],
+        [12.9732, 77.6442],
+        [12.9715, 77.6468],
+        customerCoords
+      ];
+      routePolyline = L.polyline(defaultRoute, {
+        color: '#2E6F40',
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '8, 8'
+      }).addTo(liveMap);
+
+      // Rider Marker
+      const riderIcon = L.divIcon({
+        className: 'custom-rider-marker',
+        html: '<div class="rider-bike-icon"><i class="fa-solid fa-motorcycle"></i></div>',
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+
+      const initialRiderPos = (orderStatus === 'DELIVERED') ? customerCoords : hubCoords;
+      riderMarker = L.marker(initialRiderPos, { icon: riderIcon }).addTo(liveMap)
+        .bindPopup('<strong><?= e(addslashes($order['delivery_partner_name'] ?: 'Zippy Express Rider')) ?></strong><br>Status: ' + orderStatus);
+
+      // Fit map bounds to encompass restaurant and customer
+      const bounds = L.latLngBounds([hubCoords, customerCoords]);
+      liveMap.fitBounds(bounds, { padding: [40, 40] });
+
+      const btnCenter = document.getElementById('btnCenterMap');
+      if (btnCenter) {
+        btnCenter.addEventListener('click', () => {
+          if (riderMarker) {
+            liveMap.setView(riderMarker.getLatLng(), 15, { animate: true });
+          } else {
+            liveMap.fitBounds(bounds, { padding: [40, 40] });
+          }
+        });
+      }
+    } catch(err) {
+      console.warn('Leaflet initialization warning:', err);
+      const fb = document.getElementById('mapFallbackContainer');
+      if (fb) fb.classList.remove('d-none');
+    }
+  }
+
+  // Initialize Map after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCustomerMap);
+  } else {
+    initCustomerMap();
+  }
+
+  function updateLiveMapTelemetry(locData) {
+    if (!locData || !locData.success) return;
+
+    if (telemetryDist && locData.route) {
+      telemetryDist.textContent = (locData.route.distance_remaining_km !== undefined) ? `${locData.route.distance_remaining_km} km` : '2.1 km';
+    }
+    if (telemetryEta && locData.route) {
+      telemetryEta.textContent = (locData.route.eta_minutes !== undefined) ? `${locData.route.eta_minutes}m away` : '10m away';
+    }
+
+    if (locData.locations && locData.locations.rider && riderMarker && liveMap) {
+      const rLat = locData.locations.rider.lat;
+      const rLng = locData.locations.rider.lng;
+      if (rLat && rLng) {
+        riderMarker.setLatLng([rLat, rLng]);
+      }
+    }
+
+    if (mapLiveStatusText) {
+      if (locData.status === 'OUT_FOR_DELIVERY') {
+        mapLiveStatusText.innerHTML = '<span class="pulse-dot me-1"></span> Rider is in transit • Moving along Indiranagar corridor';
+      } else if (locData.status === 'COOKING') {
+        mapLiveStatusText.innerHTML = '<i class="bi bi-fire text-warning me-1"></i> Food being prepared at Zippy Kitchen Hub';
+      } else if (locData.status === 'READY') {
+        mapLiveStatusText.innerHTML = '<i class="bi bi-bag-check-fill text-primary me-1"></i> Food bagged at counter, assigning courier';
+      } else if (locData.status === 'DELIVERED') {
+        mapLiveStatusText.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Food delivered at your doorstep';
+      }
+    }
+  }
 
   function setStepActive(stepNum) {
     if (stepperBar) stepperBar.style.width = `${(stepNum / 3) * 100}%`;
@@ -566,6 +804,15 @@ window.orderTrackingActive = true;
       topBadgeContainer.innerHTML = '<span class="badge bg-success px-3 py-2 rounded-pill"><i class="bi bi-check-circle-fill me-1"></i>Delivered</span>';
     }
 
+    if (telemetryDist) telemetryDist.textContent = '0.0 km';
+    if (telemetryEta) telemetryEta.textContent = 'Arrived';
+    if (mapLiveStatusText) {
+      mapLiveStatusText.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Handover completed at customer doorstep';
+    }
+    if (riderMarker && customerCoords) {
+      riderMarker.setLatLng(customerCoords);
+    }
+
     if (otpContainer) {
       otpContainer.innerHTML = `
         <div class="p-3 rounded-4 mt-4 text-start d-flex align-items-center justify-content-between bg-light border border-success">
@@ -579,6 +826,8 @@ window.orderTrackingActive = true;
         </div>
       `;
     }
+
+    playStatusChime();
 
     // Prompt automatic rating modal (Sequence Diagram 4.4-B Step 15)
     setTimeout(() => {
@@ -624,32 +873,47 @@ window.orderTrackingActive = true;
     }
   }, 1000);
 
-  // Poll for status updates
+  // Poll for status & live location updates
   pollInterval = setInterval(async () => {
     try {
-      const res = await fetch(`ajax/order-status-api.php?order_id=${orderId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success && data.status) {
-        const newStatus = data.status.toUpperCase();
-        if (newStatus === 'DELIVERED') {
-          handleDelivered(data.delivery_otp);
-        } else if (newStatus === 'OUT_FOR_DELIVERY' && orderStatus !== 'OUT_FOR_DELIVERY') {
-          orderStatus = newStatus;
-          if (statusHeading) statusHeading.textContent = 'Rider is on the way to your door';
-          setStepActive(2);
-          if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
-        } else if (newStatus === 'COOKING' && orderStatus !== 'COOKING') {
-          orderStatus = newStatus;
-          if (statusHeading) statusHeading.textContent = 'Chef is cooking your hot meal';
-          setStepActive(1);
-          if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+      // 1. Fetch live coordinates and routing status
+      const locRes = await fetch(`../api/live-location.php?order_id=${orderId}`);
+      if (locRes.ok) {
+        const data = await locRes.json();
+        if (data.success && data.status) {
+          const newStatus = data.status.toUpperCase();
+          updateLiveMapTelemetry(data);
+
+          if (newStatus === 'DELIVERED') {
+            handleDelivered(data.delivery_otp);
+          } else if (newStatus === 'OUT_FOR_DELIVERY' && orderStatus !== 'OUT_FOR_DELIVERY') {
+            orderStatus = newStatus;
+            playStatusChime();
+            if (statusHeading) statusHeading.textContent = 'Rider is on the way to your door';
+            if (statusSubtext) statusSubtext.textContent = 'Live GPS transit active • Indiranagar delivery corridor';
+            setStepActive(2);
+            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+          } else if (newStatus === 'READY' && orderStatus !== 'READY') {
+            orderStatus = newStatus;
+            playStatusChime();
+            if (statusHeading) statusHeading.textContent = 'Order Plated & Packed!';
+            if (statusSubtext) statusSubtext.textContent = 'Packed in thermal bag at kitchen • Awaiting courier departure';
+            setStepActive(2);
+            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+          } else if (newStatus === 'COOKING' && orderStatus !== 'COOKING') {
+            orderStatus = newStatus;
+            playStatusChime();
+            if (statusHeading) statusHeading.textContent = 'Chef is cooking your hot meal';
+            if (statusSubtext) statusSubtext.textContent = 'Active preparation on stoves at Zippy Kitchen Hub';
+            setStepActive(1);
+            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+          }
         }
       }
     } catch (e) {
       // silent network catch
     }
-})();
+  }, 3000);
 
   // Live 60-Second Cancellation Countdown Timer
   let cancelSecs = <?= (int)($cancellationSecondsLeft ?? 0) ?>;
@@ -681,6 +945,7 @@ window.orderTrackingActive = true;
     }, 1500);
   });
   <?php endif; ?>
+})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

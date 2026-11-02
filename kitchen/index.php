@@ -63,7 +63,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                             UPDATE `delivery_dispatches` 
                             SET `delivery_partner_name` = :rname,
                                 `dispatched_at` = NOW(),
-                                `delivery_status` = 'IN_TRANSIT'
+                                `delivery_status` = 'IN_TRANSIT',
+                                `current_latitude` = 12.97840000,
+                                `current_longitude` = 77.64080000,
+                                `route_progress` = 0,
+                                `distance_remaining_km` = 2.40,
+                                `estimated_minutes_remaining` = 15
                             WHERE `order_id` = :id
                         ", [
                             ':rname' => $finalRider,
@@ -73,8 +78,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                         $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
                         db_query("
                             INSERT INTO `delivery_dispatches` 
-                            (`order_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`)
-                            VALUES (:id, :rname, '+91 96320 98765', :otp, NOW(), NOW(), 'IN_TRANSIT')
+                            (`order_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`, `current_latitude`, `current_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`)
+                            VALUES (:id, :rname, '+91 96320 98765', :otp, NOW(), NOW(), 'IN_TRANSIT', 12.97840000, 77.64080000, 0, 2.40, 15)
                         ", [
                             ':id' => $orderId,
                             ':rname' => $finalRider,
@@ -82,11 +87,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                         ]);
                     }
 
-                    set_flash('success', "Order #ZIP-{$orderId} handed over to Delivery Boy ({$finalRider}) for fulfillment.");
+                    $msg = "Order #ZIP-{$orderId} handed over to Delivery Boy ({$finalRider}) for fulfillment.";
+                    set_flash('success', $msg);
                 } elseif ($targetStatus === 'COOKING') {
-                    set_flash('success', "Order #ZIP-{$orderId} accepted! Transferred to Stoves for cooking.");
+                    $msg = "Order #ZIP-{$orderId} accepted! Transferred to Stoves for cooking.";
+                    set_flash('success', $msg);
                 } elseif ($targetStatus === 'READY') {
-                    set_flash('success', "Order #ZIP-{$orderId} plated & bagged! Ready at courier counter.");
+                    $msg = "Order #ZIP-{$orderId} plated & bagged! Ready at courier counter.";
+                    set_flash('success', $msg);
+                }
+
+                $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
+                          || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
+                if ($isAjax) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => true, 'target_status' => $targetStatus, 'order_id' => $orderId, 'message' => $msg ?? 'Order updated']);
+                    exit;
                 }
 
                 header("Location: " . KITCHEN_URL . "/index.php");
@@ -135,17 +151,66 @@ $ridersList = db_fetch_all("
     WHERE `role_id` = 4 AND `is_active` = 1
 ");
 
-// Fetch Dispatched / Completed Orders Today
-$recentHandedOver = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name,
-           d.delivery_partner_name, d.delivery_otp, d.dispatched_at, d.delivered_at
+// Fetch Complete Fulfilled Kitchen Order History
+$orderHistory = db_fetch_all("
+    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
+           d.delivery_partner_name, d.delivery_otp, d.dispatched_at, d.delivered_at,
+           p.payment_mode, p.payment_status,
+           TIMESTAMPDIFF(MINUTE, o.placed_at, COALESCE(d.dispatched_at, o.placed_at)) AS prep_minutes
     FROM `orders` o
     JOIN `users` u ON o.user_id = u.user_id
     LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+    LEFT JOIN `payments` p ON o.order_id = p.order_id
     WHERE o.order_status IN ('OUT_FOR_DELIVERY', 'DELIVERED')
     ORDER BY COALESCE(d.dispatched_at, o.placed_at) DESC
-    LIMIT 20
+    LIMIT 60
 ");
+
+// Group line items for history dockets
+$historyOrderIds = array_column($orderHistory, 'order_id');
+$historyItemsGrouped = [];
+if (!empty($historyOrderIds)) {
+    $pl = implode(',', array_fill(0, count($historyOrderIds), '?'));
+    $hItems = db_fetch_all("
+        SELECT oi.*, m.item_name, m.is_veg 
+        FROM `order_items` oi 
+        JOIN `menu_items` m ON oi.item_id = m.item_id 
+        WHERE oi.order_id IN ($pl)
+    ", $historyOrderIds);
+    foreach ($hItems as $hit) {
+        $historyItemsGrouped[$hit['order_id']][] = $hit;
+    }
+}
+
+// Fetch Staff Profile for Payments & Salary Tab
+$chefProfile = db_fetch_one("
+    SELECT sp.*, u.full_name, u.email, u.phone_number 
+    FROM `staff_profiles` sp 
+    JOIN `users` u ON sp.user_id = u.user_id 
+    WHERE sp.user_id = :uid
+", [':uid' => $currentUser['id']]);
+
+if (!$chefProfile) {
+    $chefProfile = db_fetch_one("
+        SELECT sp.*, u.full_name, u.email, u.phone_number 
+        FROM `staff_profiles` sp 
+        JOIN `users` u ON sp.user_id = u.user_id 
+        WHERE sp.department = 'KITCHEN' 
+        ORDER BY sp.profile_id ASC 
+        LIMIT 1
+    ");
+}
+
+// Fetch Salary Payouts History
+$chefPayouts = [];
+if ($chefProfile) {
+    $chefPayouts = db_fetch_all("
+        SELECT * FROM `staff_salary_payouts` 
+        WHERE `user_id` = :uid 
+        ORDER BY `paid_at` DESC
+    ", [':uid' => $chefProfile['user_id']]);
+}
+$recentHandedOver = $orderHistory;
 
 // Fetch Menu Items for 86-List modal
 $allMenuItems = db_fetch_all("
@@ -253,7 +318,12 @@ require_once __DIR__ . '/includes/header.php';
         </li>
         <li class="nav-item" role="presentation">
           <button class="nav-link" id="tab-history-btn" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" role="tab">
-            <i class="bi bi-clock-history me-1"></i> Dispatch Log
+            <i class="bi bi-clock-history me-1"></i> Order History (<span id="tabCountHistory"><?= count($orderHistory) ?></span>)
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-salary-btn" data-bs-toggle="pill" data-bs-target="#tab-salary" type="button" role="tab">
+            <i class="bi bi-wallet2 me-1"></i> Payments (Salary)
           </button>
         </li>
       </ul>
@@ -718,62 +788,116 @@ require_once __DIR__ . '/includes/header.php';
       <!-- ====================================================================
            TAB 5: DISPATCH LOG (HISTORY LOG)
            ==================================================================== -->
+            <!-- ====================================================================
+           TAB 5: ORDER HISTORY & FULFILLED DOCKET ARCHIVE
+           ==================================================================== -->
       <div class="tab-pane fade" id="tab-history" role="tabpanel">
         <div class="card p-4 modal-content-noir">
-          <div class="d-flex justify-content-between align-items-center mb-4">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
             <div>
-              <h4 class="fw-bold font-outfit text-dark mb-1">Today's Atelier Handover Archive</h4>
-              <p class="text-muted small mb-0">Record of food tickets handed over to delivery couriers</p>
+              <h4 class="fw-bold font-outfit text-dark mb-1">
+                <i class="bi bi-clock-history me-2 text-dark"></i>Culinary Order Preparation History
+              </h4>
+              <p class="text-muted small mb-0">Complete historical archive of all cooked, plated, and dispatched food tickets.</p>
             </div>
-            <span class="badge bg-black text-white px-3 py-2 rounded-pill font-mono">
-              TOTAL: <?= count($recentHandedOver) ?>
-            </span>
+            
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-black text-white px-3 py-2 rounded-pill font-mono">
+                FULFILLED: <?= count($orderHistory) ?>
+              </span>
+              <div class="position-relative" style="width: 250px;">
+                <input type="text" id="kdsHistorySearchInput" class="form-control form-control-sm rounded-pill border-dark" placeholder="Search history tickets..." onkeyup="filterHistoryTable()">
+              </div>
+            </div>
           </div>
 
           <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" style="background:transparent;">
+            <table class="table table-hover align-middle mb-0" id="kdsHistoryTable" style="background:transparent;">
               <thead class="text-muted small text-uppercase" style="border-bottom: 2px solid #000000;">
                 <tr>
-                  <th class="font-mono">Ticket</th>
-                  <th>Customer</th>
-                  <th>Delivery Partner</th>
-                  <th>Dispatched At</th>
+                  <th class="font-mono">Docket</th>
+                  <th>Customer Info</th>
+                  <th>Dishes Cooked & Portions</th>
+                  <th>Prep Time</th>
+                  <th>Courier / OTP</th>
+                  <th>Bill & Payment</th>
                   <th>Status</th>
-                  <th class="text-end">Docket</th>
+                  <th class="text-end">KOT Slip</th>
                 </tr>
               </thead>
               <tbody>
-                <?php if (empty($recentHandedOver)): ?>
+                <?php if (empty($orderHistory)): ?>
                   <tr>
-                    <td colspan="6" class="text-center py-5 text-muted">No dispatches recorded today.</td>
+                    <td colspan="8" class="text-center py-5 text-muted">No historical dispatches recorded.</td>
                   </tr>
                 <?php else: ?>
-                  <?php foreach ($recentHandedOver as $h): ?>
-                    <tr>
+                  <?php foreach ($orderHistory as $h): ?>
+                    <?php 
+                      $hItems = $historyItemsGrouped[$h['order_id']] ?? [];
+                      $itemNames = array_map(fn($it) => $it['item_name'], $hItems);
+                      $searchRowText = strtolower("ZIP-{$h['order_id']} {$h['customer_name']} {$h['customer_phone']} {$h['delivery_partner_name']} {$h['delivery_otp']} {$h['order_status']} " . implode(' ', $itemNames));
+                    ?>
+                    <tr class="history-table-row" data-search="<?= e($searchRowText) ?>">
                       <td>
-                        <span class="font-mono fw-bold text-dark">#ZIP-<?= (int)$h['order_id'] ?></span>
+                        <div class="font-mono fw-bold text-dark fs-6">#ZIP-<?= (int)$h['order_id'] ?></div>
+                        <div class="text-muted small font-mono" style="font-size:0.75rem;">
+                          <?= !empty($h['dispatched_at']) ? date('d M, h:i A', strtotime($h['dispatched_at'])) : date('d M, h:i A', strtotime($h['placed_at'])) ?>
+                        </div>
                       </td>
+
                       <td>
                         <div class="fw-bold text-dark"><?= e($h['customer_name']) ?></div>
-                        <div class="text-muted small"><?= format_inr($h['total_amount']) ?></div>
+                        <div class="text-muted small font-mono"><?= e($h['customer_phone'] ?: 'N/A') ?></div>
                       </td>
+
+                      <td style="max-width: 260px;">
+                        <div class="d-flex flex-column gap-1">
+                          <?php foreach ($hItems as $it): ?>
+                            <div class="small d-flex align-items-center gap-1">
+                              <span class="badge <?= $it['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1" style="font-size:0.6rem;">
+                                <?= (int)$it['quantity'] ?>x
+                              </span>
+                              <span class="text-truncate"><?= e($it['item_name']) ?></span>
+                            </div>
+                          <?php endforeach; ?>
+                        </div>
+                      </td>
+
                       <td>
-                        <div class="fw-bold text-dark"><i class="fa-solid fa-motorcycle me-1"></i> <?= e($h['delivery_partner_name'] ?: 'Zippy Express Rider') ?></div>
+                        <span class="badge bg-light text-dark border font-mono">
+                          <i class="bi bi-stopwatch me-1"></i><?= (int)$h['prep_minutes'] ?>m prep
+                        </span>
+                      </td>
+
+                      <td>
+                        <div class="fw-bold text-dark small"><i class="fa-solid fa-motorcycle me-1"></i> <?= e($h['delivery_partner_name'] ?: 'Express Fleet Rider') ?></div>
                         <?php if (!empty($h['delivery_otp'])): ?>
-                          <span class="font-mono text-muted small">OTP: <?= e($h['delivery_otp']) ?></span>
+                          <span class="font-mono text-muted small" style="font-size:0.75rem;">OTP: <strong><?= e($h['delivery_otp']) ?></strong></span>
                         <?php endif; ?>
                       </td>
-                      <td class="text-muted small font-mono">
-                        <?= !empty($h['dispatched_at']) ? date('h:i A', strtotime($h['dispatched_at'])) : date('h:i A', strtotime($h['placed_at'])) ?>
+
+                      <td>
+                        <div class="fw-bold font-mono text-dark"><?= format_inr($h['total_amount']) ?></div>
+                        <?php if ($h['payment_mode'] === 'COD'): ?>
+                          <span class="badge bg-warning text-dark border border-warning" style="font-size:0.65rem;">
+                            <?= ($h['payment_status'] === 'SUCCESSFUL') ? 'COD CASH PAID' : 'COD PENDING' ?>
+                          </span>
+                        <?php else: ?>
+                          <span class="badge bg-dark text-white" style="font-size:0.65rem;">
+                            ONLINE PAID
+                          </span>
+                        <?php endif; ?>
                       </td>
+
                       <td>
                         <span class="ticket-tag-pill ticket-tag-dark" style="font-size:0.68rem;">
                           <?= e($h['order_status']) ?>
                         </span>
                       </td>
+
                       <td class="text-end">
-                        <button type="button" class="btn btn-sm btn-noir-outline px-3" onclick="openKOT(<?= (int)$h['order_id'] ?>)">
-                          Slip
+                        <button type="button" class="btn btn-sm btn-noir-outline px-3" onclick="openKOT(<?= (int)$h['order_id'] ?>)" title="Reprint Kitchen Order Ticket Slip">
+                          <i class="bi bi-printer me-1"></i> KOT
                         </button>
                       </td>
                     </tr>
@@ -785,6 +909,223 @@ require_once __DIR__ . '/includes/header.php';
         </div>
       </div>
 
-    </div>
+      <!-- ====================================================================
+           TAB 6: KITCHEN STAFF PAYMENTS & SALARY
+           ==================================================================== -->
+      <div class="tab-pane fade" id="tab-salary" role="tabpanel">
+        
+        <!-- Chef Profile Banner -->
+        <?php if ($chefProfile): ?>
+          <div class="card p-4 modal-content-noir mb-4">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+              <div class="d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-black text-white d-flex align-items-center justify-content-center fw-bold fs-3" style="width:64px; height:64px;">
+                  <i class="fa-solid fa-utensils"></i>
+                </div>
+                <div>
+                  <div class="d-flex align-items-center gap-2">
+                    <h4 class="fw-bold font-outfit text-dark mb-0"><?= e($chefProfile['full_name']) ?></h4>
+                    <span class="badge <?= ($chefProfile['duty_status'] === 'ON_DUTY') ? 'bg-success' : 'bg-secondary' ?> text-white rounded-pill px-2 py-1">
+                      <?= e($chefProfile['duty_status']) ?>
+                    </span>
+                  </div>
+                  <div class="text-muted small mt-1">
+                    <span class="fw-bold text-dark"><?= e($chefProfile['designation']) ?></span> &bull; 
+                    <?= e($chefProfile['specialization']) ?>
+                  </div>
+                  <div class="text-muted small" style="font-size:0.75rem;">
+                    Shift: <strong><?= e($chefProfile['shift_timings']) ?></strong> &bull; 
+                    Joined: <strong><?= date('M Y', strtotime($chefProfile['joined_date'])) ?></strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="d-flex flex-wrap gap-3">
+                <div class="text-end border-end pe-3">
+                  <div class="small text-muted text-uppercase fw-bold" style="font-size:0.68rem;">Base Salary</div>
+                  <div class="fs-4 fw-bold font-mono text-dark"><?= format_inr($chefProfile['base_salary']) ?></div>
+                  <div class="small text-muted" style="font-size:0.7rem;">/ month</div>
+                </div>
+                <div class="text-end border-end pe-3">
+                  <div class="small text-muted text-uppercase fw-bold" style="font-size:0.68rem;">Per Docket Rate</div>
+                  <div class="fs-4 fw-bold font-mono text-dark"><?= format_inr($chefProfile['hourly_or_order_rate']) ?></div>
+                  <div class="small text-muted" style="font-size:0.7rem;">incentive</div>
+                </div>
+                <div class="text-end">
+                  <div class="small text-muted text-uppercase fw-bold" style="font-size:0.68rem;">Orders Prepared</div>
+                  <div class="fs-4 fw-bold font-mono text-dark"><?= (int)$chefProfile['total_orders_handled'] ?></div>
+                  <div class="small text-warning" style="font-size:0.7rem;">★ <?= number_format((float)$chefProfile['rating'], 2) ?> Rating</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <!-- Salary Payouts History Ledger -->
+        <div class="card p-4 modal-content-noir">
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h4 class="fw-bold font-outfit text-dark mb-1">
+                <i class="bi bi-wallet2 me-2 text-dark"></i>Disbursed Salary & Payout History
+              </h4>
+              <p class="text-muted small mb-0">Record of monthly remuneration, culinary incentives, and digital payslips.</p>
+            </div>
+            <span class="badge bg-black text-white px-3 py-2 rounded-pill font-mono">
+              RECORDS: <?= count($chefPayouts) ?>
+            </span>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="background:transparent;">
+              <thead class="text-muted small text-uppercase" style="border-bottom: 2px solid #000000;">
+                <tr>
+                  <th class="font-mono">Payout Ref</th>
+                  <th>Period</th>
+                  <th>Base Stipend</th>
+                  <th>Incentives</th>
+                  <th>Deductions</th>
+                  <th>Net Paid</th>
+                  <th>Method</th>
+                  <th>Disbursed Date</th>
+                  <th>Status</th>
+                  <th class="text-end">Payslip</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (empty($chefPayouts)): ?>
+                  <tr>
+                    <td colspan="10" class="text-center py-5 text-muted">No salary payouts recorded for this chef profile yet.</td>
+                  </tr>
+                <?php else: ?>
+                  <?php foreach ($chefPayouts as $p): ?>
+                    <tr>
+                      <td>
+                        <span class="font-mono fw-bold text-dark">#PAY-<?= (int)$p['payout_id'] ?></span>
+                        <div class="font-mono text-muted small text-truncate" style="max-width:140px; font-size:0.7rem;">
+                          <?= e($p['transaction_reference'] ?: 'N/A') ?>
+                        </div>
+                      </td>
+
+                      <td>
+                        <div class="fw-bold text-dark"><?= e($p['month_year']) ?></div>
+                      </td>
+
+                      <td class="font-mono"><?= format_inr($p['base_amount']) ?></td>
+                      <td class="font-mono text-success">+<?= format_inr($p['incentives_amount']) ?></td>
+                      <td class="font-mono text-danger">-<?= format_inr($p['deductions_amount']) ?></td>
+
+                      <td>
+                        <div class="fw-bold font-mono text-dark fs-6"><?= format_inr($p['net_paid']) ?></div>
+                      </td>
+
+                      <td>
+                        <span class="badge bg-light text-dark border font-mono" style="font-size:0.72rem;">
+                          <?= e($p['payment_mode']) ?>
+                        </span>
+                      </td>
+
+                      <td class="text-muted small font-mono">
+                        <?= date('d M Y, h:i A', strtotime($p['paid_at'])) ?>
+                      </td>
+
+                      <td>
+                        <span class="badge bg-black text-white rounded-pill px-2 py-1 font-mono" style="font-size:0.68rem;">
+                          <?= e($p['payout_status']) ?>
+                        </span>
+                      </td>
+
+                      <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-noir-outline px-3" data-bs-toggle="modal" data-bs-target="#payslipModal<?= (int)$p['payout_id'] ?>">
+                          <i class="bi bi-file-earmark-text me-1"></i> Payslip
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- Payslip Modal -->
+                    <div class="modal fade" id="payslipModal<?= (int)$p['payout_id'] ?>" tabindex="-1" aria-hidden="true">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content modal-content-noir border-2 border-dark">
+                          <div class="modal-header border-bottom border-dark pb-3">
+                            <div>
+                              <h5 class="modal-title font-outfit fw-bold text-dark mb-0">Zippy Operations | Culinary Payslip</h5>
+                              <span class="text-muted small font-mono">Disbursement Advice &bull; <?= e($p['month_year']) ?></span>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                          </div>
+                          <div class="modal-body p-4 text-start font-mono small">
+                            <div class="d-flex justify-content-between mb-2">
+                              <span class="text-muted">Employee:</span>
+                              <strong><?= e($chefProfile['full_name'] ?? 'Chef') ?></strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                              <span class="text-muted">Designation:</span>
+                              <span><?= e($chefProfile['designation'] ?? 'Kitchen Staff') ?></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-3">
+                              <span class="text-muted">Department:</span>
+                              <span>Kitchen Atelier / WSJF</span>
+                            </div>
+
+                            <hr class="border-dark">
+
+                            <div class="d-flex justify-content-between mb-2">
+                              <span>Base Salary:</span>
+                              <strong><?= format_inr($p['base_amount']) ?></strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 text-success">
+                              <span>Cooking & Volume Incentives:</span>
+                              <strong>+<?= format_inr($p['incentives_amount']) ?></strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 text-danger">
+                              <span>Deductions:</span>
+                              <strong>-<?= format_inr($p['deductions_amount']) ?></strong>
+                            </div>
+
+                            <hr class="border-dark">
+
+                            <div class="d-flex justify-content-between mb-2 fs-6">
+                              <span class="fw-bold">Net Disbursed Amount:</span>
+                              <span class="fw-bold text-dark"><?= format_inr($p['net_paid']) ?></span>
+                            </div>
+
+                            <div class="p-2 bg-light border border-dark rounded mt-3" style="font-size:0.75rem;">
+                              <div>Mode: <strong><?= e($p['payment_mode']) ?></strong></div>
+                              <div>Ref: <strong><?= e($p['transaction_reference']) ?></strong></div>
+                              <div>Paid At: <strong><?= date('d M Y, h:i A', strtotime($p['paid_at'])) ?></strong></div>
+                              <?php if (!empty($p['notes'])): ?>
+                                <div class="mt-1 text-muted">Notes: <?= e($p['notes']) ?></div>
+                              <?php endif; ?>
+                            </div>
+                          </div>
+                          <div class="modal-footer border-top border-dark pt-3">
+                            <button type="button" class="btn btn-noir-outline rounded-pill px-3" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-noir-primary rounded-pill px-4" onclick="window.print()">
+                              <i class="bi bi-printer me-1"></i> Print Payslip
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <script>
+        function filterHistoryTable() {
+          const q = document.getElementById('kdsHistorySearchInput').value.toLowerCase().trim();
+          const rows = document.querySelectorAll('.history-table-row');
+          rows.forEach(r => {
+            const s = r.getAttribute('data-search') || '';
+            r.style.display = (!q || s.includes(q)) ? '' : 'none';
+          });
+        }
+      </script>
+</div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

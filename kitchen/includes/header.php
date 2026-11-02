@@ -441,6 +441,9 @@
           <span class="live-dot"></span>
           <span class="small font-mono fw-bold" style="font-size: 0.72rem; letter-spacing:0.06em; color:#000000;">STATION ONLINE</span>
         </div>
+        <div class="d-none d-md-flex align-items-center gap-1 px-2 py-1 rounded-pill" style="background:#FFF8E7; border:1px solid #FFE082; font-size:0.72rem; color:#B78103; font-weight:700;">
+          <i class="fa-solid fa-hat-chef"></i> KITCHEN SESSION SCOPE
+        </div>
       </div>
 
       <!-- Controls & Profile -->

@@ -8,6 +8,7 @@
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/functions.php';
 
+$currentUser = current_user();
 $dbStatus = checkDBStatus();
 $dishCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `menu_items`") : 0;
 $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `orders`") : 0;
@@ -137,12 +138,146 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <p class="text-muted small">All portals share a centralized MySQL 8.0 database engine with real-time transactional synchronization</p>
       </div>
 
+      <?php $portalActors = get_all_portal_actors(); ?>
+      <!-- College Project Viva Mode: Multi-Actor Simultaneous Sessions in Same Browser -->
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-5 border-start border-4 border-success">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 border-bottom pb-3 mb-4">
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge rounded-pill bg-success px-3 py-1 fw-bold">🎓 Viva Presentation Mode</span>
+              <span class="badge rounded-pill bg-light text-dark border px-2 py-1 small">Same Browser Multi-Session Active</span>
+            </div>
+            <h5 class="fw-bold font-outfit text-dark mt-2 mb-1">Multi-Actor Concurrent Workspace</h5>
+            <p class="text-muted small mb-0">Customer, Kitchen Chef, Delivery Rider, and Admin operate in isolated session scopes. You can keep all 4 open in different tabs of the same browser without login conflicts.</p>
+          </div>
+          <div>
+            <button type="button" class="btn btn-dark rounded-pill px-4 py-2 fw-bold shadow-sm" onclick="launchAllPortals()">
+              <i class="bi bi-window-stack text-warning me-2"></i>Launch All 4 Tabs
+            </button>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <!-- Actor 1: Customer -->
+          <div class="col-md-3">
+            <div class="p-3 rounded-3 border bg-light h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="small fw-bold text-success"><i class="bi bi-person-fill me-1"></i>CUSTOMER</span>
+                  <?php if (!empty($portalActors['customer'])): ?>
+                    <span class="badge bg-success rounded-pill px-2 py-0">Active</span>
+                  <?php else: ?>
+                    <span class="badge bg-secondary rounded-pill px-2 py-0">Offline</span>
+                  <?php endif; ?>
+                </div>
+                <div class="fw-bold text-dark small text-truncate">
+                  <?= !empty($portalActors['customer']) ? e($portalActors['customer']['name']) : 'Pooja JP (Customer)' ?>
+                </div>
+                <div class="text-muted small" style="font-size:0.75rem;">pooja@example.com</div>
+              </div>
+              <div class="mt-3">
+                <a href="<?= CUSTOMER_URL ?>/<?= !empty($portalActors['customer']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-success w-100 rounded-pill fw-semibold" target="_blank" style="background:#2E6F40; border-color:#2E6F40;">
+                  <?= !empty($portalActors['customer']) ? 'Open Customer Tab ↗' : '1-Click Launch ↗' ?>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actor 2: Kitchen Chef -->
+          <div class="col-md-3">
+            <div class="p-3 rounded-3 border bg-light h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="small fw-bold text-warning"><i class="fa-solid fa-hat-chef me-1"></i>KITCHEN CHEF</span>
+                  <?php if (!empty($portalActors['kitchen'])): ?>
+                    <span class="badge bg-warning text-dark rounded-pill px-2 py-0">Active</span>
+                  <?php else: ?>
+                    <span class="badge bg-secondary rounded-pill px-2 py-0">Offline</span>
+                  <?php endif; ?>
+                </div>
+                <div class="fw-bold text-dark small text-truncate">
+                  <?= !empty($portalActors['kitchen']) ? e($portalActors['kitchen']['name']) : 'Chef Sanjeev' ?>
+                </div>
+                <div class="text-muted small" style="font-size:0.75rem;">chef@zippy.com</div>
+              </div>
+              <div class="mt-3">
+                <a href="<?= KITCHEN_URL ?>/<?= !empty($portalActors['kitchen']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-warning text-dark w-100 rounded-pill fw-semibold" target="_blank">
+                  <?= !empty($portalActors['kitchen']) ? 'Open Kitchen Tab ↗' : '1-Click Launch ↗' ?>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actor 3: Delivery Rider -->
+          <div class="col-md-3">
+            <div class="p-3 rounded-3 border bg-light h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="small fw-bold text-info"><i class="bi bi-bicycle me-1"></i>DELIVERY RIDER</span>
+                  <?php if (!empty($portalActors['delivery'])): ?>
+                    <span class="badge bg-info text-dark rounded-pill px-2 py-0">Active</span>
+                  <?php else: ?>
+                    <span class="badge bg-secondary rounded-pill px-2 py-0">Offline</span>
+                  <?php endif; ?>
+                </div>
+                <div class="fw-bold text-dark small text-truncate">
+                  <?= !empty($portalActors['delivery']) ? e($portalActors['delivery']['name']) : 'Suresh Kumar (Rider)' ?>
+                </div>
+                <div class="text-muted small" style="font-size:0.75rem;">rider@zippy.com</div>
+              </div>
+              <div class="mt-3">
+                <a href="<?= DELIVERY_URL ?>/<?= !empty($portalActors['delivery']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-info text-dark w-100 rounded-pill fw-semibold" target="_blank">
+                  <?= !empty($portalActors['delivery']) ? 'Open Rider Tab ↗' : '1-Click Launch ↗' ?>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actor 4: Administrator -->
+          <div class="col-md-3">
+            <div class="p-3 rounded-3 border bg-light h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="small fw-bold text-danger"><i class="bi bi-shield-lock-fill me-1"></i>ADMINISTRATOR</span>
+                  <?php if (!empty($portalActors['admin'])): ?>
+                    <span class="badge bg-danger rounded-pill px-2 py-0">Active</span>
+                  <?php else: ?>
+                    <span class="badge bg-secondary rounded-pill px-2 py-0">Offline</span>
+                  <?php endif; ?>
+                </div>
+                <div class="fw-bold text-dark small text-truncate">
+                  <?= !empty($portalActors['admin']) ? e($portalActors['admin']['name']) : 'Pooja JP (Admin)' ?>
+                </div>
+                <div class="text-muted small" style="font-size:0.75rem;">admin@zippy.com</div>
+              </div>
+              <div class="mt-3">
+                <a href="<?= ADMIN_URL ?>/<?= !empty($portalActors['admin']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-danger w-100 rounded-pill fw-semibold" target="_blank">
+                  <?= !empty($portalActors['admin']) ? 'Open Admin Tab ↗' : '1-Click Launch ↗' ?>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      function launchAllPortals() {
+        window.open('<?= CUSTOMER_URL ?>/login.php?demo=1', '_blank');
+        window.open('<?= KITCHEN_URL ?>/login.php?demo=1', '_blank');
+        window.open('<?= DELIVERY_URL ?>/login.php?demo=1', '_blank');
+        window.open('<?= ADMIN_URL ?>/login.php?demo=1', '_blank');
+      }
+      </script>
+
       <div class="row g-4 mb-5">
         
         <!-- Portal 1: Customer Storefront -->
         <div class="col-md-6 col-lg">
           <div class="card h-100 p-4 portal-card text-center d-flex flex-column justify-content-between">
             <div>
+              <div class="d-flex justify-content-end mb-2">
+                <span class="badge bg-success bg-opacity-25 text-success small">Role: CUSTOMER</span>
+              </div>
               <div class="icon-box mx-auto mb-3" style="background: #EDFBF2; color: #2E6F40;">
                 <i class="fa-solid fa-basket-shopping"></i>
               </div>
@@ -161,6 +296,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <div class="col-md-6 col-lg">
           <div class="card h-100 p-4 portal-card text-center d-flex flex-column justify-content-between border-success">
             <div>
+              <div class="d-flex justify-content-end mb-2">
+                <span class="badge bg-info bg-opacity-25 text-dark small">Role: RIDER</span>
+              </div>
               <div class="icon-box mx-auto mb-3" style="background: #CEFFDC; color: #243E2C;">
                 <i class="fa-solid fa-motorcycle"></i>
               </div>
@@ -179,6 +317,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <div class="col-md-6 col-lg">
           <div class="card h-100 p-4 portal-card text-center d-flex flex-column justify-content-between border-warning">
             <div>
+              <div class="d-flex justify-content-end mb-2">
+                <span class="badge bg-warning bg-opacity-25 text-dark small">Role: KITCHEN</span>
+              </div>
               <div class="icon-box mx-auto mb-3" style="background: #fffbe6; color: #E5A100;">
                 <i class="fa-solid fa-fire-burner"></i>
               </div>
@@ -197,6 +338,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <div class="col-md-6 col-lg">
           <div class="card h-100 p-4 portal-card text-center d-flex flex-column justify-content-between">
             <div>
+              <div class="d-flex justify-content-end mb-2">
+                <span class="badge bg-danger bg-opacity-25 text-danger small">Role: ADMIN</span>
+              </div>
               <div class="icon-box mx-auto mb-3" style="background: #eef4ff; color: #243E2C;">
                 <i class="bi bi-speedometer2"></i>
               </div>
@@ -215,6 +359,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <div class="col-md-6 col-lg">
           <div class="card h-100 p-4 portal-card text-center d-flex flex-column justify-content-between">
             <div>
+              <div class="d-flex justify-content-end mb-2">
+                <span class="badge bg-danger bg-opacity-25 text-danger small">Role: ADMIN</span>
+              </div>
               <div class="icon-box mx-auto mb-3" style="background: #fdf2f8; color: #be185d;">
                 <i class="bi bi-graph-up-arrow"></i>
               </div>

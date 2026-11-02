@@ -16,6 +16,10 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
+// Prevent browser from caching dynamic order dashboard state
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+
 // Enforce Rider Authentication
 require_rider();
 $currentUser = current_user();
@@ -77,7 +81,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     SET `delivery_partner_name` = :rname,
                         `delivery_partner_phone` = :rphone,
                         `dispatched_at` = NOW(),
-                        `delivery_status` = 'IN_TRANSIT'
+                        `delivery_status` = 'IN_TRANSIT',
+                        `current_latitude` = 12.97840000,
+                        `current_longitude` = 77.64080000,
+                        `route_progress` = 0,
+                        `distance_remaining_km` = 2.40,
+                        `estimated_minutes_remaining` = 15
                     WHERE `order_id` = :id
                 ", [
                     ':rname' => $riderName,
@@ -88,8 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
                 db_query("
                     INSERT INTO `delivery_dispatches` 
-                    (`order_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`)
-                    VALUES (:id, :rname, :rphone, :otp, NOW(), NOW(), 'IN_TRANSIT')
+                    (`order_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`, `current_latitude`, `current_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`)
+                    VALUES (:id, :rname, :rphone, :otp, NOW(), NOW(), 'IN_TRANSIT', 12.97840000, 77.64080000, 0, 2.40, 15)
                 ", [
                     ':id' => $orderId,
                     ':rname' => $riderName,
@@ -153,6 +162,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() 
                 WHERE `order_id` = :id AND `payment_status` = 'PENDING'
             ", [':id' => $orderId]);
+
+            // Update money_transactions for COD
+            $payRec = db_fetch_one("SELECT * FROM `payments` WHERE `order_id` = :id", [':id' => $orderId]);
+            if ($payRec && $payRec['payment_mode'] === 'COD') {
+                $orderTotal = (float)($payRec['amount_paid'] ?? 0);
+                // Mark transaction as COMPLETED
+                db_query("
+                    UPDATE `money_transactions` 
+                    SET `status` = 'COMPLETED', `handled_by` = :hby, `notes` = CONCAT(COALESCE(notes, ''), ' [Cash collected by rider at doorstep]') 
+                    WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
+                ", [
+                    ':hby' => 'Rider: ' . ($currentUser['name'] ?? 'Delivery Partner'),
+                    ':id'  => $orderId
+                ]);
+                // Increase rider's cash-in-hand balance and count
+                db_query("
+                    UPDATE `staff_profiles` 
+                    SET `cod_balance` = `cod_balance` + :amt, `total_orders_handled` = `total_orders_handled` + 1 
+                    WHERE `user_id` = :uid
+                ", [
+                    ':amt' => $orderTotal,
+                    ':uid' => $currentUser['id']
+                ]);
+            }
 
             // Insert into audit trail
             db_query("

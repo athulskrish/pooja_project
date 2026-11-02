@@ -14,11 +14,87 @@ if (!ob_get_level()) {
     ob_start();
 }
 
-// Start session if not started
+/**
+ * Detect Current Operational Portal Context
+ * Enables Multi-Actor Isolated Sessions in the SAME browser window.
+ * Allows Customer, Admin, Delivery Rider, and Kitchen Chef to operate concurrently in separate tabs.
+ */
+function get_current_portal(): string {
+    $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '');
+    $uri = str_replace('\\', '/', $_SERVER['REQUEST_URI'] ?? '');
+    $combined = strtolower($script . ' ' . $uri);
+
+    if (str_contains($combined, '/admin/')) {
+        return 'admin';
+    }
+    if (str_contains($combined, '/kitchen/')) {
+        return 'kitchen';
+    }
+    if (str_contains($combined, '/delivery/')) {
+        return 'delivery';
+    }
+    if (str_contains($combined, '/customer/')) {
+        return 'customer';
+    }
+    if (str_contains($combined, '/api/')) {
+        return 'customer';
+    }
+
+    return 'customer'; // Default storefront / master launchpad
+}
+
+/**
+ * Retrieve Active User Info Across All 4 Portal Scopes
+ * Allows the Master Gateway (index.php) to monitor multi-actor presentation state
+ */
+function get_all_portal_actors(): array {
+    $portals = ['customer', 'kitchen', 'delivery', 'admin'];
+    $actors = [];
+    foreach ($portals as $p) {
+        $actorCookie = 'ZIPPY_ACTOR_' . strtoupper($p);
+        $cookieVal = $_COOKIE[$actorCookie] ?? null;
+        if (!empty($cookieVal)) {
+            $decoded = json_decode($cookieVal, true);
+            if (is_array($decoded) && !empty($decoded['id'])) {
+                $actors[$p] = $decoded;
+                continue;
+            }
+        }
+        $actors[$p] = null;
+    }
+    return $actors;
+}
+
+// Start session if not started with Isolated Session Cookie per Portal
 if (session_status() === PHP_SESSION_NONE) {
-    // Secure session cookie settings where possible
-    ini_set('session.cookie_httponly', 1);
-    ini_set('session.use_only_cookies', 1);
+    // Multi-Actor Session Isolation: Map portal context to dedicated session cookie
+    $portal = get_current_portal();
+    $sessionNames = [
+        'admin' => 'ZIPPY_ADMIN_SESS',
+        'kitchen' => 'ZIPPY_KITCHEN_SESS',
+        'delivery' => 'ZIPPY_RIDER_SESS',
+        'customer' => 'ZIPPY_CUSTOMER_SESS',
+    ];
+    $activeSessionName = $sessionNames[$portal] ?? 'ZIPPY_CUSTOMER_SESS';
+    session_name($activeSessionName);
+
+    // Secure session cookie settings across all portals and paths
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.use_only_cookies', '1');
+    
+    $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+    if (PHP_VERSION_ID >= 70300) {
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'domain' => '',
+            'secure' => $isSecure,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+    } else {
+        session_set_cookie_params(0, '/; samesite=Lax', '', $isSecure, true);
+    }
     session_start();
 }
 
@@ -50,6 +126,9 @@ if (!defined('BASE_URL')) {
     // If inside /customer or /admin or /delivery or /kitchen or /database, step one folder up
     $projectBase = preg_replace('#/(customer|admin|delivery|kitchen|database|config|includes|assets)(/.*)?$#', '', $scriptDir);
     $projectBase = rtrim($projectBase, '/');
+    if (!empty($projectBase) && !str_starts_with($projectBase, '/')) {
+        $projectBase = '/' . $projectBase;
+    }
     
     define('BASE_URL', $protocol . $host . $projectBase);
     define('CUSTOMER_URL', BASE_URL . '/customer');
@@ -145,7 +224,65 @@ function display_flash(): void {
 }
 
 /**
- * Authentication Helpers
+ * Role-Based Access Control (RBAC) Permissions Matrix
+ * Standardizes granular privileges across:
+ * - Role 1: ADMIN (Full operational and data authority)
+ * - Role 2: CUSTOMER (End-user storefront and order lifecycle)
+ * - Role 3: KITCHEN (KDS queue, prep advances, 86-ing stock, KOT)
+ * - Role 4: RIDER (Fleet dispatches, GPS routing, doorstep OTP handshake)
+ */
+const RBAC_PERMISSIONS = [
+    'ADMIN' => [
+        'view_admin_dashboard',
+        'manage_dishes',
+        'manage_categories',
+        'manage_users',
+        'update_user_roles',
+        'view_reports',
+        'view_audit_trail',
+        'manage_faqs',
+        'manage_orders',
+        'view_kitchen',
+        'advance_kitchen_orders',
+        'toggle_dish_stock',
+        'print_kot',
+        'view_delivery',
+        'claim_delivery',
+        'verify_otp',
+        'browse_catalog',
+        'manage_cart',
+        'place_orders',
+        'view_all_orders',
+        'manage_addresses'
+    ],
+    'KITCHEN' => [
+        'view_kitchen',
+        'advance_kitchen_orders',
+        'toggle_dish_stock',
+        'print_kot',
+        'browse_catalog'
+    ],
+    'RIDER' => [
+        'view_delivery',
+        'claim_delivery',
+        'verify_otp',
+        'toggle_rider_duty',
+        'browse_catalog'
+    ],
+    'CUSTOMER' => [
+        'browse_catalog',
+        'manage_cart',
+        'place_orders',
+        'view_own_orders',
+        'track_own_orders',
+        'cancel_own_orders',
+        'rate_own_orders',
+        'manage_addresses'
+    ]
+];
+
+/**
+ * Authentication & RBAC Helpers
  */
 function is_logged_in(): bool {
     return !empty($_SESSION['user_id']);
@@ -155,13 +292,42 @@ function current_user(): ?array {
     if (!is_logged_in()) {
         return null;
     }
+    $userName = $_SESSION['user_name'] ?? 'User';
+    $userPhone = $_SESSION['user_phone'] ?? '';
     return [
         'id' => $_SESSION['user_id'],
-        'name' => $_SESSION['user_name'] ?? 'User',
+        'name' => $userName,
+        'full_name' => $userName,
         'email' => $_SESSION['user_email'] ?? '',
+        'phone' => $userPhone,
+        'phone_number' => $userPhone,
         'role_id' => $_SESSION['role_id'] ?? 2,
-        'role_name' => $_SESSION['role_name'] ?? 'CUSTOMER'
+        'role_name' => strtoupper($_SESSION['role_name'] ?? 'CUSTOMER')
     ];
+}
+
+function has_role(string|array $roles): bool {
+    if (!is_logged_in()) {
+        return false;
+    }
+    $currentRole = strtoupper($_SESSION['role_name'] ?? '');
+    if (is_array($roles)) {
+        $normalized = array_map('strtoupper', $roles);
+        return in_array($currentRole, $normalized, true);
+    }
+    return $currentRole === strtoupper($roles);
+}
+
+function has_permission(string $permission): bool {
+    if (!is_logged_in()) {
+        return false;
+    }
+    $role = strtoupper($_SESSION['role_name'] ?? '');
+    return in_array($permission, RBAC_PERMISSIONS[$role] ?? [], true);
+}
+
+function check_permission(string $permission): bool {
+    return has_permission($permission);
 }
 
 function is_admin(): bool {
@@ -189,30 +355,84 @@ function require_login(string $redirect = null): void {
     }
 }
 
-function require_admin(): void {
-    if (!is_admin()) {
-        set_flash('danger', 'Access denied. Administrator privileges required.');
-        header("Location: " . ADMIN_URL . '/login.php');
+function require_role(string|array $roles, ?string $redirect = null): void {
+    if (!is_logged_in()) {
+        set_flash('warning', 'Please sign in to access that protected portal.');
+        $target = $redirect ?: CUSTOMER_URL . '/login.php';
+        header("Location: " . $target);
         exit;
     }
+    
+    if (!has_role($roles)) {
+        $allowedList = is_array($roles) ? implode(', ', $roles) : $roles;
+        set_flash('danger', "Access Denied: Your account role does not have permission to access that area. (Required: {$allowedList})");
+        
+        $userRole = strtoupper($_SESSION['role_name'] ?? '');
+        $home = match($userRole) {
+            'ADMIN' => ADMIN_URL . '/index.php',
+            'KITCHEN' => KITCHEN_URL . '/index.php',
+            'RIDER' => DELIVERY_URL . '/index.php',
+            default => CUSTOMER_URL . '/index.php'
+        };
+        header("Location: " . $home);
+        exit;
+    }
+}
+
+function require_admin(): void {
+    require_role('ADMIN', ADMIN_URL . '/login.php');
 }
 
 function require_rider(string $redirect = null): void {
-    if (!is_rider()) {
-        set_flash('warning', 'Please sign in with a Delivery Partner / Rider account.');
-        $target = $redirect ?: DELIVERY_URL . '/login.php';
-        header("Location: " . $target);
-        exit;
-    }
+    require_role(['RIDER', 'ADMIN'], $redirect ?: DELIVERY_URL . '/login.php');
 }
 
 function require_kitchen(string $redirect = null): void {
-    if (!is_kitchen() && !is_admin()) {
-        set_flash('warning', 'Please sign in with a Kitchen Chef or Admin account.');
-        $target = $redirect ?: KITCHEN_URL . '/login.php';
-        header("Location: " . $target);
-        exit;
+    require_role(['KITCHEN', 'ADMIN'], $redirect ?: KITCHEN_URL . '/login.php');
+}
+
+function require_customer(string $redirect = null): void {
+    require_role(['CUSTOMER', 'ADMIN'], $redirect ?: CUSTOMER_URL . '/login.php');
+}
+
+/**
+ * Standardized Role Badge HTML Generator
+ */
+function get_role_badge(string $roleName): string {
+    $role = strtoupper(trim($roleName));
+    return match($role) {
+        'ADMIN' => '<span class="badge bg-danger px-2 py-1 rounded-pill"><i class="bi bi-shield-lock-fill me-1"></i>ADMIN</span>',
+        'KITCHEN' => '<span class="badge bg-warning text-dark px-2 py-1 rounded-pill"><i class="fa-solid fa-fire-burner me-1"></i>KITCHEN CHEF</span>',
+        'RIDER' => '<span class="badge bg-info text-dark px-2 py-1 rounded-pill"><i class="bi bi-bicycle me-1"></i>DELIVERY RIDER</span>',
+        'CUSTOMER' => '<span class="badge bg-success bg-opacity-25 text-success px-2 py-1 rounded-pill"><i class="bi bi-person me-1"></i>CUSTOMER</span>',
+        default => '<span class="badge bg-secondary px-2 py-1 rounded-pill">' . e($role) . '</span>'
+    };
+}
+
+/**
+ * Role-Based Order Resource Authorization Check
+ * Prevents Insecure Direct Object Reference (IDOR)
+ */
+function can_access_order(int|array $orderOrId, ?int $userId = null): bool {
+    if (is_admin() || is_kitchen() || is_rider()) {
+        return true;
     }
+    if ($userId === null) {
+        $cur = current_user();
+        if (!$cur) {
+            return false;
+        }
+        $userId = (int)$cur['id'];
+    }
+
+    $ownerId = null;
+    if (is_array($orderOrId)) {
+        $ownerId = (int)($orderOrId['user_id'] ?? 0);
+    } else {
+        $ownerId = (int)db_fetch_val("SELECT `user_id` FROM `orders` WHERE `order_id` = :id", [':id' => (int)$orderOrId]);
+    }
+
+    return $ownerId === (int)$userId;
 }
 
 /**

@@ -1,11 +1,11 @@
 <?php
 /**
- * Kitchen Display System (KDS) - Redirect to Dedicated Portal
+ * Admin Kitchen Operations - Redirect to Admin Live Orders
  * Zippy - Online Food Ordering Platform
  */
 
 require_once __DIR__ . '/../config/config.php';
 
-// Redirect to dedicated standalone Kitchen operations portal
-header("Location: " . KITCHEN_URL . "/index.php");
+// Redirect to Admin Live Orders preparation section
+header("Location: " . ADMIN_URL . "/orders.php?status=COOKING");
 exit;

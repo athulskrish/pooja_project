@@ -8,10 +8,26 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-// Redirect if already logged in as a Rider
-if (is_rider()) {
+// Prevent browser from caching auth state
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+
+// Redirect if already logged in as a Rider or Admin
+if (is_rider() || is_admin()) {
+    session_write_close();
     header("Location: " . DELIVERY_URL . "/index.php");
     exit;
+}
+
+// 1-Click Presentation Access Mode (?demo=1)
+if (isset($_GET['demo']) && $_GET['demo'] == '1') {
+    $result = attempt_login('rider@zippy.com', 'password123');
+    if ($result['success']) {
+        $_SESSION['rider_on_duty'] = true;
+        set_flash('success', 'Authenticated as Delivery Rider (Suresh Kumar) in dedicated Fleet session.');
+        header("Location: " . DELIVERY_URL . "/index.php");
+        exit;
+    }
 }
 
 $error = '';
@@ -23,11 +39,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($email) || empty($password)) {
         $error = 'Please provide both your rider email and password.';
     } else {
-        $result = attempt_login($email, $password, 'RIDER');
+        $result = attempt_login($email, $password);
         if ($result['success']) {
-            set_flash('success', "Welcome back, {$result['user']['full_name']}! You are on duty.");
-            header("Location: " . DELIVERY_URL . "/index.php");
-            exit;
+            $role = strtoupper($result['user']['role_name'] ?? '');
+            if ($role === 'RIDER' || $role === 'ADMIN') {
+                $_SESSION['rider_on_duty'] = true;
+                set_flash('success', "Welcome back, {$result['user']['full_name']}! You are on duty.");
+                session_write_close();
+                header("Location: " . DELIVERY_URL . "/index.php");
+                exit;
+            } else {
+                logout_user();
+                $error = "Access denied. The '{$role}' account does not possess Delivery Partner privileges.";
+            }
         } else {
             $error = $result['message'];
         }

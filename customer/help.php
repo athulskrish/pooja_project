@@ -181,7 +181,7 @@ if (empty($dbFaqs)) {
 
             <div class="mb-3">
               <label class="form-label small fw-bold">Order ID (If applicable)</label>
-              <input type="text" name="order_id" class="form-control rounded-3" placeholder="#ZIP-1002">
+              <input type="text" name="order_id" class="form-control rounded-3" placeholder="#ZIP-1002" value="<?= e($_GET['order_id'] ?? '') ?>">
             </div>
 
             <div class="mb-3">

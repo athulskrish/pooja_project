@@ -15,6 +15,16 @@ if (is_kitchen() || is_admin()) {
     exit;
 }
 
+// 1-Click Presentation Access Mode (?demo=1)
+if (isset($_GET['demo']) && $_GET['demo'] == '1') {
+    $result = attempt_login('chef@zippy.com', 'password123');
+    if ($result['success']) {
+        set_flash('success', 'Authenticated as Kitchen Chef (Chef Sanjeev) in dedicated Kitchen session.');
+        header("Location: " . KITCHEN_URL . "/index.php");
+        exit;
+    }
+}
+
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -32,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $role = strtoupper($result['user']['role_name'] ?? '');
                 if ($role === 'KITCHEN' || $role === 'ADMIN') {
                     set_flash('success', "Welcome back, Chef {$result['user']['full_name']}! Kitchen station ready.");
+                    session_write_close();
                     header("Location: " . KITCHEN_URL . "/index.php");
                     exit;
                 } else {

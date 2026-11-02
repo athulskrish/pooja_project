@@ -12,20 +12,34 @@ $currentUser = current_user();
 $pageTitle = $pageTitle ?? 'Admin Console - Zippy';
 $activePage = $activePage ?? 'dashboard';
 
-// Enforce Admin / Staff Access (allow roles: ADMIN, KITCHEN, RIDER)
-if (!is_logged_in() || (!is_admin() && ($currentUser['role_name'] ?? '') !== 'KITCHEN')) {
-    // If not logged in, redirect to admin login
-    if (!str_contains($_SERVER['SCRIPT_NAME'], 'login.php')) {
-        header("Location: " . ADMIN_URL . "/login.php");
-        exit;
-    }
+// Enforce strict Role-Based Access Control: Administrator privileges required (Role 1: ADMIN)
+if (!str_contains($_SERVER['SCRIPT_NAME'], 'login.php')) {
+    require_admin();
 }
 
-// Active Kitchen Tickets count
-$activeOrdersCount = db_fetch_val("
+// Live Operations counts
+$liveOrdersCount = (int)(db_fetch_val("
+    SELECT COUNT(*) FROM `orders` 
+    WHERE `order_status` IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')
+") ?: 0);
+
+$preparingOrdersCount = (int)(db_fetch_val("
     SELECT COUNT(*) FROM `orders` 
     WHERE `order_status` IN ('CONFIRMED', 'COOKING')
-") ?: 0;
+") ?: 0);
+
+$deliveringOrdersCount = (int)(db_fetch_val("
+    SELECT COUNT(*) FROM `orders` 
+    WHERE `order_status` = 'OUT_FOR_DELIVERY'
+") ?: 0);
+
+$readyOrdersCount = (int)(db_fetch_val("
+    SELECT COUNT(*) FROM `orders` 
+    WHERE `order_status` = 'READY'
+") ?: 0);
+
+// Backward compatibility alias
+$activeOrdersCount = $liveOrdersCount;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -51,10 +65,17 @@ $activeOrdersCount = db_fetch_val("
 
   <!-- Chart.js CDN for Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Leaflet Map CSS & JS for Live Rider Telemetry -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 
   <div class="admin-layout">
+    
+    <!-- Mobile Sidebar Backdrop -->
+    <div class="admin-sidebar-backdrop" id="adminSidebarBackdrop"></div>
     
     <!-- =======================================================================
          ADMIN SIDEBAR
@@ -73,6 +94,7 @@ $activeOrdersCount = db_fetch_val("
       </div>
 
       <ul class="admin-nav-list">
+        <li class="m3-nav-subheader">Operations Hub</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/index.php" class="admin-nav-link <?= ($activePage === 'dashboard') ? 'active' : '' ?>">
             <i class="bi bi-speedometer2"></i>
@@ -84,17 +106,42 @@ $activeOrdersCount = db_fetch_val("
           <a href="<?= ADMIN_URL ?>/orders.php" class="admin-nav-link <?= ($activePage === 'orders') ? 'active' : '' ?>">
             <i class="bi bi-receipt"></i>
             <span>Live Orders</span>
-            <?php if ($activeOrdersCount > 0): ?>
-              <span class="badge bg-danger rounded-pill ms-auto"><?= (int)$activeOrdersCount ?></span>
+            <?php if ($liveOrdersCount > 0): ?>
+              <span class="badge bg-danger rounded-pill ms-auto" title="<?= (int)$preparingOrdersCount ?> preparing, <?= (int)$deliveringOrdersCount ?> delivering">
+                <?= (int)$liveOrdersCount ?>
+              </span>
             <?php endif; ?>
           </a>
         </li>
 
         <li class="admin-nav-item">
-          <a href="<?= KITCHEN_URL ?>/index.php" class="admin-nav-link" target="_blank">
-            <i class="fa-solid fa-fire-burner"></i>
-            <span>Kitchen KDS Portal</span>
-            <span class="badge bg-warning text-dark rounded-pill ms-auto">LIVE</span>
+          <a href="<?= ADMIN_URL ?>/kitchen-view.php" class="admin-nav-link <?= ($activePage === 'kitchen_view') ? 'active' : '' ?>">
+            <i class="fa-solid fa-users-gear text-warning"></i>
+            <span>Kitchen View</span>
+            <span class="badge bg-warning text-dark rounded-pill ms-auto" style="font-size:0.65rem;">Staff & Salary</span>
+          </a>
+        </li>
+
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/delivery-view.php" class="admin-nav-link <?= ($activePage === 'delivery_view') ? 'active' : '' ?>">
+            <i class="bi bi-bicycle text-info"></i>
+            <span>Delivery View</span>
+            <span class="badge bg-info text-dark rounded-pill ms-auto" style="font-size:0.65rem;">Fleet & Salary</span>
+          </a>
+        </li>
+
+        <li class="m3-nav-subheader">Commerce & Finance</li>
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/financial-transactions.php" class="admin-nav-link <?= ($activePage === 'finance') ? 'active' : '' ?>">
+            <i class="bi bi-cash-coin text-success"></i>
+            <span>Money & COD Ledger</span>
+          </a>
+        </li>
+
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/dishes.php" class="admin-nav-link <?= ($activePage === 'dishes') ? 'active' : '' ?>">
+            <i class="fa-solid fa-bowl-food"></i>
+            <span>Dishes & Stock</span>
           </a>
         </li>
 
@@ -105,10 +152,11 @@ $activeOrdersCount = db_fetch_val("
           </a>
         </li>
 
+        <li class="m3-nav-subheader">Insights & Support</li>
         <li class="admin-nav-item">
-          <a href="<?= ADMIN_URL ?>/dishes.php" class="admin-nav-link <?= ($activePage === 'dishes') ? 'active' : '' ?>">
-            <i class="fa-solid fa-bowl-food"></i>
-            <span>Dish Catalog & Stock</span>
+          <a href="<?= ADMIN_URL ?>/reports.php" class="admin-nav-link <?= ($activePage === 'reports') ? 'active' : '' ?>">
+            <i class="bi bi-graph-up-arrow"></i>
+            <span>Executive BI Reports</span>
           </a>
         </li>
 
@@ -120,16 +168,16 @@ $activeOrdersCount = db_fetch_val("
         </li>
 
         <li class="admin-nav-item">
-          <a href="<?= ADMIN_URL ?>/reports.php" class="admin-nav-link <?= ($activePage === 'reports') ? 'active' : '' ?>">
-            <i class="bi bi-graph-up-arrow"></i>
-            <span>Executive BI Reports</span>
+          <a href="<?= ADMIN_URL ?>/audit-logs.php" class="admin-nav-link <?= ($activePage === 'audit_logs') ? 'active' : '' ?>">
+            <i class="bi bi-journal-text"></i>
+            <span>Order Audit Trail</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
-          <a href="<?= ADMIN_URL ?>/audit-logs.php" class="admin-nav-link <?= ($activePage === 'audit_logs') ? 'active' : '' ?>">
-            <i class="bi bi-journal-text"></i>
-            <span>Order Audit Trail</span>
+          <a href="<?= ADMIN_URL ?>/reviews.php" class="admin-nav-link <?= ($activePage === 'reviews') ? 'active' : '' ?>">
+            <i class="bi bi-star-fill text-warning"></i>
+            <span>Food Reviews ⭐</span>
           </a>
         </li>
 
@@ -141,27 +189,6 @@ $activeOrdersCount = db_fetch_val("
         </li>
 
         <li class="admin-nav-item mt-3 pt-3 border-top border-secondary border-opacity-25">
-          <a href="<?= CUSTOMER_URL ?>/index.php" class="admin-nav-link text-mint">
-            <i class="bi bi-shop"></i>
-            <span>Customer Storefront</span>
-          </a>
-        </li>
-
-        <li class="admin-nav-item">
-          <a href="<?= DELIVERY_URL ?>/index.php" class="admin-nav-link text-info">
-            <i class="bi bi-bicycle"></i>
-            <span>Delivery Fleet App</span>
-          </a>
-        </li>
-
-        <li class="admin-nav-item">
-          <a href="<?= BASE_URL ?>/database/seed.php" class="admin-nav-link text-white-50">
-            <i class="bi bi-database-check"></i>
-            <span>Database Seeder</span>
-          </a>
-        </li>
-
-        <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/logout.php" class="admin-nav-link text-danger">
             <i class="bi bi-box-arrow-right"></i>
             <span>Sign Out</span>
@@ -189,24 +216,73 @@ $activeOrdersCount = db_fetch_val("
       <!-- Top Bar -->
       <header class="admin-topbar d-flex align-items-center justify-content-between px-4 py-3 bg-white border-bottom shadow-sm">
         <div class="d-flex align-items-center gap-3">
-          <button class="btn btn-light d-lg-none" type="button" id="adminSidebarToggle">
+          <button class="btn btn-light d-lg-none" type="button" id="adminSidebarToggle" aria-label="Toggle Navigation">
             <i class="bi bi-list fs-5"></i>
           </button>
           <div class="fw-bold fs-5 text-dark font-outfit"><?= e($pageTitle) ?></div>
         </div>
 
         <div class="d-flex align-items-center gap-3">
-          <a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-outline-success btn-sm rounded-pill px-3" target="_blank">
-            <i class="bi bi-box-arrow-up-right me-1"></i> Live Storefront
-          </a>
+          <!-- Multi-Actor Session Scope Pill -->
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill small d-none d-sm-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_ADMIN_SESS">
+            <i class="bi bi-shield-lock-fill"></i> Admin Portal Session
+          </span>
 
+          <!-- Live Store Operations Status Indicator -->
+          <div class="d-none d-md-flex align-items-center gap-2 px-3 py-1 rounded-pill small fw-bold" style="background:#EDFBF2; color:#2E6F40; border:1px solid #CEFFDC;">
+            <span class="live-pulse-dot green"></span>
+            <span>Store Open & Live</span>
+          </div>
+
+          <!-- Live Operations Alerts Dropdown -->
           <div class="dropdown">
-            <button class="btn btn-light btn-sm rounded-circle d-flex align-items-center justify-content-center p-2" type="button" data-bs-toggle="dropdown">
+            <button class="btn btn-light btn-sm rounded-circle d-flex align-items-center justify-content-center p-2 position-relative" type="button" data-bs-toggle="dropdown" title="Live Operations Alerts">
               <i class="bi bi-bell fs-5 text-muted"></i>
+              <?php if ($liveOrdersCount > 0): ?>
+                <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle">
+                  <span class="visually-hidden">Active orders</span>
+                </span>
+              <?php endif; ?>
             </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 small">
-              <li class="dropdown-header fw-bold">Live Kitchen Notifications</li>
-              <li><a class="dropdown-item" href="<?= ADMIN_URL ?>/orders.php"><?= (int)$activeOrdersCount ?> orders currently in cooking stage</a></li>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-4 small p-2" style="min-width: 270px;">
+              <li class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex align-items-center justify-content-between">
+                <span><i class="bi bi-broadcast text-danger me-1"></i> Live Operations</span>
+                <span class="badge bg-danger rounded-pill"><?= (int)$liveOrdersCount ?> Active</span>
+              </li>
+              <li>
+                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center justify-content-between" href="<?= ADMIN_URL ?>/orders.php?status=COOKING">
+                  <span class="d-flex align-items-center gap-2">
+                    <span class="p-1 rounded-circle bg-warning bg-opacity-25 text-warning"><i class="bi bi-fire"></i></span>
+                    <span>Being Prepared</span>
+                  </span>
+                  <span class="badge bg-warning text-dark rounded-pill"><?= (int)$preparingOrdersCount ?></span>
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center justify-content-between" href="<?= ADMIN_URL ?>/orders.php?status=OUT_FOR_DELIVERY">
+                  <span class="d-flex align-items-center gap-2">
+                    <span class="p-1 rounded-circle bg-primary bg-opacity-25 text-primary"><i class="bi bi-bicycle"></i></span>
+                    <span>Out for Delivery</span>
+                  </span>
+                  <span class="badge bg-primary text-white rounded-pill"><?= (int)$deliveringOrdersCount ?></span>
+                </a>
+              </li>
+              <?php if ($readyOrdersCount > 0): ?>
+              <li>
+                <a class="dropdown-item rounded-3 py-2 d-flex align-items-center justify-content-between" href="<?= ADMIN_URL ?>/orders.php?status=READY">
+                  <span class="d-flex align-items-center gap-2">
+                    <span class="p-1 rounded-circle bg-success bg-opacity-25 text-success"><i class="bi bi-box-seam"></i></span>
+                    <span>Ready for Dispatch</span>
+                  </span>
+                  <span class="badge bg-success text-white rounded-pill"><?= (int)$readyOrdersCount ?></span>
+                </a>
+              </li>
+              <?php endif; ?>
+              <li class="border-top mt-2 pt-2">
+                <a class="dropdown-item rounded-3 text-center fw-bold text-success py-2" href="<?= ADMIN_URL ?>/orders.php">
+                  Manage Live Orders Hub &rarr;
+                </a>
+              </li>
             </ul>
           </div>
         </div>
