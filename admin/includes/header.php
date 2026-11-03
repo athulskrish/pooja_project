@@ -126,39 +126,39 @@ $liveOrdersCount = $orderKpis['live'];
           </a>
         </li>
 
-        <li class="m3-nav-subheader">Management & Support</li>
+        <li class="m3-nav-subheader">Administration</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/categories.php" class="admin-nav-link <?= ($activePage === 'categories') ? 'active' : '' ?>">
             <i class="bi bi-tags"></i>
-            <span>Food Categories</span>
+            <span>Categories</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/users.php" class="admin-nav-link <?= ($activePage === 'users') ? 'active' : '' ?>">
             <i class="bi bi-people"></i>
-            <span>User & Staff RBAC</span>
+            <span>Users & Staff</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/audit-logs.php" class="admin-nav-link <?= ($activePage === 'audit_logs') ? 'active' : '' ?>">
             <i class="bi bi-journal-text"></i>
-            <span>Order Audit Trail</span>
+            <span>Audit Trail</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/reviews.php" class="admin-nav-link <?= ($activePage === 'reviews') ? 'active' : '' ?>">
             <i class="bi bi-star-fill text-warning opacity-75"></i>
-            <span>Food Reviews</span>
+            <span>Reviews</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/faqs.php" class="admin-nav-link <?= ($activePage === 'faqs') ? 'active' : '' ?>">
             <i class="bi bi-question-diamond"></i>
-            <span>Dynamic FAQs Desk</span>
+            <span>FAQs</span>
           </a>
         </li>
 
