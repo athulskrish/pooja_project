@@ -177,3 +177,55 @@ $dbStatus = checkDBStatus();
   <div class="container-xl pt-3">
     <?php display_flash(); ?>
   </div>
+
+  <?php
+  // Check for any unreviewed delivered orders for logged-in customer
+  $unreviewedDeliveredOrder = null;
+  if (!empty($currentUser['id']) && basename($_SERVER['PHP_SELF']) !== 'rate-order.php' && basename($_SERVER['PHP_SELF']) !== 'order-status.php') {
+      $unreviewedDeliveredOrder = db_fetch_one("
+          SELECT o.order_id, o.order_number, o.placed_at, o.total_amount,
+                 d.delivered_at, d.delivery_partner_name
+          FROM `orders` o
+          LEFT JOIN `order_reviews` r ON o.order_id = r.order_id
+          LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+          WHERE o.user_id = :uid 
+            AND o.order_status = 'DELIVERED'
+            AND r.review_id IS NULL
+          ORDER BY COALESCE(d.delivered_at, o.placed_at) DESC
+          LIMIT 1
+      ", [':uid' => $currentUser['id']]);
+  }
+  ?>
+
+  <?php if ($unreviewedDeliveredOrder): ?>
+    <!-- Floating Review Request Toast for Delivered Order -->
+    <div id="unreviewedOrderPrompt" class="position-fixed bottom-0 end-0 m-3 p-3 bg-white rounded-4 shadow-lg border border-success d-flex align-items-center gap-3" style="z-index: 1050; max-width: 420px;">
+      <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0" style="width: 48px; height: 48px; background: #2E6F40;">
+        <i class="bi bi-star-fill text-warning fs-5"></i>
+      </div>
+      <div class="flex-grow-1">
+        <div class="fw-bold text-dark small mb-0">How was your meal?</div>
+        <div class="text-muted small" style="font-size: 0.76rem;">Order #ZIP-<?= (int)$unreviewedDeliveredOrder['order_id'] ?> was delivered! Please rate your food &amp; delivery rider.</div>
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$unreviewedDeliveredOrder['order_id'] ?>" class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background:#2E6F40; border-color:#2E6F40; font-size: 0.75rem;">
+            <i class="bi bi-star-fill me-1 text-warning"></i> Rate Food ⭐
+          </a>
+          <button type="button" class="btn btn-sm btn-light rounded-pill px-2 text-muted" style="font-size: 0.75rem;" onclick="dismissReviewToast(<?= (int)$unreviewedDeliveredOrder['order_id'] ?>)">
+            Later
+          </button>
+        </div>
+      </div>
+      <button type="button" class="btn-close btn-sm align-self-start" onclick="dismissReviewToast(<?= (int)$unreviewedDeliveredOrder['order_id'] ?>)"></button>
+    </div>
+    <script>
+      if (sessionStorage.getItem('dismiss_review_<?= (int)$unreviewedDeliveredOrder['order_id'] ?>') === '1') {
+        const el = document.getElementById('unreviewedOrderPrompt');
+        if (el) el.style.display = 'none';
+      }
+      function dismissReviewToast(oid) {
+        sessionStorage.setItem('dismiss_review_' + oid, '1');
+        const el = document.getElementById('unreviewedOrderPrompt');
+        if (el) el.style.display = 'none';
+      }
+    </script>
+  <?php endif; ?>

@@ -547,27 +547,105 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
 </main>
 
 <!-- Automatic Rating Prompt Modal (Sequence Diagram 4.4-B) -->
-<div class="modal fade" id="autoRatingPromptModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
-    <div class="modal-content border-0 rounded-4 shadow-lg text-center p-4">
-      <div class="rounded-circle d-inline-flex align-items-center justify-content-center mx-auto mb-3" style="width:70px; height:70px; background:#CEFFDC; color:#2E6F40;">
-        <i class="bi bi-star-fill fs-2"></i>
+<div class="modal fade" id="autoRatingPromptModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      
+      <!-- Modal Header Banner -->
+      <div class="p-3 text-center text-white" style="background: linear-gradient(135deg, #1C3322 0%, #2E6F40 100%);">
+        <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-white bg-opacity-20 p-2 mb-2" style="width: 52px; height: 52px;">
+          <i class="bi bi-star-fill fs-3 text-warning"></i>
+        </div>
+        <h5 class="fw-bold mb-0">Food Delivered! How Was Your Meal?</h5>
+        <p class="small text-white-50 mb-0">Order #ZIP-<?= (int)$order['order_id'] ?> &bull; Tell us how we did</p>
       </div>
-      <h4 class="fw-bold font-outfit text-dark mb-1">Order Delivered!</h4>
-      <p class="text-muted small mb-3">Your meal for Order #ZIP-<?= (int)$order['order_id'] ?> has arrived safely. Please take 10 seconds to rate food quality and courier service.</p>
-      <div class="d-flex justify-content-center gap-2 mb-4 text-warning fs-3">
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
+
+      <!-- Rating Form Body -->
+      <div class="p-4" id="modalRatingFormBody">
+        <form id="quickRatingForm" onsubmit="event.preventDefault(); submitQuickRatingModal();">
+          <input type="hidden" name="action" value="submit_rating">
+          <input type="hidden" name="is_ajax" value="1">
+          <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+          <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
+          <input type="hidden" name="food_rating" id="modalFoodRating" value="5">
+          <input type="hidden" name="rider_rating" id="modalRiderRating" value="5">
+          <input type="hidden" name="food_tags" id="modalFoodTags" value="">
+
+          <!-- 1. Food Taste & Quality Stars -->
+          <div class="text-center mb-3 p-3 rounded-3" style="background:#F7FAF8; border:1px solid #E2ECE5;">
+            <div class="small fw-bold text-muted text-uppercase mb-1" style="font-size:0.75rem;">1. Rate Food Taste &amp; Freshness</div>
+            <div class="d-flex justify-content-center gap-2 text-warning fs-2" id="modalFoodStarContainer" style="cursor:pointer;">
+              <i class="bi bi-star-fill modal-star" data-type="food" data-val="1"></i>
+              <i class="bi bi-star-fill modal-star" data-type="food" data-val="2"></i>
+              <i class="bi bi-star-fill modal-star" data-type="food" data-val="3"></i>
+              <i class="bi bi-star-fill modal-star" data-type="food" data-val="4"></i>
+              <i class="bi bi-star-fill modal-star" data-type="food" data-val="5"></i>
+            </div>
+            <div class="small fw-bold text-success mt-1" id="modalFoodRatingLabel">Outstanding &amp; Delicious! 🌟</div>
+          </div>
+
+          <!-- 2. Delivery Partner Rating -->
+          <div class="text-center mb-3 p-2 rounded-3 bg-light border">
+            <div class="d-flex justify-content-between align-items-center px-2">
+              <div class="text-start">
+                <div class="small fw-bold text-dark mb-0">Delivery Courier</div>
+                <div class="text-muted" style="font-size:0.72rem;"><?= e($order['delivery_partner_name'] ?: 'Zippy Express Rider') ?></div>
+              </div>
+              <div class="d-flex gap-1 text-warning fs-5" id="modalRiderStarContainer" style="cursor:pointer;">
+                <i class="bi bi-star-fill modal-rider-star" data-type="rider" data-val="1"></i>
+                <i class="bi bi-star-fill modal-rider-star" data-type="rider" data-val="2"></i>
+                <i class="bi bi-star-fill modal-rider-star" data-type="rider" data-val="3"></i>
+                <i class="bi bi-star-fill modal-rider-star" data-type="rider" data-val="4"></i>
+                <i class="bi bi-star-fill modal-rider-star" data-type="rider" data-val="5"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Compliment Tags -->
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-muted text-uppercase mb-1" style="font-size:0.72rem;">What did you like?</label>
+            <div class="d-flex flex-wrap gap-1" id="modalComplimentChips">
+              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip" data-tag="♨️ Piping Hot" onclick="toggleModalChip(this, '♨️ Piping Hot')">♨️ Piping Hot</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip" data-tag="⚡ Fast Delivery" onclick="toggleModalChip(this, '⚡ Fast Delivery')">⚡ Fast Delivery</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip" data-tag="📦 Neat Packaging" onclick="toggleModalChip(this, '📦 Neat Packaging')">📦 Neat Packaging</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip" data-tag="🌶️ Great Taste" onclick="toggleModalChip(this, '🌶️ Great Taste')">🌶️ Great Taste</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip" data-tag="😊 Polite Courier" onclick="toggleModalChip(this, '😊 Polite Courier')">😊 Polite Courier</button>
+            </div>
+          </div>
+
+          <!-- 4. Comments Input -->
+          <div class="mb-3">
+            <textarea name="comments" id="modalReviewComments" class="form-control rounded-3 small" rows="2" placeholder="Write a short compliment or review (optional)..."></textarea>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="btn btn-success w-100 rounded-pill py-2 fw-bold shadow-sm" id="btnSubmitModalReview" style="background:#2E6F40; border-color:#2E6F40;">
+            <i class="bi bi-star-fill me-1 text-warning"></i> Submit Review &amp; Rating
+          </button>
+
+          <div class="d-flex justify-content-between align-items-center mt-2 px-1">
+            <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$order['order_id'] ?>" class="small text-success fw-semibold text-decoration-none">
+              <i class="bi bi-pencil-square me-1"></i>Detailed Review &amp; Tip Rider &rarr;
+            </a>
+            <button type="button" class="btn btn-sm btn-link text-muted text-decoration-none small" data-bs-dismiss="modal">
+              Later
+            </button>
+          </div>
+        </form>
       </div>
-      <div class="d-flex justify-content-center gap-2">
-        <button type="button" class="btn btn-light rounded-pill px-4 text-muted" data-bs-dismiss="modal">Later</button>
-        <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
-          Rate Meal & Tip &rarr;
-        </a>
+
+      <!-- Success Thank You View (Hidden until submitted) -->
+      <div class="p-4 text-center d-none" id="modalRatingSuccessBody">
+        <div class="rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mx-auto mb-3" style="width:70px; height:70px; background:#CEFFDC; color:#2E6F40;">
+          <i class="bi bi-check-circle-fill fs-1 text-success"></i>
+        </div>
+        <h4 class="fw-bold font-outfit text-dark mb-1">Thank You For Your Review! ⭐</h4>
+        <p class="text-muted small mb-3">Your rating has been recorded with 5-star precision. Your feedback helps our kitchen chefs and riders maintain top culinary standards.</p>
+        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;" data-bs-dismiss="modal">
+          Done
+        </button>
       </div>
+
     </div>
   </div>
 </div>
@@ -946,6 +1024,96 @@ function playStatusChime() {
   });
   <?php endif; ?>
 })();
+
+// Interactive Quick Rating Modal Controller
+let selectedModalTags = [];
+const foodRatingLabels = {
+  1: 'Poor / Needs Attention 😞',
+  2: 'Below Average 😐',
+  3: 'Good Taste 👍',
+  4: 'Very Good & Fresh 😊',
+  5: 'Outstanding & Delicious! 🌟'
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Food star click handlers
+  document.querySelectorAll('.modal-star').forEach(star => {
+    star.addEventListener('click', function() {
+      const val = parseInt(this.getAttribute('data-val'));
+      document.getElementById('modalFoodRating').value = val;
+      document.querySelectorAll('.modal-star').forEach(s => {
+        const sVal = parseInt(s.getAttribute('data-val'));
+        if (sVal <= val) {
+          s.className = 'bi bi-star-fill text-warning modal-star';
+        } else {
+          s.className = 'bi bi-star text-muted opacity-50 modal-star';
+        }
+      });
+      const lbl = document.getElementById('modalFoodRatingLabel');
+      if (lbl) lbl.textContent = foodRatingLabels[val] || 'Outstanding! 🌟';
+    });
+  });
+
+  // Rider star click handlers
+  document.querySelectorAll('.modal-rider-star').forEach(star => {
+    star.addEventListener('click', function() {
+      const val = parseInt(this.getAttribute('data-val'));
+      document.getElementById('modalRiderRating').value = val;
+      document.querySelectorAll('.modal-rider-star').forEach(s => {
+        const sVal = parseInt(s.getAttribute('data-val'));
+        if (sVal <= val) {
+          s.className = 'bi bi-star-fill text-warning modal-rider-star';
+        } else {
+          s.className = 'bi bi-star text-muted opacity-50 modal-rider-star';
+        }
+      });
+    });
+  });
+});
+
+function toggleModalChip(btn, tag) {
+  const idx = selectedModalTags.indexOf(tag);
+  if (idx > -1) {
+    selectedModalTags.splice(idx, 1);
+    btn.className = 'btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small modal-chip';
+  } else {
+    selectedModalTags.push(tag);
+    btn.className = 'btn btn-success text-white btn-sm rounded-pill py-0 px-2 small modal-chip shadow-xs';
+  }
+  const input = document.getElementById('modalFoodTags');
+  if (input) input.value = selectedModalTags.join(', ');
+}
+
+async function submitQuickRatingModal() {
+  const form = document.getElementById('quickRatingForm');
+  const btn = document.getElementById('btnSubmitModalReview');
+  if (!form || !btn) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Recording Review...';
+
+  try {
+    const formData = new FormData(form);
+    const res = await fetch('<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= (int)$order['order_id'] ?>', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('modalRatingFormBody').classList.add('d-none');
+      document.getElementById('modalRatingSuccessBody').classList.remove('d-none');
+    } else {
+      alert(data.message || 'Failed to submit review.');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-star-fill me-1 text-warning"></i> Submit Review & Rating';
+    }
+  } catch (err) {
+    console.error('Rating submit error:', err);
+    // Fallback: regular submit
+    form.submit();
+  }
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

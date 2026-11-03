@@ -226,6 +226,7 @@
 
     // 5. Live Polling for New Orders
     let lastKnownIncomingId = <?= !empty($laneNew) ? max(array_column($laneNew, 'order_id')) : 0 ?>;
+    let lastKnownReadyCount = <?= (int)($countReady ?? 0) ?>;
 
     async function pollKitchenOrders() {
       try {
@@ -266,7 +267,12 @@
             playKitchenChime();
             showOrderBanner(data.latest_incoming_id);
             setTimeout(() => { window.location.reload(); }, 2000);
+          } else if (lastKnownReadyCount !== -1 && data.counts.ready !== lastKnownReadyCount) {
+            // Courier took ready food or kitchen marked food ready: sync swimlanes
+            lastKnownReadyCount = data.counts.ready;
+            setTimeout(() => { window.location.reload(); }, 1200);
           }
+          lastKnownReadyCount = data.counts.ready;
         }
       } catch (err) {
         console.error('Polling error:', err);

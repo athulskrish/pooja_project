@@ -7,7 +7,10 @@
 $pageTitle = 'Rate Your Food & Delivery';
 $activePage = 'orders';
 
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+$currentUser = current_user();
 
 $orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1001;
 
@@ -31,11 +34,24 @@ $existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` =
 
 $submitted = false;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_rating') {
+    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
+              || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
+
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid or expired session token.']);
+            exit;
+        }
         set_flash('danger', 'Invalid session token.');
     } else {
         // RBAC Access Check: Customer can only rate their own orders
         if ($currentUser && (int)($order['user_id'] ?? 0) !== (int)$currentUser['id'] && !is_admin()) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Access Denied: You can only submit ratings for your own orders.']);
+                exit;
+            }
             set_flash('danger', 'Access Denied: You can only submit ratings for orders placed under your own account.');
             header("Location: " . CUSTOMER_URL . "/order-history.php");
             exit;
@@ -112,12 +128,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                 set_flash('success', 'Thank you for your rating! Your food review has been permanently recorded with 5-star precision. ⭐');
                 // Refresh existing review state
                 $existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]);
+
+                if ($isAjax) {
+                    header('Content-Type: application/json');
+                    echo json_encode([
+                        'success' => true,
+                        'message' => 'Thank you for your rating! Your food review has been permanently recorded with 5-star precision. ⭐',
+                        'order_id' => $orderId,
+                        'food_rating' => $foodRating,
+                        'rider_rating' => $riderRating
+                    ]);
+                    exit;
+                }
             } catch (Exception $e) {
                 $submitted = true;
+                if ($isAjax) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => true, 'message' => 'Thank you for your rating! Your feedback helps us maintain top culinary standards.']);
+                    exit;
+                }
                 set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
             }
         } else {
             $submitted = true;
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => true, 'message' => 'Thank you for your rating! Your feedback helps us maintain top culinary standards.']);
+                exit;
+            }
             set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
         }
     }
@@ -128,6 +166,8 @@ $curRider = (int)($existingReview['rider_rating'] ?? 5);
 $curTip = (float)($existingReview['rider_tip'] ?? 0);
 $curComments = $existingReview['comments'] ?? '';
 $isEdit = !empty($_GET['edit']);
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <main class="py-5" style="background: #F7FAF8; min-height: 80vh;">

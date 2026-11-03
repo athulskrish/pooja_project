@@ -502,6 +502,10 @@ function setupDietaryFilters() {
   if (dishesGrid && (vegBtn || healthyBtn)) {
     let vegActive = false;
     let healthyActive = false;
+    let activeCategorySlug = 'all';
+    let searchQuery = '';
+    let currentSort = 'recommended';
+    let originalCardOrder = Array.from(dishesGrid.querySelectorAll('.dish-card-wrapper'));
 
     function applyStorefrontDietaryFilters() {
       const cards = dishesGrid.querySelectorAll('.dish-card-wrapper');
@@ -510,10 +514,15 @@ function setupDietaryFilters() {
       cards.forEach(card => {
         const isVeg = card.getAttribute('data-veg') === 'true';
         const isHealthy = card.getAttribute('data-healthy') === 'true';
+        const cardCategory = (card.getAttribute('data-category') || '').trim().toLowerCase();
+        const cardName = (card.getAttribute('data-name') || card.querySelector('.dish-title')?.textContent || '').toLowerCase();
+        const cardDesc = (card.querySelector('.dish-desc-clamp')?.textContent || '').toLowerCase();
 
         let show = true;
         if (vegActive && !isVeg) show = false;
         if (healthyActive && !isHealthy) show = false;
+        if (activeCategorySlug !== 'all' && cardCategory !== activeCategorySlug) show = false;
+        if (searchQuery && !cardName.includes(searchQuery) && !cardDesc.includes(searchQuery)) show = false;
 
         card.style.display = show ? 'block' : 'none';
         if (show) visibleCount++;
@@ -530,23 +539,47 @@ function setupDietaryFilters() {
             <div class="p-4 rounded-4 bg-light border d-inline-block text-center" style="max-width: 480px;">
               <i class="fa-solid fa-leaf text-success fs-1 mb-2"></i>
               <h5 class="fw-bold text-dark">No dishes match selected filters</h5>
-              <p class="text-muted small mb-3">Try disabling one of the filters to see more delicious options.</p>
-              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" id="resetDietaryFiltersBtn">Reset Filters</button>
+              <p class="text-muted small mb-3">Try disabling one of the filters or clearing the search box to see more delicious options.</p>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="resetAllStorefrontFilters()">Reset All Filters</button>
             </div>
           `;
           dishesGrid.appendChild(emptyMsg);
-          document.getElementById('resetDietaryFiltersBtn')?.addEventListener('click', () => {
-            vegActive = false;
-            healthyActive = false;
-            updateBtnStates();
-            applyStorefrontDietaryFilters();
-          });
         } else {
           emptyMsg.style.display = 'block';
         }
       } else if (emptyMsg) {
         emptyMsg.style.display = 'none';
       }
+
+      // Show or hide the quick "Clear Filters" button in toolbar
+      const resetBtn = document.getElementById('resetStorefrontFiltersBtn');
+      if (resetBtn) {
+        const isFiltered = vegActive || healthyActive || (activeCategorySlug !== 'all') || searchQuery.length > 0 || currentSort !== 'recommended';
+        resetBtn.style.display = isFiltered ? 'inline-block' : 'none';
+      }
+    }
+
+    function applyStorefrontSorting() {
+      const cards = Array.from(dishesGrid.querySelectorAll('.dish-card-wrapper'));
+      if (currentSort === 'recommended') {
+        originalCardOrder.forEach(card => dishesGrid.appendChild(card));
+      } else {
+        cards.sort((a, b) => {
+          if (currentSort === 'price_asc') {
+            return parseFloat(a.getAttribute('data-price') || 0) - parseFloat(b.getAttribute('data-price') || 0);
+          } else if (currentSort === 'price_desc') {
+            return parseFloat(b.getAttribute('data-price') || 0) - parseFloat(a.getAttribute('data-price') || 0);
+          } else if (currentSort === 'rating') {
+            return parseFloat(b.getAttribute('data-rating') || 0) - parseFloat(a.getAttribute('data-rating') || 0);
+          } else if (currentSort === 'prep_time') {
+            return parseInt(a.getAttribute('data-prep') || 0) - parseInt(b.getAttribute('data-prep') || 0);
+          }
+          return 0;
+        });
+        cards.forEach(card => dishesGrid.appendChild(card));
+      }
+      const emptyMsg = document.getElementById('dietaryEmptyStateMsg');
+      if (emptyMsg) dishesGrid.appendChild(emptyMsg);
     }
 
     function updateBtnStates() {
@@ -594,7 +627,167 @@ function setupDietaryFilters() {
         applyStorefrontDietaryFilters();
       });
     }
+
+    // Attach Category In-Place Filter Handler
+    window.filterByCategory = function(slug, el, event) {
+      if (event) event.preventDefault();
+      activeCategorySlug = (slug || 'all').trim().toLowerCase();
+
+      document.querySelectorAll('.category-pill-card').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+
+      const badge = document.getElementById('activeCategoryBadge');
+      if (badge) {
+        if (activeCategorySlug === 'all') {
+          badge.style.display = 'none';
+          badge.textContent = '';
+        } else {
+          badge.style.display = 'inline-block';
+          const nameEl = el ? el.querySelector('.category-name') : null;
+          badge.textContent = (nameEl ? nameEl.textContent : slug).trim();
+        }
+      }
+
+      applyStorefrontDietaryFilters();
+
+      const dishesSec = document.getElementById('dishes');
+      if (dishesSec) {
+        dishesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.filterHealthyQuick = function(event) {
+      if (event) event.preventDefault();
+      if (!healthyActive && healthyBtn) {
+        healthyBtn.click();
+      }
+      const dishesSec = document.getElementById('dishes');
+      if (dishesSec) {
+        dishesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.sortDishes = function(criteria) {
+      currentSort = criteria;
+      const labels = {
+        'recommended': 'Sort: Recommended',
+        'price_asc': 'Price: Low to High',
+        'price_desc': 'Price: High to Low',
+        'rating': 'Highest Rated',
+        'prep_time': 'Fastest Delivery'
+      };
+      const labelEl = document.getElementById('sortLabel');
+      if (labelEl) labelEl.textContent = labels[criteria] || 'Sort By';
+
+      document.querySelectorAll('.sort-check').forEach(c => c.classList.add('d-none'));
+      const activeCheck = document.getElementById('check-' + criteria);
+      if (activeCheck) activeCheck.classList.remove('d-none');
+
+      applyStorefrontSorting();
+      applyStorefrontDietaryFilters();
+    };
+
+    window.resetAllStorefrontFilters = function() {
+      vegActive = false;
+      healthyActive = false;
+      activeCategorySlug = 'all';
+      searchQuery = '';
+      currentSort = 'recommended';
+
+      const quickSearch = document.getElementById('storefrontQuickSearch');
+      if (quickSearch) quickSearch.value = '';
+      const clearBtn = document.getElementById('clearQuickSearchBtn');
+      if (clearBtn) clearBtn.style.display = 'none';
+
+      const badge = document.getElementById('activeCategoryBadge');
+      if (badge) {
+        badge.style.display = 'none';
+        badge.textContent = '';
+      }
+
+      const sortLabel = document.getElementById('sortLabel');
+      if (sortLabel) sortLabel.textContent = 'Sort: Recommended';
+      document.querySelectorAll('.sort-check').forEach(c => c.classList.add('d-none'));
+      document.getElementById('check-recommended')?.classList.remove('d-none');
+
+      document.querySelectorAll('.category-pill-card').forEach(p => {
+        if (p.getAttribute('data-cat-slug') === 'all') {
+          p.classList.add('active');
+        } else {
+          p.classList.remove('active');
+        }
+      });
+
+      updateBtnStates();
+      applyStorefrontSorting();
+      applyStorefrontDietaryFilters();
+    };
+
+    window.setQuickSearchTag = function(tag) {
+      const quickSearch = document.getElementById('storefrontQuickSearch');
+      if (quickSearch) {
+        quickSearch.value = tag;
+        quickSearch.dispatchEvent(new Event('input'));
+      }
+      const dishesSec = document.getElementById('dishes');
+      if (dishesSec) {
+        dishesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.clearQuickSearch = function() {
+      const quickSearch = document.getElementById('storefrontQuickSearch');
+      if (quickSearch) {
+        quickSearch.value = '';
+        quickSearch.dispatchEvent(new Event('input'));
+      }
+    };
+
+    // Quick Search Input Listener on Homepage
+    const quickSearchInput = document.getElementById('storefrontQuickSearch');
+    if (quickSearchInput) {
+      quickSearchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        const clearBtn = document.getElementById('clearQuickSearchBtn');
+        if (clearBtn) clearBtn.style.display = searchQuery.length > 0 ? 'inline-block' : 'none';
+        applyStorefrontDietaryFilters();
+      });
+      quickSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const dishesSec = document.getElementById('dishes');
+          if (dishesSec) {
+            dishesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+    }
   }
+
+  // Global Coupon Code Copy Helper
+  window.copyCouponCode = function(code, el) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(() => {
+        if (typeof showToast === 'function') {
+          showToast(`Coupon code ${code} copied to clipboard!`, 'success');
+        } else {
+          alert(`Coupon code ${code} copied!`);
+        }
+      }).catch(() => {
+        if (typeof showToast === 'function') {
+          showToast(`Coupon code: ${code}`, 'info');
+        } else {
+          alert(`Coupon code: ${code}`);
+        }
+      });
+    } else {
+      if (typeof showToast === 'function') {
+        showToast(`Coupon code: ${code}`, 'info');
+      } else {
+        alert(`Coupon code: ${code}`);
+      }
+    }
+  };
 
   // 2. Restaurant Page Switches (#vegOnlySwitch & #healthyOnlySwitch)
   const vegSwitch = document.getElementById('vegOnlySwitch');

@@ -109,10 +109,28 @@ if ($portal === 'delivery') {
         ORDER BY d.dispatched_at DESC
     ");
 
+    foreach ($readyOrders as &$ro) {
+        $ro['formatted_amount'] = format_inr($ro['total_amount']);
+        $ro['address_display'] = ($ro['address_line'] ?: 'Indiranagar') . ($ro['pincode'] ? ' (PIN: ' . $ro['pincode'] . ')' : '');
+    }
+    unset($ro);
+
     $riderIdParam = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
     $riderHasActive = false;
+    $activeDelivery = null;
     if ($riderIdParam > 0) {
-        $riderHasActive = (bool)get_driver_active_delivery($riderIdParam);
+        $activeDelivery = get_driver_active_delivery($riderIdParam);
+        $riderHasActive = !empty($activeDelivery);
+        if ($activeDelivery) {
+            $items = db_fetch_all("
+                SELECT oi.*, m.item_name, m.is_veg 
+                FROM `order_items` oi
+                JOIN `menu_items` m ON oi.item_id = m.item_id
+                WHERE oi.order_id = :oid
+            ", [':oid' => $activeDelivery['order_id']]);
+            $activeDelivery['items'] = $items;
+            $activeDelivery['formatted_amount'] = format_inr($activeDelivery['total_amount']);
+        }
     }
 
     echo json_encode([
@@ -124,6 +142,7 @@ if ($portal === 'delivery') {
             'in_transit' => count($inTransitOrders)
         ],
         'rider_has_active' => $riderHasActive,
+        'active_order' => $activeDelivery,
         'max_concurrent_deliveries' => 1,
         'ready_orders' => $readyOrders,
         'in_transit_orders' => $inTransitOrders

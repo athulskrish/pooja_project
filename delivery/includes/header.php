@@ -224,6 +224,117 @@
       70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
       100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
+
+    @keyframes syncRotate {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .sync-spinning {
+      animation: syncRotate 0.8s linear infinite;
+      display: inline-block;
+    }
+    .toast-ready-food {
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      z-index: 1060;
+      animation: slideInDown 0.4s ease-out;
+    }
+    @keyframes slideInDown {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Mobile Ergonomics: Bottom Sticky Navigation Bar */
+    .rider-bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      background: #FFFFFF;
+      border-top: 1px solid var(--rider-border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 1040;
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+      padding: 4px 10px;
+    }
+    .bottom-nav-item {
+      background: transparent;
+      border: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #64748B;
+      font-size: 0.72rem;
+      font-weight: 700;
+      position: relative;
+      padding: 6px 16px;
+      cursor: pointer;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+    .bottom-nav-item:hover, .bottom-nav-item.active {
+      color: var(--rider-forest);
+      background: rgba(46, 111, 64, 0.06);
+    }
+    .bottom-nav-item .bnav-badge {
+      position: absolute;
+      top: 2px;
+      right: 10px;
+      font-size: 0.65rem;
+      padding: 2px 5px;
+    }
+    @media (max-width: 767.98px) {
+      body {
+        padding-bottom: 74px !important;
+      }
+    }
+
+    /* High-Contrast / Night Mode for Outdoor Visibility */
+    body.rider-dark-theme {
+      --rider-bg: #101913;
+      --rider-surface: #18251C;
+      --rider-border: #2A3E30;
+      --rider-pine: #CEFFDC;
+      color: #E2ECE5;
+      background-color: var(--rider-bg);
+    }
+    body.rider-dark-theme .rider-top-navbar,
+    body.rider-dark-theme .duty-card,
+    body.rider-dark-theme .card,
+    body.rider-dark-theme .modal-content,
+    body.rider-dark-theme .history-order-card,
+    body.rider-dark-theme .rider-bottom-nav {
+      background-color: var(--rider-surface) !important;
+      color: #E2ECE5 !important;
+      border-color: var(--rider-border) !important;
+    }
+    body.rider-dark-theme .text-dark,
+    body.rider-dark-theme h1, body.rider-dark-theme h2,
+    body.rider-dark-theme h3, body.rider-dark-theme h4,
+    body.rider-dark-theme h5, body.rider-dark-theme h6 {
+      color: #F1F7F3 !important;
+    }
+    body.rider-dark-theme .bg-white,
+    body.rider-dark-theme .bg-light {
+      background-color: #1F3325 !important;
+      color: #E2ECE5 !important;
+    }
+    body.rider-dark-theme .rider-nav-tabs {
+      background: #17271D;
+    }
+    body.rider-dark-theme .rider-nav-tab-btn {
+      color: #A2C0AA;
+    }
+    body.rider-dark-theme .rider-nav-tab-btn.active {
+      background: #1F3325;
+      color: #CEFFDC;
+    }
   </style>
 </head>
 <body class="delivery-partner-app">
@@ -249,9 +360,21 @@
         <!-- Rider Profile & Shortcuts -->
         <div class="d-flex align-items-center gap-2">
           
-          <!-- Multi-Actor Session Scope Pill -->
-          <span class="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 px-2 py-1 rounded-pill small d-none d-lg-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_RIDER_SESS">
-            <i class="bi bi-bicycle text-primary"></i> Rider Scope
+          <!-- Auto Sync Indicator (similar to KDS) -->
+          <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 d-flex align-items-center gap-2 font-monospace" id="btnRiderSyncToggle" onclick="toggleRiderAutoSync()" title="Auto Sync with Kitchen Dispatch Server (Click to sync now)">
+            <i id="riderSyncIcon" class="bi bi-arrow-clockwise text-success"></i>
+            <span id="riderSyncText" class="fw-bold" style="font-size: 0.78rem;">SYNC (5s)</span>
+          </button>
+
+          <!-- High-Contrast Night Mode Toggle -->
+          <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-2 py-1 d-flex align-items-center gap-1" id="themeToggleBtn" onclick="toggleRiderTheme()" title="Toggle High-Contrast / Night Riding Mode">
+            <i class="bi bi-moon-stars" id="themeToggleIcon"></i>
+            <span class="d-none d-lg-inline small">Night Mode</span>
+          </button>
+
+          <!-- Session Scope Pill -->
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill small d-none d-md-inline-flex align-items-center gap-1 font-monospace" title="Authenticated Fleet Partner Session">
+            <i class="bi bi-shield-check"></i> Fleet Verified
           </span>
 
           <div class="d-none d-sm-flex align-items-center gap-2 bg-light px-3 py-1 rounded-pill border">

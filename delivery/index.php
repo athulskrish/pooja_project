@@ -136,7 +136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             if ($isAjax) {
                 header('Content-Type: application/json');
-                echo json_encode(['success' => true, 'message' => "Order #ZIP-{$orderId} claimed and picked up!"]);
+                echo json_encode([
+                    'success' => true, 
+                    'message' => "Order #ZIP-{$orderId} claimed and picked up!",
+                    'order_id' => $orderId
+                ]);
                 exit;
             }
             set_flash('success', "Order #ZIP-{$orderId} picked up. Please follow GPS to customer address.");
@@ -354,9 +358,10 @@ require_once __DIR__ . '/includes/header.php';
       <form method="POST" action="<?= DELIVERY_URL ?>/index.php" id="dutyToggleForm" class="m-0">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="toggle_duty">
+        <input type="hidden" name="is_ajax" value="1">
         <input type="hidden" name="duty" id="dutyHiddenInput" value="<?= $_SESSION['rider_on_duty'] ? '0' : '1' ?>">
         <div class="form-check form-switch fs-4 m-0">
-          <input class="form-check-input cursor-pointer" type="checkbox" id="dutyToggleSwitch" <?= $_SESSION['rider_on_duty'] ? 'checked' : '' ?> onchange="document.getElementById('dutyToggleForm').submit();">
+          <input class="form-check-input cursor-pointer" type="checkbox" id="dutyToggleSwitch" <?= $_SESSION['rider_on_duty'] ? 'checked' : '' ?> onchange="toggleDutyAjax(this.checked);">
         </div>
       </form>
     </div>
@@ -426,8 +431,8 @@ require_once __DIR__ . '/includes/header.php';
       <?php else: ?>
 
         <!-- Section 1: Active In-Transit Orders -->
-        <?php if (!empty($activeOrders)): ?>
-          <div class="mb-4">
+        <div id="activeDeliverySection" class="mb-4">
+          <?php if (!empty($activeOrders)): ?>
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h6 class="fw-bold text-dark text-uppercase small mb-0">
                 <i class="bi bi-bicycle text-success me-1"></i> Active Delivery In Progress (1/1 Max)
@@ -514,9 +519,14 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="small fw-semibold text-success"><i class="bi bi-chat-left-text me-1"></i> Note: <?= e($order['order_notes']) ?></div>
                           <?php endif; ?>
                         </div>
-                        <a href="tel:<?= e($order['customer_phone'] ?: '+919876543210') ?>" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold flex-shrink-0">
-                          <i class="bi bi-telephone-fill me-1"></i> Call Customer
-                        </a>
+                        <div class="d-flex gap-2 flex-wrap">
+                          <a href="tel:<?= e($order['customer_phone'] ?: '+919876543210') ?>" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold flex-shrink-0">
+                            <i class="bi bi-telephone-fill me-1"></i> Call Customer
+                          </a>
+                          <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold flex-shrink-0" onclick="openSupportModal(<?= (int)$order['order_id'] ?>)">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Issue / SOS
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -547,41 +557,55 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                   </div>
 
-                  <!-- Action Buttons: GPS Navigation & OTP Verification -->
-                  <div class="d-flex flex-column flex-sm-row gap-3 mb-2">
+                  <!-- Action Buttons: GPS Navigation, Google Maps & OTP Verification -->
+                  <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
                     <button type="button" class="btn btn-outline-secondary rounded-pill py-2 px-3 fw-bold flex-grow-1" onclick="openGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['customer_name'])) ?>', '<?= e(addslashes($order['address_line'] ?: 'Indiranagar 100ft Road')) ?>')">
-                      <i class="fa-solid fa-location-arrow me-1 text-primary"></i> Turn-by-Turn GPS Map
+                      <i class="fa-solid fa-location-arrow me-1 text-primary"></i> Live Route Simulator
                     </button>
+
+                    <a href="https://www.google.com/maps/dir/?api=1&destination=<?= urlencode(($order['address_line'] ?: 'Indiranagar') . ', Bangalore, ' . ($order['pincode'] ?: '560038')) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-success rounded-pill py-2 px-3 fw-bold flex-grow-1 text-center d-flex align-items-center justify-content-center gap-1" title="Open native navigation in Google Maps">
+                      <i class="bi bi-geo-alt-fill text-danger"></i> Google Maps
+                    </a>
                     
-                    <button type="button" class="btn btn-rider-primary py-2 px-4 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(<?= (int)$order['order_id'] ?>, '<?= e($order['delivery_otp']) ?>', '<?= e(addslashes($order['customer_name'])) ?>', '<?= $order['payment_mode'] ?>', '<?= format_inr($order['total_amount']) ?>')">
-                      <i class="bi bi-shield-check me-2"></i> Verify Customer OTP & Finish
+                    <button type="button" class="btn btn-rider-primary py-2 px-3 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(<?= (int)$order['order_id'] ?>, '<?= e($order['delivery_otp']) ?>', '<?= e(addslashes($order['customer_name'])) ?>', '<?= $order['payment_mode'] ?>', '<?= format_inr($order['total_amount']) ?>')">
+                      <i class="bi bi-shield-check me-1"></i> Verify OTP & Finish
                     </button>
                   </div>
 
+                  <!-- Discrete Viva / Demo Mode OTP Helper -->
                   <div class="d-flex justify-content-between align-items-center bg-light px-3 py-2 rounded-3 border small">
-                    <span class="text-muted"><i class="bi bi-shield-lock-fill text-success me-1"></i> Customer OTP for Order #ZIP-<?= (int)$order['order_id'] ?>:</span>
-                    <span class="font-monospace fw-bold fs-6 text-dark bg-white px-2 py-0 rounded border"><?= e($order['delivery_otp']) ?></span>
+                    <div class="text-muted d-flex align-items-center gap-1">
+                      <i class="bi bi-shield-lock-fill text-success"></i>
+                      <span>Doorstep Handshake:</span>
+                      <span class="badge bg-secondary bg-opacity-10 text-secondary border small">Customer holds secret OTP</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                      <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-2 py-0 small fw-bold" onclick="toggleDemoOtp(<?= (int)$order['order_id'] ?>)" id="btnRevealOtp<?= (int)$order['order_id'] ?>">
+                        <i class="bi bi-eye me-1"></i> Reveal for Demo
+                      </button>
+                      <span class="font-monospace fw-bold fs-6 text-dark bg-white px-2 py-0 rounded border d-none" id="demoOtpBox<?= (int)$order['order_id'] ?>"><?= e($order['delivery_otp']) ?></span>
+                    </div>
                   </div>
 
                 </div>
 
               </div>
             <?php endforeach; ?>
-          </div>
-        <?php endif; ?>
+          <?php endif; ?>
+        </div>
 
         <!-- Section 2: Orders Ready in Kitchen for Courier Pickup -->
-        <div class="mb-4">
+        <div id="readyOrdersSection" class="mb-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="fw-bold text-dark text-uppercase small mb-0">
-              <i class="fa-solid fa-fire-burner text-warning me-1"></i> Bagged & Ready for Pickup at Kitchen (<?= count($readyOrders) ?>)
+              <i class="fa-solid fa-fire-burner text-warning me-1"></i> Bagged &amp; Ready for Pickup at Kitchen (<span id="readyOrdersCountBadge"><?= count($readyOrders) ?></span>)
             </h6>
-            <a href="<?= DELIVERY_URL ?>/index.php" class="btn btn-sm btn-link text-success text-decoration-none p-0">
-              <i class="bi bi-arrow-clockwise me-1"></i> Refresh
-            </a>
+            <button type="button" class="btn btn-sm btn-link text-success text-decoration-none p-0 fw-semibold" onclick="syncDeliveryApp(true)" title="Force sync ready food from kitchen">
+              <i class="bi bi-arrow-clockwise me-1"></i> Sync Now
+            </button>
           </div>
 
-          <?php if (!empty($activeOrders)): ?>
+          <div id="policyAlertBox" class="<?= empty($activeOrders) ? 'd-none' : '' ?>">
             <!-- 1 Driver 1 Delivery Policy Alert -->
             <div class="alert alert-warning border-0 rounded-4 p-3 d-flex align-items-center gap-3 mb-3 shadow-xs">
               <div class="rounded-circle p-2 bg-warning bg-opacity-25 text-warning d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px;">
@@ -589,55 +613,57 @@ require_once __DIR__ . '/includes/header.php';
               </div>
               <div class="flex-grow-1">
                 <div class="fw-bold text-dark mb-0">1 Driver, 1 Delivery Policy Active</div>
-                <div class="small text-muted">You are currently fulfilling active delivery <strong>#ZIP-<?= (int)$activeOrders[0]['order_id'] ?></strong>. Complete doorstep OTP verification to free your slot before accepting another order.</div>
+                <div class="small text-muted">You are currently fulfilling active delivery <strong id="policyActiveOrderId">#ZIP-<?= !empty($activeOrders) ? (int)$activeOrders[0]['order_id'] : '' ?></strong>. Complete doorstep OTP verification to free your slot before accepting another order.</div>
               </div>
             </div>
-          <?php endif; ?>
+          </div>
 
-          <?php if (empty($readyOrders)): ?>
-            <div class="card border-0 rounded-4 p-4 text-center bg-white shadow-xs">
-              <i class="bi bi-check2-circle fs-2 text-success mb-2"></i>
-              <h6 class="fw-bold text-dark mb-1">No Orders Waiting for Pickup</h6>
-              <p class="small text-muted mb-0">Kitchen orders will automatically pop up here as soon as cooks mark them "Ready".</p>
-            </div>
-          <?php else: ?>
-            <div class="row g-3">
-              <?php foreach ($readyOrders as $ro): ?>
-                <div class="col-md-6">
-                  <div class="card border rounded-4 p-3 shadow-sm bg-white h-100 d-flex flex-column justify-content-between">
-                    <div>
-                      <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-warning text-dark fw-bold">READY IN KITCHEN</span>
-                        <span class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$ro['order_id'] ?></span>
+          <div id="readyOrdersCardsContainer">
+            <?php if (empty($readyOrders)): ?>
+              <div class="card border-0 rounded-4 p-4 text-center bg-white shadow-xs" id="noReadyOrdersCard">
+                <i class="bi bi-check2-circle fs-2 text-success mb-2"></i>
+                <h6 class="fw-bold text-dark mb-1">No Orders Waiting for Pickup</h6>
+                <p class="small text-muted mb-0">Kitchen orders will automatically pop up here as soon as cooks mark them "Ready".</p>
+              </div>
+            <?php else: ?>
+              <div class="row g-3" id="readyOrdersGrid">
+                <?php foreach ($readyOrders as $ro): ?>
+                  <div class="col-md-6 ready-order-col" id="readyCardCol<?= (int)$ro['order_id'] ?>">
+                    <div class="card border rounded-4 p-3 shadow-sm bg-white h-100 d-flex flex-column justify-content-between">
+                      <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <span class="badge bg-warning text-dark fw-bold">READY IN KITCHEN</span>
+                          <span class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$ro['order_id'] ?></span>
+                        </div>
+                        <h6 class="fw-bold text-dark mb-1">Customer: <?= e($ro['customer_name']) ?></h6>
+                        <p class="small text-muted mb-2">
+                          <i class="bi bi-geo-alt me-1 text-danger"></i> <?= e($ro['address_line'] ?: 'Indiranagar') ?> (PIN: <?= e($ro['pincode'] ?: '560038') ?>)
+                        </p>
+                        <div class="small fw-semibold text-success mb-3">
+                          <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
+                        </div>
                       </div>
-                      <h6 class="fw-bold text-dark mb-1">Customer: <?= e($ro['customer_name']) ?></h6>
-                      <p class="small text-muted mb-2">
-                        <i class="bi bi-geo-alt me-1 text-danger"></i> <?= e($ro['address_line'] ?: 'Indiranagar') ?> (PIN: <?= e($ro['pincode'] ?: '560038') ?>)
-                      </p>
-                      <div class="small fw-semibold text-success mb-3">
-                        <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
-                      </div>
-                    </div>
 
-                    <?php if (!empty($activeOrders)): ?>
-                      <button type="button" class="btn btn-light text-muted border w-100 rounded-pill fw-bold py-2 shadow-xs" disabled title="Complete your active delivery #ZIP-<?= (int)$activeOrders[0]['order_id'] ?> first">
-                        <i class="bi bi-lock-fill me-1"></i> Locked (Delivering #ZIP-<?= (int)$activeOrders[0]['order_id'] ?>)
-                      </button>
-                    <?php else: ?>
-                      <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="action" value="claim_order">
-                        <input type="hidden" name="order_id" value="<?= (int)$ro['order_id'] ?>">
-                        <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
-                          <i class="bi bi-handbag me-1"></i> Accept & Pick Up Order
+                      <?php if (!empty($activeOrders)): ?>
+                        <button type="button" class="btn btn-light text-muted border w-100 rounded-pill fw-bold py-2 shadow-xs btn-claim-locked" disabled title="Complete your active delivery #ZIP-<?= (int)$activeOrders[0]['order_id'] ?> first">
+                          <i class="bi bi-lock-fill me-1"></i> Locked (Delivering #ZIP-<?= (int)$activeOrders[0]['order_id'] ?>)
                         </button>
-                      </form>
-                    <?php endif; ?>
+                      <?php else: ?>
+                        <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0 claim-order-form" onsubmit="event.preventDefault(); takeReadyFood(<?= (int)$ro['order_id'] ?>);">
+                          <?= csrf_field() ?>
+                          <input type="hidden" name="action" value="claim_order">
+                          <input type="hidden" name="order_id" value="<?= (int)$ro['order_id'] ?>">
+                          <button type="submit" id="btnClaimOrder<?= (int)$ro['order_id'] ?>" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
+                            <i class="bi bi-handbag me-1"></i> Accept &amp; Pick Up Order
+                          </button>
+                        </form>
+                      <?php endif; ?>
+                    </div>
                   </div>
-                </div>
-              <?php endforeach; ?>
-            </div>
-          <?php endif; ?>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
+          </div>
         </div>
 
       <?php endif; ?>
@@ -651,7 +677,7 @@ require_once __DIR__ . '/includes/header.php';
       
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold text-dark mb-0">Delivered Trips (<?= count($historyOrders) ?>)</h5>
-        <span class="text-muted small">Updated from MySQL Database</span>
+        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill small"><i class="bi bi-check2-circle me-1"></i> Live Fleet Sync</span>
       </div>
 
       <?php if (empty($historyOrders)): ?>

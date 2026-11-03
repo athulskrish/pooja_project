@@ -3851,6 +3851,50 @@ body.modal-open .mobile-bottom-nav,
   color: #2E6F40 !important;
 }
 
+/* ==========================================================================
+   CUSTOMER STOREFRONT HOMEPAGE ENHANCEMENTS
+   ========================================================================== */
+.category-pill-card {
+  transition: transform 0.2s ease;
+}
+.category-pill-card:hover {
+  transform: translateY(-3px);
+}
+.category-pill-card.active .category-pill-img-wrap {
+  outline: 3px solid #2E6F40;
+  outline-offset: 3px;
+  box-shadow: 0 4px 14px rgba(46, 111, 64, 0.25) !important;
+}
+.apriori-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.apriori-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(36, 62, 44, 0.1) !important;
+}
+.hero-quick-search-wrap .form-control:focus {
+  box-shadow: none;
+}
+.quick-tag-btn {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.quick-tag-btn:hover {
+  background-color: #2E6F40 !important;
+  color: #fff !important;
+  border-color: #2E6F40 !important;
+}
+.copy-coupon-badge {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.copy-coupon-badge:hover {
+  opacity: 0.85;
+}
+.copy-coupon-badge:active {
+  transform: scale(0.95);
+}
+
+
 
 
 
