@@ -63,6 +63,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
 
+        // ONE DRIVER ONE DELIVERY RULE: Enforce that this driver can only have 1 active delivery
+        $activeExisting = get_driver_active_delivery((int)$currentUser['id'], $currentUser['name'] ?? '');
+        if ($activeExisting) {
+            $policyMsg = "Policy Restriction (1 Driver, 1 Delivery): You are already fulfilling active delivery #ZIP-{$activeExisting['order_id']}. Please complete your current delivery before accepting another order.";
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $policyMsg]);
+                exit;
+            }
+            set_flash('warning', $policyMsg);
+            header("Location: " . DELIVERY_URL . "/index.php");
+            exit;
+        }
+
         $orderId = (int)($_POST['order_id'] ?? 0);
         $order = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
 
@@ -73,12 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // Advance status to OUT_FOR_DELIVERY
             db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = :id", [':id' => $orderId]);
 
-            // Ensure dispatch record exists & update
+            // Ensure dispatch record exists & update with rider_id
             $dispatch = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
             if ($dispatch) {
                 db_query("
                     UPDATE `delivery_dispatches` 
-                    SET `delivery_partner_name` = :rname,
+                    SET `rider_id` = :rid,
+                        `delivery_partner_name` = :rname,
                         `delivery_partner_phone` = :rphone,
                         `dispatched_at` = NOW(),
                         `delivery_status` = 'IN_TRANSIT',
@@ -89,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         `estimated_minutes_remaining` = 15
                     WHERE `order_id` = :id
                 ", [
+                    ':rid' => $currentUser['id'],
                     ':rname' => $riderName,
                     ':rphone' => $riderPhone,
                     ':id' => $orderId
@@ -97,10 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
                 db_query("
                     INSERT INTO `delivery_dispatches` 
-                    (`order_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`, `current_latitude`, `current_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`)
-                    VALUES (:id, :rname, :rphone, :otp, NOW(), NOW(), 'IN_TRANSIT', 12.97840000, 77.64080000, 0, 2.40, 15)
+                    (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`, `current_latitude`, `current_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`)
+                    VALUES (:id, :rid, :rname, :rphone, :otp, NOW(), NOW(), 'IN_TRANSIT', 12.97840000, 77.64080000, 0, 2.40, 15)
                 ", [
                     ':id' => $orderId,
+                    ':rid' => $currentUser['id'],
                     ':rname' => $riderName,
                     ':rphone' => $riderPhone,
                     ':otp' => $newOtp
@@ -243,22 +260,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Fetch Active In-Transit Orders (Assigned or Out for delivery)
-$activeOrders = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-           a.address_line, a.landmark, a.pincode,
-           p.payment_mode, p.payment_status, p.amount_paid,
-           d.dispatch_id, d.delivery_otp, d.delivery_status, d.dispatched_at
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_status = 'OUT_FOR_DELIVERY'
-    ORDER BY o.placed_at DESC
-");
+// Fetch Active In-Transit Orders FOR THIS RIDER ONLY (1 driver 1 delivery rule)
+$activeDelivery = get_driver_active_delivery((int)$currentUser['id'], $currentUser['name'] ?? '');
+$activeOrders = $activeDelivery ? [$activeDelivery] : [];
 
-// Fetch Line Items for Active Orders
+// Fetch Line Items for Active Order
 $activeOrderItems = [];
 if (!empty($activeOrders)) {
     $orderIds = array_column($activeOrders, 'order_id');
@@ -290,7 +296,8 @@ $readyOrders = db_fetch_all("
     ORDER BY o.placed_at ASC
 ");
 
-// Fetch Delivered Trip History
+// Fetch Delivered Trip History FOR THIS RIDER
+$firstWord = trim(explode(' ', trim($currentUser['name'] ?? 'Rider'))[0]);
 $historyOrders = db_fetch_all("
     SELECT o.*, u.full_name AS customer_name,
            a.address_line, a.pincode,
@@ -302,9 +309,13 @@ $historyOrders = db_fetch_all("
     LEFT JOIN `payments` p ON o.order_id = p.order_id
     LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
     WHERE o.order_status = 'DELIVERED'
+      AND (d.rider_id = :rid OR (d.rider_id IS NULL AND d.delivery_partner_name LIKE :rname))
     ORDER BY d.delivered_at DESC, o.placed_at DESC
     LIMIT 20
-");
+", [
+    ':rid' => $currentUser['id'],
+    ':rname' => '%' . $firstWord . '%'
+]);
 
 // Calculate shift earnings
 $deliveredCount = count($historyOrders);
@@ -324,16 +335,18 @@ require_once __DIR__ . '/includes/header.php';
             <h5 class="fw-bold text-dark mb-0" id="dutyStatusHeading">
               <?= $_SESSION['rider_on_duty'] ? 'You are ONLINE' : 'You are OFFLINE' ?>
             </h5>
-            <span class="badge <?= $_SESSION['rider_on_duty'] ? 'bg-success' : 'bg-secondary' ?> rounded-pill px-2 py-1 small" id="dutyStatusPill">
-              <?php if ($_SESSION['rider_on_duty']): ?>
-                <span class="pulse-dot me-1"></span> Accepting Dispatches
+            <span class="badge <?= !empty($activeOrders) ? 'bg-warning text-dark' : ($_SESSION['rider_on_duty'] ? 'bg-success' : 'bg-secondary') ?> rounded-pill px-2 py-1 small" id="dutyStatusPill">
+              <?php if (!empty($activeOrders)): ?>
+                <i class="bi bi-bicycle me-1"></i> Busy on Route (1/1 Active)
+              <?php elseif ($_SESSION['rider_on_duty']): ?>
+                <span class="pulse-dot me-1"></span> Available for Dispatch (0/1)
               <?php else: ?>
                 Dispatches Paused
               <?php endif; ?>
             </span>
           </div>
           <div class="small text-muted">
-            GPS Zone: <strong>Indiranagar Hub</strong> • High Signal Accuracy (±4m)
+            GPS Zone: <strong>Indiranagar Hub</strong> • 1 Delivery at a Time Policy
           </div>
         </div>
       </div>
@@ -370,8 +383,10 @@ require_once __DIR__ . '/includes/header.php';
       </div>
       <div class="col-6 col-md-3">
         <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
-          <div class="small text-muted fw-bold">Active Orders</div>
-          <div class="fs-4 fw-bold text-warning font-monospace"><?= count($activeOrders) ?></div>
+          <div class="small text-muted fw-bold">Active Delivery</div>
+          <div class="fs-4 fw-bold font-monospace <?= !empty($activeOrders) ? 'text-warning' : 'text-success' ?>">
+            <?= count($activeOrders) ?> / 1
+          </div>
         </div>
       </div>
     </div>
@@ -413,9 +428,14 @@ require_once __DIR__ . '/includes/header.php';
         <!-- Section 1: Active In-Transit Orders -->
         <?php if (!empty($activeOrders)): ?>
           <div class="mb-4">
-            <h6 class="fw-bold text-dark text-uppercase small mb-3">
-              <i class="bi bi-bicycle text-success me-1"></i> Active Dispatches In Progress (<?= count($activeOrders) ?>)
-            </h6>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="fw-bold text-dark text-uppercase small mb-0">
+                <i class="bi bi-bicycle text-success me-1"></i> Active Delivery In Progress (1/1 Max)
+              </h6>
+              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 small fw-bold">
+                <i class="bi bi-shield-check me-1"></i> 1 Driver 1 Delivery Policy Active
+              </span>
+            </div>
 
             <?php foreach ($activeOrders as $order): ?>
               <?php $items = $activeOrderItems[$order['order_id']] ?? []; ?>
@@ -561,6 +581,19 @@ require_once __DIR__ . '/includes/header.php';
             </a>
           </div>
 
+          <?php if (!empty($activeOrders)): ?>
+            <!-- 1 Driver 1 Delivery Policy Alert -->
+            <div class="alert alert-warning border-0 rounded-4 p-3 d-flex align-items-center gap-3 mb-3 shadow-xs">
+              <div class="rounded-circle p-2 bg-warning bg-opacity-25 text-warning d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px;">
+                <i class="bi bi-shield-lock-fill fs-5"></i>
+              </div>
+              <div class="flex-grow-1">
+                <div class="fw-bold text-dark mb-0">1 Driver, 1 Delivery Policy Active</div>
+                <div class="small text-muted">You are currently fulfilling active delivery <strong>#ZIP-<?= (int)$activeOrders[0]['order_id'] ?></strong>. Complete doorstep OTP verification to free your slot before accepting another order.</div>
+              </div>
+            </div>
+          <?php endif; ?>
+
           <?php if (empty($readyOrders)): ?>
             <div class="card border-0 rounded-4 p-4 text-center bg-white shadow-xs">
               <i class="bi bi-check2-circle fs-2 text-success mb-2"></i>
@@ -586,14 +619,20 @@ require_once __DIR__ . '/includes/header.php';
                       </div>
                     </div>
 
-                    <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0">
-                      <?= csrf_field() ?>
-                      <input type="hidden" name="action" value="claim_order">
-                      <input type="hidden" name="order_id" value="<?= (int)$ro['order_id'] ?>">
-                      <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
-                        <i class="bi bi-handbag me-1"></i> Accept & Pick Up Order
+                    <?php if (!empty($activeOrders)): ?>
+                      <button type="button" class="btn btn-light text-muted border w-100 rounded-pill fw-bold py-2 shadow-xs" disabled title="Complete your active delivery #ZIP-<?= (int)$activeOrders[0]['order_id'] ?> first">
+                        <i class="bi bi-lock-fill me-1"></i> Locked (Delivering #ZIP-<?= (int)$activeOrders[0]['order_id'] ?>)
                       </button>
-                    </form>
+                    <?php else: ?>
+                      <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="claim_order">
+                        <input type="hidden" name="order_id" value="<?= (int)$ro['order_id'] ?>">
+                        <button type="submit" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
+                          <i class="bi bi-handbag me-1"></i> Accept & Pick Up Order
+                        </button>
+                      </form>
+                    <?php endif; ?>
                   </div>
                 </div>
               <?php endforeach; ?>

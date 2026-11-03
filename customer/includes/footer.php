@@ -188,7 +188,7 @@
                   </div>
                 </div>
                 <div class="mt-2">
-                  <span class="badge bg-success bg-opacity-15 text-success small px-2 py-1 rounded-pill">
+                  <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 small px-2 py-1 rounded-pill">
                     <i class="bi bi-shield-check me-1"></i> 100% Verified Customer Reviews
                   </span>
                 </div>

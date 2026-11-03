@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Kitchen Atelier & KDS | Zippy Operations</title>
 
-  <!-- Google Fonts: Plus Jakarta Sans & Outfit & Space Grotesk -->
+  <!-- Google Fonts: Outfit & Plus Jakarta Sans & Space Grotesk -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -17,477 +17,961 @@
 
   <style>
     /* ==========================================================================
-       CLASSY BLACK & WHITE MONOCHROME DESIGN SYSTEM
-       High-Contrast Haute Cuisine Digital Expeditor
+       POOJA PROJECT - KITCHEN DISPLAY SYSTEM (KDS)
+       Design System: Figma "Lush Forest" Palette & Material Design 3 (M3)
+       Ergonomic, High-Legibility, Eye-Strain Free Culinary Workflow
        ========================================================================== */
     :root {
-      --noir-black: #000000;
-      --noir-charcoal: #121212;
-      --noir-card-border: #E4E4E7;
-      --noir-border-strong: #000000;
-      --noir-muted: #71717A;
-      --noir-muted-light: #A1A1AA;
-      --noir-surface: #FFFFFF;
-      --noir-canvas: #FAFAFA;
-      --noir-subtle: #F4F4F5;
-      --noir-subtle-hover: #EBEBEF;
-      --noir-badge-bg: #F4F4F5;
-      --noir-badge-border: #E4E4E7;
-      --noir-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-      --noir-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
-      --noir-shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.09);
+      /* Figma Lush Forest Core Palette */
+      --lush-pine: #243E2C;
+      --lush-forest: #2E6F40;
+      --lush-forest-hover: #235933;
+      --lush-sage: #68BA7F;
+      --lush-mint: #CEFFDC;
+      --lush-mint-soft: #EDFBF2;
+      --lush-mint-glow: rgba(206, 255, 220, 0.45);
+      
+      /* Surfaces & Canvases */
+      --lush-bg: #F7FAF8;
+      --lush-card: #FFFFFF;
+      --lush-card-alt: #FAFCFA;
+      --lush-border: #E2ECE5;
+      --lush-border-subtle: #EEF4F0;
+      
+      /* Typography */
+      --lush-text-main: #1C2B20;
+      --lush-text-muted: #576E5F;
+      --lush-text-light: #8A9E91;
+
+      /* Material 3 Elevation & Shadows */
+      --elevation-0: none;
+      --elevation-1: 0 1px 3px rgba(36, 62, 44, 0.05), 0 2px 6px rgba(36, 62, 44, 0.03);
+      --elevation-2: 0 4px 14px rgba(36, 62, 44, 0.08), 0 1px 3px rgba(36, 62, 44, 0.04);
+      --elevation-3: 0 10px 28px rgba(36, 62, 44, 0.11), 0 3px 8px rgba(36, 62, 44, 0.05);
+
+      /* Semantic Status Colors (Gentle & Functional) */
+      --status-incoming-bg: #E8F4FD;
+      --status-incoming-text: #1565C0;
+      --status-incoming-border: #BBDEFB;
+
+      --status-cooking-bg: #FFF7ED;
+      --status-cooking-text: #C2410C;
+      --status-cooking-border: #FED7AA;
+
+      --status-ready-bg: #ECFDF5;
+      --status-ready-text: #047857;
+      --status-ready-border: #A7F3D0;
+
+      --status-urgent-bg: #FEF2F2;
+      --status-urgent-text: #B91C1C;
+      --status-urgent-border: #FECACA;
+
+      --status-note-bg: #FEFCE8;
+      --status-note-text: #854D0E;
+      --status-note-border: #FEF08A;
+
+      /* Dietary Standards */
+      --food-veg: #229947;
+      --food-nonveg: #D32F2F;
+
+      /* Transitions */
+      --motion-standard: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body {
-      background-color: var(--noir-canvas);
-      color: var(--noir-charcoal);
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--lush-bg);
+      color: var(--lush-text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
       overflow-x: hidden;
-      letter-spacing: -0.01em;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
 
     .font-outfit { font-family: 'Outfit', sans-serif; }
     .font-mono { font-family: 'Space Grotesk', monospace; }
 
-    /* Top Navigation Bar */
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--lush-bg);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #C8DCD0;
+      border-radius: 6px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--lush-sage);
+    }
+
+    /* ==========================================================================
+       MATERIAL APP BAR (TOP NAVIGATION - SINGLE ROW, 52PX, ZERO WRAP)
+       ========================================================================== */
     .kds-navbar {
       background: #FFFFFF;
-      border-bottom: 1px solid #E4E4E7;
-      padding: 14px 28px;
+      border-bottom: 1.5px solid var(--lush-border);
+      padding: 0 16px;
+      height: 52px;
+      min-height: 52px;
       position: sticky;
       top: 0;
       z-index: 1030;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+      box-shadow: 0 1px 6px rgba(36, 62, 44, 0.04);
+      display: flex;
+      align-items: center;
+    }
+
+    .kds-nav-container {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: nowrap;
+    }
+
+    .kds-brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
     }
 
     .brand-mark {
       font-family: 'Outfit', sans-serif;
-      font-weight: 900;
-      font-size: 1.35rem;
-      letter-spacing: -0.03em;
-      color: #000000;
-      text-transform: uppercase;
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      color: var(--lush-pine);
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 6px;
+      line-height: 1;
     }
 
     .brand-tag {
-      background: #000000;
+      background: var(--lush-forest);
       color: #FFFFFF;
-      font-size: 0.68rem;
+      font-size: 0.62rem;
       font-weight: 700;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 4px 10px;
+      padding: 2px 6px;
       border-radius: 4px;
+      line-height: 1.2;
     }
 
     .live-dot {
       width: 7px;
       height: 7px;
-      background-color: #000000;
+      background-color: var(--food-veg);
       border-radius: 50%;
       display: inline-block;
-      animation: pulseDot 1.8s infinite;
+      box-shadow: 0 0 0 2px rgba(34, 153, 71, 0.2);
+      animation: pulseGreen 1.8s infinite;
+      flex-shrink: 0;
     }
 
-    @keyframes pulseDot {
-      0% { transform: scale(0.9); opacity: 1; }
-      50% { transform: scale(1.4); opacity: 0.4; }
-      100% { transform: scale(0.9); opacity: 1; }
+    @keyframes pulseGreen {
+      0% { transform: scale(0.9); opacity: 1; box-shadow: 0 0 0 0 rgba(34, 153, 71, 0.5); }
+      70% { transform: scale(1.2); opacity: 0.8; box-shadow: 0 0 0 6px rgba(34, 153, 71, 0); }
+      100% { transform: scale(0.9); opacity: 1; box-shadow: 0 0 0 0 rgba(34, 153, 71, 0); }
     }
 
-    /* KPI Summary Cards */
-    .kpi-card {
-      background: #FFFFFF;
-      border: 1px solid var(--noir-card-border);
-      border-radius: 14px;
-      padding: 20px 24px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: var(--noir-shadow-sm);
-    }
-    .kpi-card:hover {
-      border-color: #000000;
-      transform: translateY(-2px);
-      box-shadow: var(--noir-shadow-md);
+    /* Segmented Navigation Tab Cluster */
+    .kds-tabs-cluster {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      min-width: 0;
     }
 
-    .kpi-number {
-      font-family: 'Outfit', sans-serif;
-      font-size: 2.5rem;
-      font-weight: 800;
-      line-height: 1;
-      color: #000000;
-      letter-spacing: -0.03em;
+    .nav-pills-kds {
+      background: #F1F6F3;
+      border: 1px solid var(--lush-border);
+      border-radius: 100px;
+      padding: 2px 3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      flex-wrap: nowrap !important;
     }
 
-    .kpi-label {
+    .nav-pills-kds .nav-link {
+      background: transparent;
+      color: var(--lush-text-muted);
+      border: none;
+      border-radius: 100px;
       font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--noir-muted);
-    }
-
-    /* Tab Controls */
-    .nav-pills-kds .nav-link {
-      background: #FFFFFF;
-      color: var(--noir-muted);
-      border: 1px solid var(--noir-card-border);
-      border-radius: 100px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      padding: 8px 20px;
-      transition: all 0.18s ease;
+      padding: 3px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: var(--motion-standard);
+      white-space: nowrap;
+      cursor: pointer;
+      line-height: 1.35;
+      flex-shrink: 0;
     }
     .nav-pills-kds .nav-link:hover {
-      color: #000000;
-      border-color: #A1A1AA;
+      color: var(--lush-forest);
+      background: rgba(255, 255, 255, 0.7);
     }
     .nav-pills-kds .nav-link.active {
-      background: #000000 !important;
-      color: #FFFFFF !important;
-      border-color: #000000 !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background: #FFFFFF !important;
+      color: var(--lush-forest) !important;
+      box-shadow: 0 1px 4px rgba(36, 62, 44, 0.12);
+    }
+    .nav-pills-kds .nav-link.active .badge-count {
+      background: var(--lush-mint-soft) !important;
+      color: var(--lush-forest) !important;
     }
 
-    /* Swimlane Columns */
+    .badge-count {
+      background: #E2ECE5;
+      color: var(--lush-pine);
+      font-family: 'Space Grotesk', monospace;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 100px;
+      transition: var(--motion-standard);
+    }
+
+    /* Right Action Cluster */
+    .kds-actions-cluster {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .kds-search-box {
+      position: relative;
+      width: 95px;
+      transition: width 0.25s ease;
+    }
+    .kds-search-box:focus-within {
+      width: 155px;
+    }
+    .kds-search-input {
+      background: #F7FAF8;
+      border: 1px solid var(--lush-border);
+      border-radius: 100px;
+      padding: 3px 8px 3px 26px;
+      font-size: 0.74rem;
+      color: var(--lush-text-main);
+      width: 100%;
+      height: 30px;
+      transition: var(--motion-standard);
+    }
+    .kds-search-input:focus {
+      background: #FFFFFF;
+      border-color: var(--lush-forest);
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(46, 111, 64, 0.12);
+    }
+
+    .btn-kds-icon {
+      background: #FFFFFF;
+      color: var(--lush-text-muted);
+      border: 1px solid var(--lush-border);
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.82rem;
+      padding: 0;
+      transition: var(--motion-standard);
+      flex-shrink: 0;
+    }
+    .btn-kds-icon:hover {
+      background: var(--lush-mint-soft);
+      border-color: var(--lush-sage);
+      color: var(--lush-forest);
+      transform: translateY(-1px);
+    }
+
+    .btn-kds-86 {
+      background: var(--lush-forest);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 100px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 4px 9px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: var(--motion-standard);
+      box-shadow: 0 1px 4px rgba(46, 111, 64, 0.2);
+      white-space: nowrap;
+    }
+      font-size: 0.76rem;
+      font-weight: 800;
+      padding: 5px 12px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: var(--motion-standard);
+      box-shadow: 0 1px 4px rgba(46, 111, 64, 0.2);
+      white-space: nowrap;
+    }
+    .btn-kds-86:hover {
+      background: var(--lush-forest-hover);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(46, 111, 64, 0.3);
+    }
+
+    /* Swimlanes full viewport */
     .swimlane-col {
-      background: #F4F4F6;
-      border: 1px solid var(--noir-card-border);
-      border-radius: 18px;
-      padding: 22px;
-      height: 100%;
-      min-height: calc(100vh - 290px);
+      background: #F4F8F5;
+      border: 1px solid var(--lush-border);
+      border-radius: 16px;
+      padding: 10px 12px;
+      height: calc(100vh - 78px);
+      min-height: 480px;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(36, 62, 44, 0.04);
     }
 
     .swimlane-header {
-      padding-bottom: 16px;
-      margin-bottom: 18px;
-      border-bottom: 1px solid #E4E4E7;
+      padding: 4px 2px 10px;
+      margin-bottom: 8px;
+      border-bottom: 1.5px solid var(--lush-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
     }
 
     .swimlane-title {
       font-family: 'Outfit', sans-serif;
-      font-weight: 700;
-      font-size: 0.95rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #000000;
+      font-weight: 800;
+      font-size: 0.94rem;
+      letter-spacing: 0.01em;
+      color: var(--lush-pine);
       margin-bottom: 0;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
     }
 
     .swimlane-counter {
-      background: #000000;
-      color: #FFFFFF;
       font-family: 'Space Grotesk', monospace;
-      font-size: 0.8rem;
-      font-weight: 700;
-      padding: 3px 10px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 2px 9px;
       border-radius: 100px;
     }
 
-    /* Ticket Docket Card (Classy Michelin Docket) */
+    .badge-lane-new {
+      background: #EBF5FF;
+      color: #1D4ED8;
+      border: 1px solid #BFDBFE;
+    }
+    .badge-lane-cooking {
+      background: #FEF3C7;
+      color: #B45309;
+      border: 1px solid #FDE68A;
+    }
+    .badge-lane-ready {
+      background: var(--lush-mint-soft);
+      color: var(--lush-forest);
+      border: 1px solid var(--lush-border);
+    }
+
+    .swimlane-scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 3px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      scrollbar-width: thin;
+      scrollbar-color: #C8DCD0 transparent;
+    }
+    .swimlane-scroll-body::-webkit-scrollbar {
+      width: 5px;
+    }
+    .swimlane-scroll-body::-webkit-scrollbar-thumb {
+      background: #C8DCD0;
+      border-radius: 4px;
+    }
+
+    /* ==========================================================================
+       MATERIAL ORDER TICKET DOCKET CARD (COMPACT & SCANNABLE)
+       ========================================================================== */
     .ticket-card {
-      background: #FFFFFF;
-      border: 1px solid var(--noir-card-border);
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      background: var(--lush-card);
+      border: 1px solid var(--lush-border);
+      border-radius: 12px;
+      padding: 12px 13px;
+      margin-bottom: 0;
+      box-shadow: 0 1px 3px rgba(36, 62, 44, 0.05);
+      transition: var(--motion-standard);
       position: relative;
+      flex-shrink: 0;
     }
     .ticket-card:hover {
-      border-color: #000000;
-      transform: translateY(-3px);
-      box-shadow: var(--noir-shadow-md);
+      border-color: var(--lush-sage);
+      box-shadow: 0 3px 10px rgba(36, 62, 44, 0.08);
+      transform: translateY(-1px);
     }
 
     .ticket-card.card-lane-new {
-      border-top: 4px solid #000000;
+      border-left: 4.5px solid #2563EB;
+      border-top: 1px solid var(--lush-border);
     }
     .ticket-card.card-lane-cooking {
-      border-top: 4px solid #3F3F46;
+      border-left: 4.5px solid #D97706;
+      border-top: 1px solid var(--lush-border);
     }
     .ticket-card.card-lane-ready {
-      border-top: 4px solid #18181B;
+      border-left: 4.5px solid #16A34A;
+      border-top: 1px solid var(--lush-border);
     }
 
+    /* Compact Prep Note */
+    .kds-card-note {
+      background: #FEFCE8;
+      border: 1px solid #FEF08A;
+      color: #854D0E;
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 0.77rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Tag & Status Pills */
     .ticket-tag-pill {
       font-size: 0.7rem;
       font-weight: 700;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.03em;
       text-transform: uppercase;
-      padding: 4px 10px;
+      padding: 3px 8px;
       border-radius: 100px;
-      background: #F4F4F5;
-      color: #18181B;
-      border: 1px solid #E4E4E7;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
     }
 
-    .ticket-tag-dark {
-      background: #000000;
-      color: #FFFFFF;
-      border-color: #000000;
+    .tag-wait-fresh {
+      background: var(--lush-mint-soft);
+      color: var(--lush-forest);
+      border: 1px solid var(--lush-border);
+    }
+    .tag-wait-warm {
+      background: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FDE68A;
+    }
+    .tag-wait-alert {
+      background: var(--status-urgent-bg);
+      color: var(--status-urgent-text);
+      border: 1px solid var(--status-urgent-border);
+      animation: pulseAlert 2.2s infinite;
+    }
+      background: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FDE68A;
+    }
+    .tag-wait-alert {
+      background: var(--status-urgent-bg);
+      color: var(--status-urgent-text);
+      border: 1px solid var(--status-urgent-border);
+      animation: pulseAlert 2.2s infinite;
     }
 
-    .ticket-tag-outline {
-      background: #FFFFFF;
-      color: #000000;
-      border: 1px solid #000000;
+    @keyframes pulseAlert {
+      0% { opacity: 1; }
+      50% { opacity: 0.75; }
+      100% { opacity: 1; }
     }
 
+    .tag-priority-critical {
+      background: #FEF2F2;
+      color: #B91C1C;
+      border: 1px solid #FECACA;
+    }
+    .tag-priority-high {
+      background: #FFFBEB;
+      color: #B45309;
+      border: 1px solid #FDE68A;
+    }
+    .tag-priority-normal {
+      background: var(--lush-mint-soft);
+      color: var(--lush-pine);
+      border: 1px solid var(--lush-border);
+    }
+
+    /* Attentive Customer Order Note */
+    .chef-note-box {
+      background: var(--status-note-bg);
+      border: 1px solid var(--status-note-border);
+      color: var(--status-note-text);
+      border-radius: 10px;
+      padding: 9px 12px;
+      margin-bottom: 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .chef-note-box i {
+      font-size: 0.95rem;
+      margin-top: 2px;
+      color: #D97706;
+    }
+
+    /* Ticket Line Items */
     .ticket-items-box {
-      background: #FAFAFA;
-      border: 1px solid #F0F0F2;
-      border-radius: 12px;
-      padding: 14px;
-      margin: 14px 0;
+      background: var(--lush-bg);
+      border: 1px solid var(--lush-border-subtle);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin: 12px 0 14px;
     }
 
-    /* Minimalist Veg / Non-Veg Mark */
-    .monochrome-veg {
+    .item-qty-pill {
+      background: var(--lush-mint);
+      color: var(--lush-pine);
+      font-family: 'Space Grotesk', monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      border: 1px solid rgba(46, 111, 64, 0.15);
+    }
+
+    /* Indian Culinary Veg & Non-Veg Icons */
+    .badge-veg-icon {
+      width: 15px;
+      height: 15px;
+      border: 1.5px solid var(--food-veg);
+      border-radius: 3px;
+      background: #FFFFFF;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 14px;
-      height: 14px;
-      border: 1.5px solid #000000;
-      border-radius: 2px;
-      padding: 1px;
+      flex-shrink: 0;
     }
-    .monochrome-veg::after {
+    .badge-veg-icon::after {
       content: '';
       width: 6px;
       height: 6px;
-      background-color: #000000;
+      background-color: var(--food-veg);
       border-radius: 50%;
     }
 
-    .monochrome-nonveg {
+    .badge-nonveg-icon {
+      width: 15px;
+      height: 15px;
+      border: 1.5px solid var(--food-nonveg);
+      border-radius: 3px;
+      background: #FFFFFF;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 14px;
-      height: 14px;
-      border: 1.5px solid #000000;
-      border-radius: 2px;
-      padding: 1px;
+      flex-shrink: 0;
     }
-    .monochrome-nonveg::after {
+    .badge-nonveg-icon::after {
       content: '';
       width: 0;
       height: 0;
-      border-left: 4px solid transparent;
-      border-right: 4px solid transparent;
-      border-bottom: 6px solid #000000;
+      border-left: 3.5px solid transparent;
+      border-right: 3.5px solid transparent;
+      border-bottom: 6px solid var(--food-nonveg);
     }
 
     /* Checklist interaction */
     .dish-checkbox {
       width: 17px;
       height: 17px;
-      border: 1.5px solid #71717A;
+      border: 1.5px solid var(--lush-sage);
+      border-radius: 4px;
       cursor: pointer;
-      accent-color: #000000;
+      accent-color: var(--lush-forest);
+      margin-top: 0;
     }
     .dish-checkbox:checked + label {
       text-decoration: line-through;
-      color: #A1A1AA;
+      color: var(--lush-text-light) !important;
+      opacity: 0.6;
     }
 
-    /* Classy Primary Buttons */
-    .btn-noir-primary {
-      background: #000000;
+    /* Docket Primary Action Buttons */
+    .btn-action-primary {
+      background: var(--lush-forest);
       color: #FFFFFF;
       font-weight: 700;
-      font-size: 0.88rem;
-      letter-spacing: 0.02em;
-      border: 1px solid #000000;
-      border-radius: 100px;
-      padding: 11px 22px;
-      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+      font-size: 0.9rem;
+      letter-spacing: 0.01em;
+      border: none;
+      border-radius: 12px;
+      padding: 11px 18px;
+      min-height: 46px;
+      transition: var(--motion-standard);
+      box-shadow: 0 2px 8px rgba(46, 111, 64, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
-    .btn-noir-primary:hover {
-      background: #27272A;
+    .btn-action-primary:hover {
+      background: var(--lush-forest-hover);
       color: #FFFFFF;
-      border-color: #27272A;
       transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 14px rgba(46, 111, 64, 0.3);
     }
-    .btn-noir-primary:active {
+    .btn-action-primary:active {
       transform: translateY(0);
     }
 
-    .btn-noir-outline {
-      background: #FFFFFF;
-      color: #000000;
-      font-weight: 700;
-      font-size: 0.85rem;
-      border: 1.5px solid #000000;
-      border-radius: 100px;
-      padding: 9px 18px;
-      transition: all 0.18s ease;
-    }
-    .btn-noir-outline:hover {
-      background: #000000;
+    .btn-action-ready {
+      background: #059669;
       color: #FFFFFF;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 12px;
+      padding: 11px 18px;
+      min-height: 46px;
+      transition: var(--motion-standard);
+      box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-action-ready:hover {
+      background: #047857;
+      color: #FFFFFF;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(5, 150, 105, 0.3);
+    }
+
+    .btn-action-dispatch {
+      background: var(--lush-pine);
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 12px;
+      padding: 11px 18px;
+      min-height: 46px;
+      transition: var(--motion-standard);
+      box-shadow: 0 2px 8px rgba(36, 62, 44, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-action-dispatch:hover {
+      background: #17281C;
+      color: #FFFFFF;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(36, 62, 44, 0.35);
     }
 
     .btn-kot-print {
       background: #FFFFFF;
-      color: #18181B;
-      border: 1px solid #E4E4E7;
-      border-radius: 100px;
-      width: 42px;
-      height: 42px;
+      color: var(--lush-text-main);
+      border: 1.5px solid var(--lush-border);
+      border-radius: 12px;
+      width: 46px;
+      height: 46px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.18s ease;
+      font-size: 1.1rem;
+      transition: var(--motion-standard);
+      flex-shrink: 0;
     }
     .btn-kot-print:hover {
-      background: #000000;
-      color: #FFFFFF;
-      border-color: #000000;
+      background: var(--lush-mint-soft);
+      border-color: var(--lush-sage);
+      color: var(--lush-forest);
+      transform: translateY(-1px);
     }
 
     /* Modal Styling */
-    .modal-content-noir {
+    .modal-content-lush {
       background: #FFFFFF;
-      color: #18181B;
-      border: 1px solid #000000;
-      border-radius: 20px;
-      box-shadow: var(--noir-shadow-lg);
+      color: var(--lush-text-main);
+      border: 1px solid var(--lush-border);
+      border-radius: 22px;
+      box-shadow: var(--elevation-3);
+      overflow: hidden;
     }
-    .modal-header-noir {
-      border-bottom: 1px solid #E4E4E7;
-      padding: 20px 24px;
+    .modal-header-lush {
+      background: var(--lush-mint-soft);
+      border-bottom: 1px solid var(--lush-border);
+      padding: 18px 22px;
     }
-    .modal-footer-noir {
-      border-top: 1px solid #E4E4E7;
-      padding: 16px 24px;
+    .modal-footer-lush {
+      border-top: 1px solid var(--lush-border);
+      padding: 14px 22px;
     }
 
     /* Search Input */
-    .search-input-noir {
+    .search-input-lush {
       background: #FFFFFF;
-      border: 1px solid var(--noir-card-border);
-      color: #000000;
+      border: 1.5px solid var(--lush-border);
+      color: var(--lush-text-main);
       border-radius: 100px;
-      padding: 8px 18px;
+      padding: 8px 16px 8px 36px;
       font-size: 0.85rem;
-      transition: all 0.18s ease;
+      transition: var(--motion-standard);
     }
-    .search-input-noir:focus {
-      border-color: #000000;
+    .search-input-lush:focus {
+      border-color: var(--lush-forest);
       outline: none;
-      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 0 0 3px rgba(46, 111, 64, 0.12);
     }
 
-    /* Instruction Box */
-    .instruction-callout {
-      background: #000000;
-      color: #FFFFFF;
-      border-radius: 8px;
-      padding: 10px 14px;
+    /* Rider Dispatch Selection Card */
+    .rider-dispatch-card {
+      background: var(--lush-mint-soft);
+      border: 1px solid var(--lush-border);
+      border-radius: 14px;
+      padding: 12px 14px;
       margin-bottom: 12px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
     }
 
-    /* Rider Box */
-    .rider-dispatch-box {
-      background: #F8F9FA;
-      border: 1px solid #E4E4E7;
-      border-radius: 12px;
-      padding: 14px;
-      margin-bottom: 14px;
+    /* Responsive Media Queries */
+    @media (max-width: 1280px) {
+      .kds-navbar {
+        padding: 0 8px;
+      }
+      .kds-nav-container {
+        gap: 4px;
+      }
+      .brand-mark {
+        font-size: 1.1rem;
+      }
+      .brand-tag {
+        font-size: 0.58rem;
+        padding: 1px 4px;
+      }
+      .nav-pills-kds {
+        padding: 2px;
+        gap: 1px;
+      }
+      .nav-pills-kds .nav-link {
+        padding: 3px 5px;
+        font-size: 0.69rem;
+        gap: 3px;
+      }
+      .badge-count {
+        font-size: 0.65rem;
+        padding: 0 4px;
+      }
+      .kds-actions-cluster {
+        gap: 4px;
+      }
+      .kds-search-box {
+        width: 72px;
+      }
+      .kds-search-box:focus-within {
+        width: 130px;
+      }
+      .btn-kds-86 {
+        padding: 3px 6px;
+        font-size: 0.68rem;
+      }
+      .btn-kds-icon {
+        width: 26px;
+        height: 26px;
+        font-size: 0.74rem;
+      }
+    }
+
+    @media (max-width: 991.98px) {
+      .kds-navbar {
+        padding: 6px 10px;
+      }
+      .brand-mark {
+        font-size: 1.1rem;
+      }
+      .swimlane-col {
+        min-height: auto;
+        margin-bottom: 20px;
+        padding: 14px;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .kpi-card {
+        padding: 12px 14px;
+        border-radius: 14px;
+      }
+      .kpi-number {
+        font-size: 1.6rem !important;
+      }
+      .kpi-label {
+        font-size: 0.65rem;
+        margin-bottom: 2px;
+      }
+      .kpi-icon-wrap {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        font-size: 1rem;
+      }
+      .chip-bar-container {
+        padding: 8px 10px;
+        border-radius: 14px;
+        margin-bottom: 16px;
+      }
+      .nav-pills-kds .nav-link {
+        font-size: 0.78rem;
+        padding: 6px 14px;
+      }
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Navigation Bar -->
+  <!-- Top Navigation Bar (Material 3 App Bar - Single Unified Row) -->
   <header class="kds-navbar">
-    <div class="container-fluid px-2 px-md-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="kds-nav-container">
       
-      <!-- Brand & Status -->
-      <div class="d-flex align-items-center gap-3">
+      <!-- Left: Brand & Station Status -->
+      <div class="kds-brand-cluster">
         <a href="<?= KITCHEN_URL ?>/index.php" class="text-decoration-none">
           <div class="brand-mark">
-            <span>ZIPPY<span style="font-weight:300;">.</span></span>
+            <span>ZIPPY<span style="color:var(--lush-forest);">.</span></span>
             <span class="brand-tag">ATELIER KDS</span>
           </div>
         </a>
-
-        <div class="d-none d-sm-flex align-items-center gap-2 px-3 py-1 rounded-pill" style="background:#F4F4F5; border:1px solid #E4E4E7;">
+        <div class="d-none d-xxl-inline-flex align-items-center gap-1 px-2 py-0.5 rounded-pill" style="background:var(--lush-mint-soft); border:1px solid var(--lush-border); font-size:0.68rem; font-weight:800; color:var(--lush-pine);">
           <span class="live-dot"></span>
-          <span class="small font-mono fw-bold" style="font-size: 0.72rem; letter-spacing:0.06em; color:#000000;">STATION ONLINE</span>
+          <span>ONLINE</span>
         </div>
-        <div class="d-none d-md-flex align-items-center gap-1 px-2 py-1 rounded-pill" style="background:#FFF8E7; border:1px solid #FFE082; font-size:0.72rem; color:#B78103; font-weight:700;">
-          <i class="fa-solid fa-hat-chef"></i> KITCHEN SESSION SCOPE
-        </div>
+        <span class="live-dot d-inline-block d-xxl-none ms-1" title="Station Online"></span>
       </div>
 
-      <!-- Controls & Profile -->
-      <div class="d-flex align-items-center gap-2 gap-md-3">
-        
-        <!-- Live Station Clock -->
-        <div class="d-none d-lg-flex align-items-center gap-2 px-3 py-1 rounded-pill bg-light border border-secondary-subtle small font-mono">
-          <i class="bi bi-clock-history text-dark"></i>
-          <span id="kdsLiveClock" class="fw-bold text-dark">--:--:--</span>
+      <!-- Center: Segmented Navigation Tab Cluster -->
+      <div class="kds-tabs-cluster">
+        <ul class="nav nav-pills nav-pills-kds mb-0 flex-nowrap" id="kdsStationTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-all-btn" data-bs-toggle="pill" data-bs-target="#tab-all" type="button" role="tab" title="Kanban 3-Swimlane View">
+              <i class="fa-solid fa-table-columns"></i>
+              <span class="d-none d-xl-inline">All Swimlanes</span>
+              <span class="d-inline d-xl-none">All</span>
+              <span class="badge-count" id="tabCountTotal"><?= $totalActive ?? 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-new-btn" data-bs-toggle="pill" data-bs-target="#tab-new" type="button" role="tab" title="Incoming Orders Pending Acceptance">
+              <i class="bi bi-inbox"></i>
+              <span class="d-none d-xxl-inline">1. </span><span>Incoming</span>
+              <span class="badge-count" id="tabCountNew"><?= $countNew ?? 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-cooking-btn" data-bs-toggle="pill" data-bs-target="#tab-cooking" type="button" role="tab" title="Active on Stoves & Ovens">
+              <i class="fa-solid fa-fire"></i>
+              <span class="d-none d-xxl-inline">2. </span><span>Cooking</span>
+              <span class="badge-count" id="tabCountCooking"><?= $countCooking ?? 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-ready-btn" data-bs-toggle="pill" data-bs-target="#tab-ready" type="button" role="tab" title="Bagged & Ready for Courier Handover">
+              <i class="bi bi-bag-check"></i>
+              <span class="d-none d-xxl-inline">3. </span><span>Courier</span>
+              <span class="badge-count" id="tabCountReady"><?= $countReady ?? 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-history-btn" data-bs-toggle="pill" data-bs-target="#tab-history" type="button" role="tab" title="Historical Fulfilled Orders">
+              <i class="bi bi-clock-history text-primary"></i>
+              <span>Order History</span>
+              <span class="badge-count text-primary bg-white border" id="tabCountHistory"><?= isset($orderHistory) ? count($orderHistory) : 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-salary-btn" data-bs-toggle="pill" data-bs-target="#tab-salary" type="button" role="tab" title="Chef Salary & Payouts Ledger">
+              <i class="bi bi-wallet2"></i>
+              <span>Salary</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Right: Action Controls & Chef Profile -->
+      <div class="kds-actions-cluster">
+        <!-- Search -->
+        <div class="kds-search-box">
+          <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-2 text-muted" style="pointer-events:none; font-size:0.72rem;"></i>
+          <input type="text" id="kdsSearchInput" class="kds-search-input" placeholder="Search..." onkeyup="filterTickets()" title="Filter tickets by docket or item">
         </div>
 
-        <!-- Audio Alert Chime Toggle -->
-        <button id="btnAudioToggle" class="btn btn-sm btn-noir-outline rounded-pill px-3" onclick="toggleAudioChime()" title="Toggle Web Audio Bell Chime">
-          <i id="audioIcon" class="bi bi-bell-fill me-1"></i> <span id="audioText">SOUND: ON</span>
+        <!-- 86-List -->
+        <button class="btn-kds-86" data-bs-toggle="modal" data-bs-target="#modal86List" title="86-List: Manage Inventory Availability">
+          <i class="fa-solid fa-boxes-stacked"></i>
+          <span>86-LIST</span>
         </button>
 
-        <!-- Auto-Refresh Toggle -->
-        <button id="btnRefreshToggle" class="btn btn-sm btn-noir-outline rounded-pill px-3" onclick="toggleAutoRefresh()" title="Pause or Resume automated sync">
-          <i class="bi bi-arrow-clockwise me-1"></i> <span id="refreshText">SYNC (12s)</span>
+        <!-- Sound Alert Toggle -->
+        <button id="btnAudioToggle" class="btn-kds-icon" onclick="toggleAudioChime()" title="Toggle Kitchen Alert Chime">
+          <i id="audioIcon" class="bi bi-bell-fill" style="color:var(--lush-forest);"></i>
+          <span id="audioText" class="d-none">SOUND: ON</span>
         </button>
 
-        <!-- 86-List (Inventory Availability) -->
-        <button class="btn btn-sm btn-noir-primary px-3 rounded-pill" data-bs-toggle="modal" data-bs-target="#modal86List">
-          <i class="fa-solid fa-boxes-stacked me-1"></i> 86-LIST
+        <!-- Auto Sync Toggle -->
+        <button id="btnRefreshToggle" class="btn-kds-icon" onclick="toggleAutoRefresh()" title="Auto Sync with Kitchen Server">
+          <i id="refreshIcon" class="bi bi-arrow-clockwise" style="color:var(--lush-forest);"></i>
+          <span id="refreshText" class="d-none">SYNC (6s)</span>
         </button>
 
-        <!-- Chef Account Dropdown -->
+        <!-- Fullscreen Toggle -->
+        <button id="btnFullscreenToggle" class="btn-kds-icon" onclick="toggleKdsFullscreen()" title="Toggle Fullscreen Kiosk Mode">
+          <i id="fullscreenIcon" class="bi bi-fullscreen"></i>
+          <span class="d-none">FULLSCREEN</span>
+        </button>
+
+        <!-- Live Clock -->
+        <span id="kdsLiveClock" class="d-none d-xxl-inline-block small font-mono fw-bold text-muted ps-1 pe-2" style="font-size:0.74rem;">--:--:--</span>
+
+        <!-- Chef Profile Dropdown -->
         <div class="dropdown">
-          <button class="btn btn-sm bg-white rounded-pill px-3 py-2 d-flex align-items-center gap-2 border" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-color:#E4E4E7 !important;">
-            <div class="rounded-circle bg-black text-white d-inline-flex align-items-center justify-content-center" style="width:24px; height:24px; font-size:0.7rem; font-weight:800;">
+          <button class="btn btn-sm bg-white rounded-pill px-2 py-1 d-flex align-items-center gap-1 border shadow-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-color:var(--lush-border) !important; height:30px;">
+            <div class="rounded-circle text-white d-inline-flex align-items-center justify-content-center" style="width:22px; height:22px; font-size:0.65rem; font-weight:800; background:var(--lush-forest);">
               CS
             </div>
-            <span class="small fw-bold text-dark d-none d-sm-inline"><?= e($currentUser['name'] ?? 'Chef Sanjeev') ?></span>
-            <i class="bi bi-chevron-down small text-muted"></i>
+            <i class="bi bi-chevron-down text-muted" style="font-size:0.65rem;"></i>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-lg py-2" style="background:#FFFFFF; border:1px solid #000000; border-radius:12px; min-width: 220px;">
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg py-2 border-0 rounded-4" style="background:#FFFFFF; min-width: 230px; box-shadow: var(--elevation-3);">
             <li class="px-3 py-2 border-bottom">
-              <div class="fw-bold text-dark small font-outfit"><?= e($currentUser['name']) ?></div>
-              <div class="text-muted" style="font-size:0.75rem;"><?= e($currentUser['email']) ?></div>
+              <div class="fw-bold small font-outfit" style="color:var(--lush-pine);"><?= e($currentUser['name'] ?? 'Chef Sanjeev') ?></div>
+              <div class="text-muted" style="font-size:0.72rem;"><?= e($currentUser['email'] ?? 'chef@zippy.com') ?> &bull; <strong>Expeditor</strong></div>
             </li>
-            <li><a class="dropdown-item text-dark small py-2" href="<?= CUSTOMER_URL ?>/index.php" target="_blank"><i class="bi bi-shop me-2"></i> Customer Storefront</a></li>
-            <li><a class="dropdown-item text-dark small py-2" href="<?= DELIVERY_URL ?>/index.php" target="_blank"><i class="bi bi-bicycle me-2"></i> Delivery Fleet App</a></li>
+            <li><a class="dropdown-item small py-2 fw-semibold" href="javascript:void(0)" onclick="showHistoryTab()"><i class="bi bi-clock-history me-2 text-primary"></i> Order History &amp; Fulfilled Dockets</a></li>
+            <li><a class="dropdown-item small py-2" href="javascript:void(0)" onclick="showSalaryTab()"><i class="bi bi-wallet2 me-2 text-success"></i> Chef Salary &amp; Payslips</a></li>
             <?php if (is_admin()): ?>
-              <li><a class="dropdown-item text-dark small py-2" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2"></i> Admin Console</a></li>
+              <li><a class="dropdown-item small py-2" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2 text-warning"></i> Admin Console</a></li>
             <?php endif; ?>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item text-danger fw-semibold small py-2" href="<?= KITCHEN_URL ?>/logout.php"><i class="bi bi-box-arrow-right me-2"></i> Chef Sign Off</a></li>
@@ -496,11 +980,20 @@
 
       </div>
 
+      <!-- Preserved DOM IDs for JS Polling & Automated Tests -->
+      <div class="d-none">
+        <span id="statNew"><?= $countNew ?? 0 ?></span>
+        <span id="statCooking"><?= $countCooking ?? 0 ?></span>
+        <span id="statReady"><?= $countReady ?? 0 ?></span>
+        <span id="statHandedOver"><?= $countHandedOver ?? 0 ?></span>
+        <span id="statActiveTotal"><?= $totalActive ?? 0 ?></span>
+      </div>
+
     </div>
   </header>
 
   <!-- Main Container -->
-  <main class="container-fluid px-3 px-lg-4 py-4">
+  <main class="container-fluid px-2 px-md-3 py-2">
 
     <!-- Flash Notifications -->
     <div id="flashContainer">
@@ -508,9 +1001,9 @@
     </div>
 
     <!-- Live Audio Notification Banner -->
-    <div id="newOrderBanner" class="alert d-none align-items-center justify-content-between rounded-4 py-3 px-4 mb-4 shadow-sm" style="background: #000000; color:#FFFFFF; border:1px solid #000000;">
+    <div id="newOrderBanner" class="alert d-none align-items-center justify-content-between rounded-4 py-3 px-3 px-md-4 mb-4 shadow-sm" style="background: linear-gradient(135deg, var(--lush-pine) 0%, var(--lush-forest) 100%); color:#FFFFFF; border:none;">
       <div class="d-flex align-items-center gap-3">
-        <div class="rounded-circle bg-white text-black p-2 d-inline-flex align-items-center justify-content-center" style="width:38px; height:38px;">
+        <div class="rounded-circle p-2 d-inline-flex align-items-center justify-content-center" style="width:40px; height:40px; background:rgba(255,255,255,0.2); color:#FFFFFF;">
           <i class="fa-solid fa-bell"></i>
         </div>
         <div>
@@ -518,7 +1011,7 @@
           <span class="small text-white-50" id="newOrderBannerDesc">Fresh customer orders placed. Review incoming queue below.</span>
         </div>
       </div>
-      <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-4 fw-bold" onclick="dismissOrderBanner()">
+      <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-3 px-md-4 fw-bold" onclick="dismissOrderBanner()">
         Acknowledge
       </button>
     </div>

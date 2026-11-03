@@ -17,29 +17,9 @@ if (!str_contains($_SERVER['SCRIPT_NAME'], 'login.php')) {
     require_admin();
 }
 
-// Live Operations counts
-$liveOrdersCount = (int)(db_fetch_val("
-    SELECT COUNT(*) FROM `orders` 
-    WHERE `order_status` IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')
-") ?: 0);
-
-$preparingOrdersCount = (int)(db_fetch_val("
-    SELECT COUNT(*) FROM `orders` 
-    WHERE `order_status` IN ('CONFIRMED', 'COOKING')
-") ?: 0);
-
-$deliveringOrdersCount = (int)(db_fetch_val("
-    SELECT COUNT(*) FROM `orders` 
-    WHERE `order_status` = 'OUT_FOR_DELIVERY'
-") ?: 0);
-
-$readyOrdersCount = (int)(db_fetch_val("
-    SELECT COUNT(*) FROM `orders` 
-    WHERE `order_status` = 'READY'
-") ?: 0);
-
-// Backward compatibility alias
-$activeOrdersCount = $liveOrdersCount;
+// Live Operations counts (Single optimized query via get_order_kpis())
+$orderKpis = get_order_kpis();
+$liveOrdersCount = $orderKpis['live'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -106,34 +86,27 @@ $activeOrdersCount = $liveOrdersCount;
           <a href="<?= ADMIN_URL ?>/orders.php" class="admin-nav-link <?= ($activePage === 'orders') ? 'active' : '' ?>">
             <i class="bi bi-receipt"></i>
             <span>Live Orders</span>
-            <?php if ($liveOrdersCount > 0): ?>
-              <span class="badge bg-danger rounded-pill ms-auto" title="<?= (int)$preparingOrdersCount ?> preparing, <?= (int)$deliveringOrdersCount ?> delivering">
-                <?= (int)$liveOrdersCount ?>
-              </span>
-            <?php endif; ?>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/kitchen-view.php" class="admin-nav-link <?= ($activePage === 'kitchen_view') ? 'active' : '' ?>">
-            <i class="fa-solid fa-users-gear text-warning"></i>
+            <i class="fa-solid fa-users-gear text-warning opacity-75"></i>
             <span>Kitchen View</span>
-            <span class="badge bg-warning text-dark rounded-pill ms-auto" style="font-size:0.65rem;">Staff & Salary</span>
           </a>
         </li>
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/delivery-view.php" class="admin-nav-link <?= ($activePage === 'delivery_view') ? 'active' : '' ?>">
-            <i class="bi bi-bicycle text-info"></i>
+            <i class="bi bi-bicycle text-info opacity-75"></i>
             <span>Delivery View</span>
-            <span class="badge bg-info text-dark rounded-pill ms-auto" style="font-size:0.65rem;">Fleet & Salary</span>
           </a>
         </li>
 
-        <li class="m3-nav-subheader">Commerce & Finance</li>
+        <li class="m3-nav-subheader">Business Workspaces</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/financial-transactions.php" class="admin-nav-link <?= ($activePage === 'finance') ? 'active' : '' ?>">
-            <i class="bi bi-cash-coin text-success"></i>
+            <i class="bi bi-cash-coin text-success opacity-75"></i>
             <span>Money & COD Ledger</span>
           </a>
         </li>
@@ -145,18 +118,19 @@ $activeOrdersCount = $liveOrdersCount;
           </a>
         </li>
 
-        <li class="admin-nav-item">
-          <a href="<?= ADMIN_URL ?>/categories.php" class="admin-nav-link <?= ($activePage === 'categories') ? 'active' : '' ?>">
-            <i class="bi bi-tags"></i>
-            <span>Food Categories</span>
-          </a>
-        </li>
-
-        <li class="m3-nav-subheader">Insights & Support</li>
+        <li class="m3-nav-subheader">Insights</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/reports.php" class="admin-nav-link <?= ($activePage === 'reports') ? 'active' : '' ?>">
             <i class="bi bi-graph-up-arrow"></i>
             <span>Executive BI Reports</span>
+          </a>
+        </li>
+
+        <li class="m3-nav-subheader">Management & Support</li>
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/categories.php" class="admin-nav-link <?= ($activePage === 'categories') ? 'active' : '' ?>">
+            <i class="bi bi-tags"></i>
+            <span>Food Categories</span>
           </a>
         </li>
 
@@ -176,8 +150,8 @@ $activeOrdersCount = $liveOrdersCount;
 
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/reviews.php" class="admin-nav-link <?= ($activePage === 'reviews') ? 'active' : '' ?>">
-            <i class="bi bi-star-fill text-warning"></i>
-            <span>Food Reviews ⭐</span>
+            <i class="bi bi-star-fill text-warning opacity-75"></i>
+            <span>Food Reviews</span>
           </a>
         </li>
 
@@ -223,15 +197,19 @@ $activeOrdersCount = $liveOrdersCount;
         </div>
 
         <div class="d-flex align-items-center gap-3">
-          <!-- Multi-Actor Session Scope Pill -->
-          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill small d-none d-sm-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_ADMIN_SESS">
-            <i class="bi bi-shield-lock-fill"></i> Admin Portal Session
-          </span>
+          <!-- Universal Command Palette Trigger Button (Ctrl + K) -->
+          <button type="button" class="btn btn-sm btn-light border rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-2 text-muted shadow-xs" onclick="openCommandPalette()" title="Search anything across Zippy Admin (Ctrl+K)">
+            <i class="bi bi-search text-muted" style="font-size:0.8rem;"></i>
+            <span class="small font-monospace" style="font-size:0.75rem;">Search / Commands</span>
+            <kbd class="bg-white border text-secondary px-1 py-0 rounded" style="font-size:0.65rem;">Ctrl K</kbd>
+          </button>
 
-          <!-- Live Store Operations Status Indicator -->
-          <div class="d-none d-md-flex align-items-center gap-2 px-3 py-1 rounded-pill small fw-bold" style="background:#EDFBF2; color:#2E6F40; border:1px solid #CEFFDC;">
+          <!-- Combined Session & Store Status Pill -->
+          <div class="d-none d-sm-flex align-items-center gap-2 px-3 py-1 rounded-pill small bg-light border text-secondary" title="Isolated Session: ZIPPY_ADMIN_SESS">
             <span class="live-pulse-dot green"></span>
-            <span>Store Open & Live</span>
+            <span class="text-dark fw-semibold">Store Live</span>
+            <span class="text-muted opacity-50">&bull;</span>
+            <span class="small text-muted font-monospace"><i class="bi bi-shield-check text-forest me-1"></i>Admin Portal Session</span>
           </div>
 
           <!-- Live Operations Alerts Dropdown -->
@@ -247,7 +225,6 @@ $activeOrdersCount = $liveOrdersCount;
             <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-4 small p-2" style="min-width: 270px;">
               <li class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex align-items-center justify-content-between">
                 <span><i class="bi bi-broadcast text-danger me-1"></i> Live Operations</span>
-                <span class="badge bg-danger rounded-pill"><?= (int)$liveOrdersCount ?> Active</span>
               </li>
               <li>
                 <a class="dropdown-item rounded-3 py-2 d-flex align-items-center justify-content-between" href="<?= ADMIN_URL ?>/orders.php?status=COOKING">
@@ -255,7 +232,6 @@ $activeOrdersCount = $liveOrdersCount;
                     <span class="p-1 rounded-circle bg-warning bg-opacity-25 text-warning"><i class="bi bi-fire"></i></span>
                     <span>Being Prepared</span>
                   </span>
-                  <span class="badge bg-warning text-dark rounded-pill"><?= (int)$preparingOrdersCount ?></span>
                 </a>
               </li>
               <li>
@@ -264,20 +240,16 @@ $activeOrdersCount = $liveOrdersCount;
                     <span class="p-1 rounded-circle bg-primary bg-opacity-25 text-primary"><i class="bi bi-bicycle"></i></span>
                     <span>Out for Delivery</span>
                   </span>
-                  <span class="badge bg-primary text-white rounded-pill"><?= (int)$deliveringOrdersCount ?></span>
                 </a>
               </li>
-              <?php if ($readyOrdersCount > 0): ?>
               <li>
                 <a class="dropdown-item rounded-3 py-2 d-flex align-items-center justify-content-between" href="<?= ADMIN_URL ?>/orders.php?status=READY">
                   <span class="d-flex align-items-center gap-2">
                     <span class="p-1 rounded-circle bg-success bg-opacity-25 text-success"><i class="bi bi-box-seam"></i></span>
                     <span>Ready for Dispatch</span>
                   </span>
-                  <span class="badge bg-success text-white rounded-pill"><?= (int)$readyOrdersCount ?></span>
                 </a>
               </li>
-              <?php endif; ?>
               <li class="border-top mt-2 pt-2">
                 <a class="dropdown-item rounded-3 text-center fw-bold text-success py-2" href="<?= ADMIN_URL ?>/orders.php">
                   Manage Live Orders Hub &rarr;

@@ -179,7 +179,18 @@ $categories = db_fetch_all("
             </td>
             <td class="text-end">
               <div class="d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#editCategoryModal<?= (int)$cat['category_id'] ?>">
+                <button type="button" 
+                        class="btn btn-sm btn-outline-primary rounded-pill px-3 btn-edit-category" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#editCategoryModal"
+                        data-id="<?= (int)$cat['category_id'] ?>"
+                        data-name="<?= e($cat['category_name']) ?>"
+                        data-slug="<?= e($cat['category_slug']) ?>"
+                        data-description="<?= e($cat['category_description'] ?? '') ?>"
+                        data-image="<?= e($cat['image_url'] ?? '') ?>"
+                        data-display-image="<?= e(get_category_image_url($cat['image_url'])) ?>"
+                        data-order="<?= (int)$cat['display_order'] ?>"
+                        data-active="<?= (int)$cat['is_active'] ?>">
                   <i class="bi bi-pencil me-1"></i> Edit
                 </button>
 
@@ -192,122 +203,6 @@ $categories = db_fetch_all("
                   </button>
                 </form>
               </div>
-
-              <!-- Edit Category Modal -->
-              <div class="modal fade" id="editCategoryModal<?= (int)$cat['category_id'] ?>" tabindex="-1">
-                <div class="modal-dialog modal-dialog-centered text-start">
-                  <div class="modal-content rounded-4 border-0 shadow-lg">
-                    <div class="modal-header border-bottom">
-                      <h5 class="modal-title fw-bold">
-                        <i class="bi bi-pencil-square me-2 text-forest"></i>Edit Category: <?= e($cat['category_name']) ?>
-                      </h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-
-                    <form method="POST" action="<?= ADMIN_URL ?>/categories.php" enctype="multipart/form-data">
-                      <?= csrf_field() ?>
-                      <input type="hidden" name="action" value="edit_category">
-                      <input type="hidden" name="category_id" value="<?= (int)$cat['category_id'] ?>">
-
-                      <div class="modal-body p-4">
-                        <div class="mb-3">
-                          <label class="form-label small fw-bold">Category Name *</label>
-                          <input type="text" name="category_name" class="form-control rounded-3" value="<?= e($cat['category_name']) ?>" required>
-                        </div>
-
-                        <div class="mb-3">
-                          <label class="form-label small fw-bold">Routing Slug *</label>
-                          <input type="text" name="category_slug" class="form-control rounded-3 font-monospace" value="<?= e($cat['category_slug']) ?>" required>
-                        </div>
-
-                        <div class="mb-3">
-                          <label class="form-label small fw-bold">Description</label>
-                          <textarea name="category_description" class="form-control rounded-3" rows="2"><?= e($cat['category_description']) ?></textarea>
-                        </div>
-
-                        <!-- Category Photo: Both Upload & URL Options Available -->
-                        <div class="mb-3">
-                          <label class="form-label small fw-bold d-flex align-items-center justify-content-between mb-2">
-                            <span><i class="bi bi-image me-1 text-forest"></i> Category Photo (Upload Photo or Photo URL)</span>
-                            <span class="text-muted fw-normal" style="font-size: 0.75rem;">JPG, PNG, WEBP, GIF (Max 5MB)</span>
-                          </label>
-
-                          <div class="p-3 rounded-3 border bg-light-subtle">
-                            <div class="d-flex align-items-center gap-3 mb-3">
-                              <div class="position-relative flex-shrink-0">
-                                <img id="catPreview_<?= (int)$cat['category_id'] ?>" 
-                                     src="<?= e(get_category_image_url($cat['image_url'])) ?>" 
-                                     alt="<?= e($cat['category_name']) ?>" 
-                                     class="rounded-3 border object-fit-cover shadow-sm bg-white" 
-                                     style="width: 64px; height: 64px;">
-                                <span class="position-absolute bottom-0 end-0 badge bg-dark bg-opacity-75 rounded-circle p-1" style="transform: translate(20%, 20%);" title="Category Photo Preview">
-                                  <i class="bi bi-camera-fill text-white" style="font-size: 0.65rem;"></i>
-                                </span>
-                              </div>
-
-                              <div class="flex-grow-1">
-                                <div class="small fw-bold text-dark mb-1">
-                                  <i class="bi bi-upload text-forest me-1"></i> Option 1: Upload Photo from Device
-                                </div>
-                                <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-                                  <label for="catPhotoInput_<?= (int)$cat['category_id'] ?>" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 fw-bold shadow-sm" style="border-color:#2E6F40; color:#2E6F40; cursor:pointer;">
-                                    <i class="bi bi-folder2-open me-1"></i> Browse & Upload Photo
-                                  </label>
-                                  <span id="catPhotoName_<?= (int)$cat['category_id'] ?>" class="small text-muted text-truncate" style="max-width: 200px;">
-                                    No file chosen
-                                  </span>
-                                </div>
-                                <input type="file" 
-                                       id="catPhotoInput_<?= (int)$cat['category_id'] ?>" 
-                                       name="category_image" 
-                                       class="d-none cat-photo-upload" 
-                                       accept="image/png, image/jpeg, image/jpg, image/webp, image/gif"
-                                       data-preview-id="catPreview_<?= (int)$cat['category_id'] ?>"
-                                       data-name-id="catPhotoName_<?= (int)$cat['category_id'] ?>">
-                                <div class="text-muted" style="font-size: 0.75rem;">
-                                  Select an image file from your computer.
-                                </div>
-                              </div>
-                            </div>
-
-                            <!-- Option 2: Direct Photo URL (Always Visible!) -->
-                            <div class="border-top pt-2">
-                              <label class="form-label small fw-bold text-dark mb-1" for="catUrlInput_<?= (int)$cat['category_id'] ?>">
-                                <i class="bi bi-link-45deg text-forest me-1"></i> Option 2: Photo Web URL
-                              </label>
-                              <input type="url" 
-                                     name="image_url" 
-                                     id="catUrlInput_<?= (int)$cat['category_id'] ?>" 
-                                     class="form-control form-control-sm rounded-3 cat-url-input" 
-                                     value="<?= e($cat['image_url']) ?>" 
-                                     placeholder="https://images.unsplash.com/..."
-                                     data-preview-id="catPreview_<?= (int)$cat['category_id'] ?>">
-                              <div class="form-text small text-muted" style="font-size:0.75rem;">
-                                Paste any image URL directly. If a file is uploaded above, it takes precedence.
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="form-check">
-                          <input class="form-check-input" type="checkbox" name="is_active" value="1" id="actEdit<?= (int)$cat['category_id'] ?>" <?= $cat['is_active'] ? 'checked' : '' ?>>
-                          <label class="form-check-label small" for="actEdit<?= (int)$cat['category_id'] ?>">
-                            Visible in customer storefront navigation
-                          </label>
-                        </div>
-                      </div>
-
-                      <div class="modal-footer border-top">
-                        <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
-                          <i class="bi bi-check2-circle me-1"></i> Save Changes
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-
             </td>
           </tr>
         <?php endforeach; ?>
@@ -315,6 +210,120 @@ $categories = db_fetch_all("
     </table>
   </div>
 
+</div>
+
+<!-- Single Parameterized Edit Category Modal -->
+<div class="modal fade" id="editCategoryModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered text-start">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-pencil-square me-2 text-forest"></i>Edit Category: <span id="editCatTitle"></span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <form method="POST" action="<?= ADMIN_URL ?>/categories.php" enctype="multipart/form-data">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="edit_category">
+        <input type="hidden" name="category_id" id="editCatId" value="">
+
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Category Name *</label>
+            <input type="text" name="category_name" id="editCatName" class="form-control rounded-3" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Routing Slug *</label>
+            <input type="text" name="category_slug" id="editCatSlug" class="form-control rounded-3 font-monospace" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Description</label>
+            <textarea name="category_description" id="editCatDesc" class="form-control rounded-3" rows="2"></textarea>
+          </div>
+
+          <!-- Category Photo: Both Upload & URL Options Available -->
+          <div class="mb-3">
+            <label class="form-label small fw-bold d-flex align-items-center justify-content-between mb-2">
+              <span><i class="bi bi-image me-1 text-forest"></i> Category Photo (Upload Photo or Photo URL)</span>
+              <span class="text-muted fw-normal" style="font-size: 0.75rem;">JPG, PNG, WEBP, GIF (Max 5MB)</span>
+            </label>
+
+            <div class="p-3 rounded-3 border bg-light-subtle">
+              <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="position-relative flex-shrink-0">
+                  <img id="editCatPreview" 
+                       src="" 
+                       alt="Category Preview" 
+                       class="rounded-3 border object-fit-cover shadow-sm bg-white" 
+                       style="width: 64px; height: 64px;">
+                  <span class="position-absolute bottom-0 end-0 badge bg-dark bg-opacity-75 rounded-circle p-1" style="transform: translate(20%, 20%);" title="Category Photo Preview">
+                    <i class="bi bi-camera-fill text-white" style="font-size: 0.65rem;"></i>
+                  </span>
+                </div>
+
+                <div class="flex-grow-1">
+                  <div class="small fw-bold text-dark mb-1">
+                    <i class="bi bi-upload text-forest me-1"></i> Option 1: Upload Photo from Device
+                  </div>
+                  <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                    <label for="editCatPhotoInput" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 fw-bold shadow-sm" style="border-color:#2E6F40; color:#2E6F40; cursor:pointer;">
+                      <i class="bi bi-folder2-open me-1"></i> Browse & Upload Photo
+                    </label>
+                    <span id="editCatPhotoName" class="small text-muted text-truncate" style="max-width: 200px;">
+                      No file chosen
+                    </span>
+                  </div>
+                  <input type="file" 
+                         id="editCatPhotoInput" 
+                         name="category_image" 
+                         class="d-none cat-photo-upload" 
+                         accept="image/png, image/jpeg, image/jpg, image/webp, image/gif"
+                         data-preview-id="editCatPreview"
+                         data-name-id="editCatPhotoName">
+                  <div class="text-muted" style="font-size: 0.75rem;">
+                    Select an image file from your computer.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Option 2: Direct Photo URL -->
+              <div class="border-top pt-2">
+                <label class="form-label small fw-bold text-dark mb-1" for="editCatUrlInput">
+                  <i class="bi bi-link-45deg text-forest me-1"></i> Option 2: Photo Web URL
+                </label>
+                <input type="url" 
+                       name="image_url" 
+                       id="editCatUrlInput" 
+                       class="form-control form-control-sm rounded-3 cat-url-input" 
+                       placeholder="https://images.unsplash.com/..."
+                       data-preview-id="editCatPreview">
+                <div class="form-text small text-muted" style="font-size:0.75rem;">
+                  Paste any image URL directly. If a file is uploaded above, it takes precedence.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_active" value="1" id="editCatActive">
+            <label class="form-check-label small" for="editCatActive">
+              Visible in customer storefront navigation
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+            <i class="bi bi-check2-circle me-1"></i> Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- Add Category Modal -->
@@ -433,6 +442,25 @@ $categories = db_fetch_all("
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  // Populate Single Parameterized Edit Category Modal
+  document.querySelectorAll('.btn-edit-category').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const d = this.dataset;
+      document.getElementById('editCatId').value = d.id;
+      document.getElementById('editCatTitle').textContent = d.name;
+      document.getElementById('editCatName').value = d.name;
+      document.getElementById('editCatSlug').value = d.slug;
+      document.getElementById('editCatDesc').value = d.description || '';
+      document.getElementById('editCatUrlInput').value = d.image || '';
+      document.getElementById('editCatPreview').src = d.displayImage || '';
+      document.getElementById('editCatActive').checked = (d.active === '1');
+      const photoName = document.getElementById('editCatPhotoName');
+      if (photoName) photoName.textContent = 'No file chosen';
+      const fileInput = document.getElementById('editCatPhotoInput');
+      if (fileInput) fileInput.value = '';
+    });
+  });
+
   // File upload preview
   document.querySelectorAll('.cat-photo-upload').forEach(function(input) {
     input.addEventListener('change', function(e) {

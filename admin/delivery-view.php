@@ -168,11 +168,27 @@ if (!empty($riderIds)) {
     }
 }
 
-// KPI Aggregations
+// KPI Aggregations & 1 Driver 1 Delivery Capacity Tracking
 $totalRiders = count($deliveryFleet);
 $onlineRiders = count(array_filter($deliveryFleet, fn($r) => in_array($r['duty_status'], ['ON_DUTY', 'ON_BREAK'])));
 $totalCodHeld = array_sum(array_column($deliveryFleet, 'cod_balance'));
 $totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `delivery_status` = 'DELIVERED'");
+
+// Map active trip for each rider
+$activeTripsMap = [];
+$busyRidersCount = 0;
+$availableRidersCount = 0;
+foreach ($deliveryFleet as $r) {
+    $trip = get_driver_active_delivery((int)$r['user_id'], $r['full_name']);
+    $activeTripsMap[$r['user_id']] = $trip;
+    if ($r['duty_status'] === 'ON_DUTY') {
+        if ($trip) {
+            $busyRidersCount++;
+        } else {
+            $availableRidersCount++;
+        }
+    }
+}
 ?>
 
 <!-- ===========================================================================
@@ -202,7 +218,7 @@ $totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_di
         </div>
       </div>
       <h3 class="fw-bold font-outfit text-dark mb-1"><?= $onlineRiders ?> / <?= $totalRiders ?> Online</h3>
-      <span class="small text-primary fw-bold"><i class="bi bi-geo-alt-fill me-1"></i>Active in Delivery Zones</span>
+      <span class="small text-primary fw-bold"><i class="bi bi-bicycle me-1"></i><?= $availableRidersCount ?> Free • <?= $busyRidersCount ?> on Delivery</span>
     </div>
   </div>
 
@@ -232,6 +248,43 @@ $totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_di
     </div>
   </div>
 
+</div>
+
+<!-- ===========================================================================
+     LIVE MULTI-COURIER FLEET GPS TELEMETRY MAP
+     =========================================================================== -->
+<div class="card border-0 rounded-4 shadow-sm mb-4 overflow-hidden bg-white">
+  <div class="p-3 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <span class="live-pulse-dot blue"></span>
+      <div>
+        <h6 class="fw-bold font-outfit mb-0 text-dark">Live Courier GPS Telemetry & Active Routes</h6>
+        <span class="small text-muted" style="font-size:0.75rem;">Real-time spatial tracking across Bangalore Indiranagar & Koramangala Hubs</span>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Fleet Map Filters">
+        <button type="button" class="btn btn-outline-secondary active" id="mapFilterAllBtn" onclick="filterMapMarkers('ALL')">All Fleet</button>
+        <button type="button" class="btn btn-outline-primary" id="mapFilterTransitBtn" onclick="filterMapMarkers('TRANSIT')">
+          <i class="bi bi-bicycle me-1"></i>In Transit (<?= $busyRidersCount ?>)
+        </button>
+        <button type="button" class="btn btn-outline-success" id="mapFilterAvailableBtn" onclick="filterMapMarkers('AVAILABLE')">
+          <i class="bi bi-check-circle me-1"></i>Available (<?= $availableRidersCount ?>)
+        </button>
+      </div>
+
+      <button type="button" class="btn btn-light btn-sm border rounded-pill px-3 shadow-xs" onclick="recenterFleetMap()" title="Recenter to Zippy Hub">
+        <i class="bi bi-crosshair me-1"></i> Hub
+      </button>
+
+      <span class="badge bg-light text-muted border font-monospace small" id="fleetSyncTimer" style="font-size:0.7rem;">
+        <i class="bi bi-arrow-repeat me-1 text-primary"></i>Sync: Live
+      </span>
+    </div>
+  </div>
+  
+  <div id="fleetMap" style="height: 420px; width: 100%; z-index: 1;"></div>
 </div>
 
 <!-- ===========================================================================
@@ -289,6 +342,23 @@ $totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_di
               <span class="badge <?= $dutyBadge['class'] ?> rounded-pill px-2 py-1 small">
                 <i class="bi <?= $dutyBadge['icon'] ?> me-1"></i><?= $dutyBadge['label'] ?>
               </span>
+            </div>
+
+            <!-- 1 Driver 1 Delivery Capacity Status -->
+            <?php $activeTrip = $activeTripsMap[$uid] ?? null; ?>
+            <div class="p-2 px-3 rounded-3 mb-3 d-flex align-items-center justify-content-between small <?= $activeTrip ? 'bg-primary bg-opacity-10 border border-primary border-opacity-25' : 'bg-success bg-opacity-10 border border-success border-opacity-25' ?>">
+              <div class="d-flex align-items-center gap-2">
+                <i class="bi <?= $activeTrip ? 'bi-bicycle text-primary fs-5' : 'bi-check-circle-fill text-success fs-5' ?>"></i>
+                <div>
+                  <div class="fw-bold text-dark" style="line-height:1.2;"><?= $activeTrip ? 'Delivering Active Trip' : 'Available for Dispatch' ?></div>
+                  <span class="text-muted" style="font-size:0.72rem;">Single Delivery Constraint: <strong><?= $activeTrip ? '1/1 Busy' : '0/1 Free' ?></strong></span>
+                </div>
+              </div>
+              <?php if ($activeTrip): ?>
+                <span class="badge bg-primary rounded-pill font-monospace">#ZIP-<?= (int)$activeTrip['order_id'] ?></span>
+              <?php else: ?>
+                <span class="badge bg-success rounded-pill px-2">Ready</span>
+              <?php endif; ?>
             </div>
 
             <!-- Details Box -->
@@ -549,5 +619,212 @@ $totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_di
   </div>
 
 </div>
+
+<!-- Leaflet Fleet Telemetry Interactive Controller -->
+<script>
+let fleetMap = null;
+let mapLayers = {
+  hub: null,
+  riders: [],
+  drops: [],
+  polylines: []
+};
+let currentMapFilter = 'ALL';
+const HUB_COORDS = [12.9716, 77.6412];
+
+function initFleetMap() {
+  const mapEl = document.getElementById('fleetMap');
+  if (!mapEl || typeof L === 'undefined') return;
+
+  // Initialize Map
+  fleetMap = L.map('fleetMap', {
+    center: HUB_COORDS,
+    zoom: 13,
+    zoomControl: true,
+    scrollWheelZoom: false
+  });
+
+  // Modern OSM tiles
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(fleetMap);
+
+  // Plot Central Hub Marker
+  const hubIcon = L.divIcon({
+    className: 'custom-hub-icon',
+    html: '<div class="map-hub-pin" title="Zippy Central Kitchen Hub"><i class="bi bi-shop"></i></div>',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
+
+  mapLayers.hub = L.marker(HUB_COORDS, { icon: hubIcon })
+    .addTo(fleetMap)
+    .bindPopup(`
+      <div class="p-2" style="min-width: 200px;">
+        <span class="badge bg-success-subtle text-forest border border-success-subtle mb-1">CENTRAL DISPATCH HUB</span>
+        <h6 class="fw-bold mb-1 font-outfit text-dark">Zippy Indiranagar Kitchen</h6>
+        <p class="small text-muted mb-1 font-monospace">100ft Road, Indiranagar, Bengaluru</p>
+        <span class="small text-muted"><i class="bi bi-geo-alt me-1"></i>Coordinates: 12.9716° N, 77.6412° E</span>
+      </div>
+    `);
+
+  // Fetch telemetry and render initial markers
+  fetchFleetTelemetry();
+
+  // Auto-refresh every 10 seconds
+  setInterval(fetchFleetTelemetry, 10000);
+}
+
+function clearMapLayers() {
+  mapLayers.riders.forEach(m => fleetMap.removeLayer(m));
+  mapLayers.drops.forEach(m => fleetMap.removeLayer(m));
+  mapLayers.polylines.forEach(p => fleetMap.removeLayer(p));
+  mapLayers.riders = [];
+  mapLayers.drops = [];
+  mapLayers.polylines = [];
+}
+
+async function fetchFleetTelemetry() {
+  try {
+    const res = await fetch('<?= ADMIN_URL ?>/ajax/get-fleet-telemetry.php');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success) return;
+
+    renderFleetOnMap(data);
+
+    const timerEl = document.getElementById('fleetSyncTimer');
+    if (timerEl) {
+      const now = new Date();
+      timerEl.innerHTML = `<i class="bi bi-check2 text-success me-1"></i>Synced: ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}`;
+    }
+  } catch (err) {
+    console.error('Fleet telemetry sync error:', err);
+  }
+}
+
+function renderFleetOnMap(data) {
+  clearMapLayers();
+
+  data.riders.forEach(rider => {
+    const isBusy = rider.has_active_trip && rider.trip;
+    const isAvailable = rider.duty_status === 'ON_DUTY' && !isBusy;
+
+    // Apply Filter
+    if (currentMapFilter === 'TRANSIT' && !isBusy) return;
+    if (currentMapFilter === 'AVAILABLE' && !isAvailable) return;
+
+    const riderPinClass = isBusy ? 'busy' : (isAvailable ? 'available' : 'break');
+    const riderIconHtml = `
+      <div class="map-rider-pin ${riderPinClass}" title="${escapeHtml(rider.name)} (${rider.duty_status})">
+        <i class="bi bi-bicycle"></i>
+      </div>
+    `;
+
+    const riderIcon = L.divIcon({
+      className: 'custom-rider-icon',
+      html: riderIconHtml,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
+
+    const riderMarker = L.marker([rider.lat, rider.lng], { icon: riderIcon }).addTo(fleetMap);
+
+    let popupHtml = `
+      <div class="p-2" style="min-width: 220px;">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="badge ${isBusy ? 'bg-primary' : (isAvailable ? 'bg-success' : 'bg-warning text-dark')} rounded-pill font-monospace" style="font-size:0.7rem;">
+            ${isBusy ? 'IN TRANSIT' : rider.duty_status}
+          </span>
+          <span class="small text-muted font-monospace"><i class="bi bi-star-fill text-warning me-1"></i>${rider.rating}</span>
+        </div>
+        <h6 class="fw-bold mb-1 font-outfit text-dark">${escapeHtml(rider.name)}</h6>
+        <div class="small text-muted mb-2">
+          <div><i class="bi bi-scooter me-1"></i>${escapeHtml(rider.vehicle)}</div>
+          <div><i class="bi bi-telephone me-1"></i><a href="tel:${escapeHtml(rider.phone)}" class="text-primary text-decoration-none">${escapeHtml(rider.phone)}</a></div>
+        </div>
+    `;
+
+    if (isBusy) {
+      popupHtml += `
+        <div class="p-2 rounded bg-light border mb-2 small">
+          <div class="d-flex justify-content-between font-monospace fw-bold text-dark">
+            <span>${escapeHtml(rider.trip.order_number)}</span>
+            <span class="text-primary">${rider.trip.eta_mins}m ETA</span>
+          </div>
+          <div class="text-muted text-truncate" style="font-size:0.75rem;"><i class="bi bi-geo-alt me-1"></i>${escapeHtml(rider.trip.address)}</div>
+          <div class="mt-1 d-flex justify-content-between">
+            <span class="badge bg-warning-subtle text-dark border border-warning-subtle">OTP: ${escapeHtml(rider.trip.otp)}</span>
+            <span class="small text-muted">${rider.trip.distance_km} km away</span>
+          </div>
+        </div>
+      `;
+
+      // Plot Destination Marker
+      const dropIcon = L.divIcon({
+        className: 'custom-drop-icon',
+        html: `<div class="map-drop-pin" title="Order Drop Destination: ${escapeHtml(rider.trip.order_number)}"><i class="bi bi-geo-alt-fill"></i></div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 30]
+      });
+
+      const dropMarker = L.marker([rider.trip.dest_lat, rider.trip.dest_lng], { icon: dropIcon }).addTo(fleetMap);
+      dropMarker.bindPopup(`
+        <div class="p-2" style="min-width: 200px;">
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle mb-1">DELIVERY DESTINATION</span>
+          <h6 class="fw-bold mb-1 font-outfit text-dark">${escapeHtml(rider.trip.order_number)}</h6>
+          <p class="small text-muted mb-1 font-monospace">${escapeHtml(rider.trip.customer_name)} &bull; ${escapeHtml(rider.trip.customer_phone)}</p>
+          <div class="small text-muted mb-2">${escapeHtml(rider.trip.address)}</div>
+          <span class="badge bg-dark text-white font-monospace">Doorstep OTP: ${escapeHtml(rider.trip.otp)}</span>
+        </div>
+      `);
+      mapLayers.drops.push(dropMarker);
+
+      // Draw dashed polyline connecting rider to drop
+      const routePolyline = L.polyline([[rider.lat, rider.lng], [rider.trip.dest_lat, rider.trip.dest_lng]], {
+        color: '#2563EB',
+        weight: 3.5,
+        opacity: 0.8,
+        dashArray: '6, 8',
+        lineCap: 'round'
+      }).addTo(fleetMap);
+      mapLayers.polylines.push(routePolyline);
+
+    } else {
+      popupHtml += `
+        <div class="p-2 rounded bg-success-subtle text-forest border border-success-subtle small fw-semibold">
+          <i class="bi bi-check-circle me-1"></i> Standby at Central Kitchen Hub
+        </div>
+      `;
+    }
+
+    popupHtml += `</div>`;
+    riderMarker.bindPopup(popupHtml);
+    mapLayers.riders.push(riderMarker);
+  });
+}
+
+function recenterFleetMap() {
+  if (fleetMap) {
+    fleetMap.setView(HUB_COORDS, 13, { animate: true });
+  }
+}
+
+function filterMapMarkers(filter) {
+  currentMapFilter = filter;
+  document.getElementById('mapFilterAllBtn')?.classList.toggle('active', filter === 'ALL');
+  document.getElementById('mapFilterTransitBtn')?.classList.toggle('active', filter === 'TRANSIT');
+  document.getElementById('mapFilterAvailableBtn')?.classList.toggle('active', filter === 'AVAILABLE');
+  fetchFleetTelemetry();
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+}
+
+document.addEventListener('DOMContentLoaded', initFleetMap);
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

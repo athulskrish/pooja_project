@@ -304,44 +304,44 @@ $menuItems = db_fetch_all("
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
           <h3 class="fw-bold mb-1 font-outfit">Recommended Dishes with Fast Delivery</h3>
-          <p class="text-muted small mb-0">Live stock synchronized with our MySQL 8.0 ACID transaction engine</p>
+          <p class="text-muted small mb-0">Freshly prepared chef-curated meals delivered hot and fast to your doorstep</p>
         </div>
 
-        <!-- Dietary & Filter Toggles -->
-        <div class="d-flex flex-wrap align-items-center gap-2">
+        <!-- Dietary & Filter Toggles (Material Design 3 Filter Chips) -->
+        <div class="d-flex align-items-center gap-2 flex-nowrap overflow-x-auto py-1 filter-chips-scroll">
           
           <!-- Veg Only Toggle Button -->
-          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="vegOnlyToggle">
+          <button type="button" class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="vegOnlyToggle">
             <span class="food-badge-dot veg" style="width:10px; height:10px; border-radius:50%; background:#229947; display:inline-block;"></span>
             <span>Pure Veg Only</span>
           </button>
 
           <!-- Healthy Food Option Toggle Button -->
-          <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="healthyOnlyToggle">
+          <button type="button" class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 filter-toggle-btn" id="healthyOnlyToggle">
             <i class="fa-solid fa-leaf text-success"></i>
             <span>Healthy Food</span>
           </button>
 
           <!-- Sort / Fast Filter -->
-          <a href="<?= CUSTOMER_URL ?>/search.php?sort=price_asc" class="btn btn-light btn-sm rounded-pill px-3 py-1 border text-muted">
+          <a href="<?= CUSTOMER_URL ?>/search.php?sort=price_asc" class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1">
             <i class="bi bi-sort-numeric-down me-1"></i> Price: Low to High
           </a>
 
-          <a href="<?= CUSTOMER_URL ?>/search.php" class="btn btn-light btn-sm rounded-pill px-3 py-1 border text-muted">
+          <a href="<?= CUSTOMER_URL ?>/search.php" class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1">
             <i class="bi bi-sliders me-1"></i> More Filters
           </a>
         </div>
       </div>
 
       <!-- Dish Cards Grid -->
-      <div class="row g-4" id="dishesGrid">
+      <div class="row g-3 g-md-4" id="dishesGrid">
         <?php if (!empty($menuItems)): ?>
           <?php foreach ($menuItems as $dish): ?>
             <?php 
               $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
             ?>
-            <div class="col-xl-3 col-lg-4 col-md-6 dish-card-wrapper" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-category="<?= e($dish['category_slug']) ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-rating="<?= (float)($dish['rating'] ?? 4.8) ?>">
-              <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden dish-catalog-card hover-lift">
+            <div class="col-12 col-sm-6 col-lg-4 col-xl-3 dish-card-wrapper" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-category="<?= e($dish['category_slug']) ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-rating="<?= (float)($dish['rating'] ?? 4.8) ?>">
+              <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden dish-catalog-card hover-lift m3-card">
                 
                 <!-- Dish Image Box -->
                 <div class="dish-card-img-container position-relative overflow-hidden" style="height: 190px;">
@@ -395,14 +395,15 @@ $menuItems = db_fetch_all("
                       <?= e($dish['item_name']) ?>
                     </h6>
 
-                    <!-- Star Rating & Customer Reviews Link -->
+                    <!-- Material Design 3 Star Rating & Customer Reviews Link -->
                     <div class="d-flex align-items-center gap-2 mb-2">
-                      <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill" style="font-size: 0.75rem;">
-                        <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                      <span class="dish-rating-badge" title="<?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?> out of 5 stars">
+                        <i class="bi bi-star-fill rating-star"></i>
+                        <span class="rating-val"><?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?></span>
                       </span>
                       <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                               style="font-size: 0.75rem;" 
-                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                         (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                       </button>
                     </div>
@@ -419,14 +420,13 @@ $menuItems = db_fetch_all("
                     </div>
 
                     <!-- Client JS Synchronized ADD Button -->
-                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>">
+                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(get_dish_image_url($dish['image_url'])) ?>">
                       <button 
                         type="button" 
-                        class="btn btn-outline-success btn-sm rounded-pill px-3 fw-bold add-to-cart-btn"
-                        style="border-color: #2E6F40; color: #2E6F40;"
-                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                        class="btn m3-add-btn rounded-pill px-3 py-1 fw-bold shadow-sm"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
                       >
-                        ADD <i class="bi bi-plus"></i>
+                        ADD <i class="bi bi-plus-lg ms-1"></i>
                       </button>
                     </div>
                   </div>

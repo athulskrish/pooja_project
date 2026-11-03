@@ -109,6 +109,12 @@ if ($portal === 'delivery') {
         ORDER BY d.dispatched_at DESC
     ");
 
+    $riderIdParam = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
+    $riderHasActive = false;
+    if ($riderIdParam > 0) {
+        $riderHasActive = (bool)get_driver_active_delivery($riderIdParam);
+    }
+
     echo json_encode([
         'success' => true,
         'portal' => 'delivery',
@@ -117,6 +123,8 @@ if ($portal === 'delivery') {
             'ready_for_pickup' => count($readyOrders),
             'in_transit' => count($inTransitOrders)
         ],
+        'rider_has_active' => $riderHasActive,
+        'max_concurrent_deliveries' => 1,
         'ready_orders' => $readyOrders,
         'in_transit_orders' => $inTransitOrders
     ]);
@@ -157,13 +165,16 @@ $recentLiveOrders = db_fetch_all("
     LIMIT 12
 ");
 
-function format_time_ago($datetime): string {
-    $ts = strtotime($datetime);
-    $diff = time() - $ts;
-    if ($diff < 60) return 'Just now';
-    if ($diff < 3600) return floor($diff / 60) . 'm ago';
-    if ($diff < 86400) return floor($diff / 3600) . 'h ago';
-    return date('d M, h:i A', $ts);
+// Relative time formatting is already provided by format_time_ago() in includes/functions.php
+if (!function_exists('format_time_ago')) {
+    function format_time_ago($datetime): string {
+        $ts = strtotime($datetime);
+        $diff = time() - $ts;
+        if ($diff < 60) return 'Just now';
+        if ($diff < 3600) return floor($diff / 60) . 'm ago';
+        if ($diff < 86400) return floor($diff / 3600) . 'h ago';
+        return date('d M, h:i A', $ts);
+    }
 }
 
 foreach ($recentLiveOrders as &$rOrder) {
@@ -173,13 +184,11 @@ foreach ($recentLiveOrders as &$rOrder) {
 }
 unset($rOrder);
 
-// Active on-duty riders
-$activeRiders = db_fetch_all("
-    SELECT u.user_id, u.full_name, u.phone_number, sp.duty_status, sp.cod_balance, sp.rating
-    FROM `users` u
-    JOIN `staff_profiles` sp ON u.user_id = sp.user_id
-    WHERE sp.department = 'DELIVERY' AND sp.duty_status = 'ON_DUTY'
-");
+// Active on-duty riders & 1 Driver 1 Delivery metrics
+$allRiders = get_all_delivery_riders();
+$onDutyRiders = array_filter($allRiders, fn($r) => $r['duty_status'] === 'ON_DUTY');
+$busyRiders = array_filter($onDutyRiders, fn($r) => !empty($r['is_busy']));
+$availableRiders = array_filter($onDutyRiders, fn($r) => empty($r['is_busy']));
 
 echo json_encode([
     'success' => true,
@@ -192,7 +201,9 @@ echo json_encode([
         'out_for_delivery' => (int)($stageCounts['count_transit'] ?? 0),
         'delivered_today' => (int)($stageCounts['count_delivered_today'] ?? 0),
         'total_active' => (int)($stageCounts['count_total_active'] ?? 0),
-        'on_duty_riders' => count($activeRiders)
+        'on_duty_riders' => count($onDutyRiders),
+        'busy_riders' => count($busyRiders),
+        'available_riders' => count($availableRiders)
     ],
     'live_orders' => $recentLiveOrders
 ]);

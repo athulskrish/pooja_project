@@ -262,14 +262,6 @@
             <span class="badge bg-warning text-dark small"><i class="bi bi-star-fill me-1"></i>4.9</span>
           </div>
 
-          <a href="<?= BASE_URL ?>/index.php" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">
-            <i class="bi bi-grid-fill me-1"></i> Portals
-          </a>
-
-          <a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold">
-            <i class="bi bi-shop me-1"></i> Store
-          </a>
-
           <a href="<?= DELIVERY_URL ?>/logout.php" class="btn btn-sm btn-outline-danger rounded-pill fw-bold px-3 d-flex align-items-center gap-1" title="Log out from fleet account">
             <i class="bi bi-box-arrow-right"></i>
             <span class="d-none d-md-inline">Logout</span>

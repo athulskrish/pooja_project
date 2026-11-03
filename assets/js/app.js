@@ -13,6 +13,20 @@
 let cart = JSON.parse(localStorage.getItem('pooja_zippy_cart')) || [];
 let activeCoupon = localStorage.getItem('pooja_active_coupon') || null;
 
+// Backfill any missing imageUrl on existing cart items from DISH_IMAGES_MAP
+if (Array.isArray(cart)) {
+  let needsSave = false;
+  cart.forEach(item => {
+    if (!item.imageUrl && window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) {
+      item.imageUrl = window.DISH_IMAGES_MAP[item.id];
+      needsSave = true;
+    }
+  });
+  if (needsSave) {
+    try { localStorage.setItem('pooja_zippy_cart', JSON.stringify(cart)); } catch(e) {}
+  }
+}
+
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
   updateCartBadge();
@@ -133,11 +147,16 @@ function updateCartBadge() {
 /**
  * Add or Increment Item in Cart
  */
-function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods') {
+function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods', imageUrl = '') {
   sessionStorage.removeItem('dismiss_cart_bar');
   const existingItem = cart.find(item => item.id == id);
+  const resolvedImg = imageUrl || (existingItem && existingItem.imageUrl) || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+
   if (existingItem) {
     existingItem.qty += 1;
+    if (!existingItem.imageUrl && resolvedImg) {
+      existingItem.imageUrl = resolvedImg;
+    }
   } else {
     cart.push({
       id: Number(id) || id,
@@ -145,11 +164,12 @@ function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods') {
       price: Number(price),
       isVeg: Boolean(isVeg && isVeg !== '0' && isVeg !== 'false'),
       restaurant,
+      imageUrl: resolvedImg,
       qty: 1
     });
   }
   saveCart();
-  showToast(`Added "${name}" to your cart!`);
+  showToast(`Added "${name}" to cart`);
 }
 
 /**
@@ -280,21 +300,29 @@ function renderCartDrawer() {
   cart.forEach(item => {
     const isVeg = (item.isVeg === true || item.isVeg === 1 || item.isVeg === '1' || item.isVeg === 'true');
     const safeName = (item.name || '').replace(/'/g, "\\'");
+    const itemImg = item.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
     const itemTotal = (Number(item.price) * Number(item.qty)).toFixed(2);
     html += `
-      <div class="cart-item-card p-3 rounded-3 border bg-white d-flex align-items-center justify-content-between gap-2 shadow-sm mb-2">
+      <div class="cart-item-card p-2 p-sm-3 rounded-3 border bg-white d-flex align-items-center justify-content-between gap-2 shadow-sm mb-2">
         <div class="d-flex align-items-center gap-2 overflow-hidden">
-          <span class="food-type-icon ${isVeg ? 'veg' : 'non-veg'}" style="flex-shrink:0;"></span>
+          <div class="position-relative flex-shrink-0" style="width: 46px; height: 46px;">
+            <img src="${itemImg}" alt="${item.name}" class="rounded-3 w-100 h-100 object-fit-cover border" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
+            <span class="position-absolute top-0 start-0 m-1" style="width: 8px; height: 8px; border-radius: 50%; background: ${isVeg ? '#229947' : '#D32F2F'}; border: 1.5px solid #fff; display: inline-block;"></span>
+          </div>
           <div class="overflow-hidden">
             <h6 class="mb-0 fw-bold text-dark text-truncate" style="font-size: 0.92rem;" title="${item.name}">${item.name}</h6>
             <span class="text-muted small">₹${Number(item.price).toFixed(2)} each</span>
           </div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
-          <div class="btn-group btn-group-sm rounded-pill border overflow-hidden" role="group">
-            <button type="button" class="btn btn-light px-2 py-0 fw-bold text-success" onclick="decrementCartItem('${item.id}')">-</button>
-            <span class="btn btn-white px-2 py-0 fw-bold disabled text-dark" style="font-size: 0.85rem;">${item.qty}</span>
-            <button type="button" class="btn btn-light px-2 py-0 fw-bold text-success" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0})">+</button>
+          <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
+            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${item.id}')" aria-label="Decrease quantity">
+              <i class="bi bi-dash"></i>
+            </button>
+            <span class="m3-stepper-qty">${item.qty}</span>
+            <button type="button" class="m3-stepper-btn" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}')" aria-label="Increase quantity">
+              <i class="bi bi-plus"></i>
+            </button>
           </div>
           <span class="fw-bold text-dark text-end" style="min-width: 65px;">₹${itemTotal}</span>
         </div>
@@ -391,6 +419,7 @@ function renderDishQtyControls() {
     const name = wrap.getAttribute('data-dish-name');
     const price = wrap.getAttribute('data-dish-price');
     const isVeg = wrap.getAttribute('data-dish-veg') === 'true';
+    const imgUrl = wrap.getAttribute('data-dish-img') || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[id]) || '';
 
     if (!id || !name || !price) return;
 
@@ -399,21 +428,24 @@ function renderDishQtyControls() {
 
     if (item && item.qty > 0) {
       wrap.innerHTML = `
-        <div class="dish-qty-control btn-group btn-group-sm rounded-pill shadow-sm border bg-white overflow-hidden" role="group">
-          <button type="button" class="btn btn-light px-2 py-1 text-success fw-bold" onclick="decrementCartItem('${id}')">-</button>
-          <span class="btn btn-white px-2 py-1 fw-bold disabled text-dark" style="font-size:0.85rem;">${item.qty}</span>
-          <button type="button" class="btn btn-light px-2 py-1 text-success fw-bold" onclick="addToCart('${id}', '${safeName}', ${price}, ${isVeg ? 1 : 0})">+</button>
+        <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
+          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${id}')" aria-label="Decrease quantity">
+            <i class="bi bi-dash"></i>
+          </button>
+          <span class="m3-stepper-qty">${item.qty}</span>
+          <button type="button" class="m3-stepper-btn" onclick="addToCart('${id}', '${safeName}', ${price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${imgUrl}')" aria-label="Increase quantity">
+            <i class="bi bi-plus"></i>
+          </button>
         </div>
       `;
     } else {
       wrap.innerHTML = `
         <button 
           type="button" 
-          class="btn btn-outline-success btn-sm rounded-pill px-3 fw-bold add-to-cart-btn shadow-sm"
-          style="border-color: #2E6F40; color: #2E6F40; background: #fff;"
-          onclick="addToCart('${id}', '${safeName}', ${price}, ${isVeg ? 1 : 0})"
+          class="btn m3-add-btn rounded-pill px-3 py-1 fw-bold shadow-sm"
+          onclick="addToCart('${id}', '${safeName}', ${price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${imgUrl}')"
         >
-          ADD <i class="bi bi-plus"></i>
+          ADD <i class="bi bi-plus-lg ms-1"></i>
         </button>
       `;
     }
@@ -669,20 +701,28 @@ function renderCheckoutPage() {
   cart.forEach(item => {
     const isVeg = (item.isVeg === true || item.isVeg === 1 || item.isVeg === '1' || item.isVeg === 'true');
     const safeName = (item.name || '').replace(/'/g, "\\'");
+    const itemImg = item.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
     itemsHtml += `
       <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
         <div class="d-flex align-items-center gap-2">
-          <span class="food-type-icon ${isVeg ? 'veg' : 'non-veg'}"></span>
+          <div class="position-relative flex-shrink-0" style="width: 44px; height: 44px;">
+            <img src="${itemImg}" alt="${item.name}" class="rounded-3 w-100 h-100 object-fit-cover border" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
+            <span class="position-absolute top-0 start-0 m-1" style="width: 8px; height: 8px; border-radius: 50%; background: ${isVeg ? '#229947' : '#D32F2F'}; border: 1.5px solid #fff; display: inline-block;"></span>
+          </div>
           <div>
             <h6 class="mb-0 fw-bold small">${item.name}</h6>
             <span class="text-muted" style="font-size: 0.75rem;">₹${Number(item.price).toFixed(2)} each</span>
           </div>
         </div>
         <div class="d-flex align-items-center gap-3">
-          <div class="dish-qty-control" style="width: 75px; padding: 2px 4px;">
-            <button onclick="decrementCartItem('${item.id}')">-</button>
-            <span class="qty-number">${item.qty}</span>
-            <button onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0})">+</button>
+          <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
+            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${item.id}')" aria-label="Decrease quantity">
+              <i class="bi bi-dash"></i>
+            </button>
+            <span class="m3-stepper-qty">${item.qty}</span>
+            <button type="button" class="m3-stepper-btn" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}')" aria-label="Increase quantity">
+              <i class="bi bi-plus"></i>
+            </button>
           </div>
           <span class="fw-bold text-pine" style="min-width: 60px; text-align: right;">₹${(item.price * item.qty).toFixed(2)}</span>
         </div>
@@ -740,35 +780,74 @@ function applyCoupon() {
   saveCart();
 }
 
+let activeToastTimeout = null;
+let lastToastMessage = '';
+let lastToastTime = 0;
+
 /**
- * Simple Toast Notification Utility
+ * Material Design 3 Snackbar Notification Utility
+ * Prevents duplicate stacking; ensures only a single high-contrast accessible toast is active.
  */
 function showToast(message, type = 'success') {
+  if (!message) return;
+
+  const now = Date.now();
+  // Debounce duplicate identical messages within 1200ms
+  if (message === lastToastMessage && (now - lastToastTime) < 1200) {
+    return;
+  }
+  lastToastMessage = message;
+  lastToastTime = now;
+
   let toastContainer = document.getElementById('toastContainer');
   if (!toastContainer) {
     toastContainer = document.createElement('div');
     toastContainer.id = 'toastContainer';
-    toastContainer.style.position = 'fixed';
-    toastContainer.style.bottom = '24px';
-    toastContainer.style.right = '24px';
-    toastContainer.style.zIndex = '9999';
+    toastContainer.className = 'm3-snackbar-container';
     document.body.appendChild(toastContainer);
   }
 
-  const toastEl = document.createElement('div');
-  toastEl.className = `alert alert-${type === 'danger' ? 'danger' : 'success'} shadow-lg py-2 px-3 rounded-pill d-flex align-items-center gap-2 mb-2`;
-  toastEl.style.transition = 'all 0.3s ease';
-  toastEl.innerHTML = `
-    <i class="bi bi-${type === 'danger' ? 'exclamation-circle' : 'check-circle-fill'}"></i>
-    <span class="small fw-bold">${message}</span>
+  // Clear existing timeout and wipe any previous toast so only 1 notification is ever visible
+  if (activeToastTimeout) {
+    clearTimeout(activeToastTimeout);
+    activeToastTimeout = null;
+  }
+  toastContainer.innerHTML = '';
+
+  const snackbar = document.createElement('div');
+  snackbar.className = `m3-snackbar m3-snackbar-${type === 'danger' ? 'danger' : (type === 'warning' ? 'warning' : 'success')}`;
+  snackbar.setAttribute('role', 'status');
+  snackbar.setAttribute('aria-live', 'polite');
+
+  const iconClass = type === 'danger' 
+    ? 'bi-exclamation-circle-fill' 
+    : (type === 'warning' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill');
+
+  snackbar.innerHTML = `
+    <div class="m3-snackbar-content">
+      <i class="bi ${iconClass} m3-snackbar-icon"></i>
+      <span class="m3-snackbar-text">${message}</span>
+    </div>
+    <button type="button" class="m3-snackbar-close" aria-label="Dismiss notification" onclick="this.closest('.m3-snackbar').remove()">
+      <i class="bi bi-x"></i>
+    </button>
   `;
 
-  toastContainer.appendChild(toastEl);
-  setTimeout(() => {
-    toastEl.style.opacity = '0';
-    toastEl.style.transform = 'translateY(10px)';
-    setTimeout(() => toastEl.remove(), 300);
-  }, 2500);
+  toastContainer.appendChild(snackbar);
+
+  // Animate in smoothly
+  requestAnimationFrame(() => {
+    snackbar.classList.add('m3-snackbar-visible');
+  });
+
+  // Auto-dismiss after 2600ms
+  activeToastTimeout = setTimeout(() => {
+    snackbar.classList.remove('m3-snackbar-visible');
+    snackbar.classList.add('m3-snackbar-hiding');
+    setTimeout(() => {
+      if (snackbar.parentNode) snackbar.remove();
+    }, 280);
+  }, 2600);
 }
 
 /**

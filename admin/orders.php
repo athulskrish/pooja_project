@@ -18,9 +18,8 @@ $currentUser = current_user();
 $filterStatus = clean_input($_GET['status'] ?? 'LIVE');
 $searchQuery = clean_input($_GET['search'] ?? '');
 $paymentFilter = clean_input($_GET['payment'] ?? '');
-$viewMode = clean_input($_GET['view'] ?? 'cards'); // 'cards' or 'table'
 
-// Handle Status Update POST
+// Handle Status Update POST (Centralized via transition_order_status())
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_order_status') {
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
         set_flash('danger', 'Invalid session token.');
@@ -29,74 +28,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $newStatus = clean_input($_POST['new_status']);
         $assignedRider = clean_input($_POST['rider_name'] ?? '');
 
-        $current = db_fetch_one("SELECT order_status FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
-        if ($current) {
-            $oldStatus = $current['order_status'];
-
-            db_query("UPDATE `orders` SET `order_status` = :st WHERE `order_id` = :id", [
-                ':st' => $newStatus,
-                ':id' => $orderId
-            ]);
-
-            // Insert into order_audit_trail
-            db_query("
-                INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) 
-                VALUES (:oid, :old, :new, :uid, NOW())
-            ", [
-                ':oid' => $orderId,
-                ':old' => $oldStatus,
-                ':new' => $newStatus,
-                ':uid' => $currentUser['id'] ?? null
-            ]);
-
-            if (!empty($assignedRider)) {
-                db_query("UPDATE `delivery_dispatches` SET `delivery_partner_name` = :rname WHERE `order_id` = :oid", [
-                    ':rname' => $assignedRider,
-                    ':oid' => $orderId
-                ]);
-            }
-
-            if ($newStatus === 'OUT_FOR_DELIVERY') {
-                db_query("UPDATE `delivery_dispatches` SET `dispatched_at` = COALESCE(dispatched_at, NOW()), `delivery_status` = 'IN_TRANSIT' WHERE `order_id` = :id", [':id' => $orderId]);
-            } elseif ($newStatus === 'DELIVERED') {
-                db_query("UPDATE `delivery_dispatches` SET `delivered_at` = NOW(), `delivery_status` = 'DELIVERED' WHERE `order_id` = :id", [':id' => $orderId]);
-                // If COD, mark payment as SUCCESSFUL & update money_transactions
-                $payRec = db_fetch_one("SELECT * FROM `payments` WHERE `order_id` = :id", [':id' => $orderId]);
-                if ($payRec && $payRec['payment_mode'] === 'COD') {
-                    db_query("UPDATE `payments` SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() WHERE `order_id` = :id", [':id' => $orderId]);
-                    db_query("
-                        UPDATE `money_transactions` 
-                        SET `status` = 'COMPLETED', `handled_by` = :hby, `notes` = CONCAT(COALESCE(notes, ''), ' [Cash collected upon delivery completion]') 
-                        WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
-                    ", [
-                        ':hby' => 'Store Admin / Courier',
-                        ':id'  => $orderId
-                    ]);
-                }
-            } elseif ($newStatus === 'CANCELLED') {
-                // Restore inventory stock for cancelled order line items
-                db_query("
-                    UPDATE `menu_items` m
-                    JOIN `order_items` oi ON m.item_id = oi.item_id
-                    SET m.stock_quantity = m.stock_quantity + oi.quantity,
-                        m.is_available = 1
-                    WHERE oi.order_id = :id
-                ", [':id' => $orderId]);
-
-                // Record payment settlement status as REFUNDED
-                db_query("
-                    UPDATE `payments` 
-                    SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() 
-                    WHERE `order_id` = :id
-                ", [':id' => $orderId]);
-            }
-
-            set_flash('success', "Order #ZIP-{$orderId} status advanced to {$newStatus}.");
-            $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
-            if (!empty($searchQuery)) $redirectUrl .= "&search=" . urlencode($searchQuery);
-            header("Location: " . $redirectUrl);
-            exit;
+        $result = transition_order_status($orderId, $newStatus, $assignedRider, $currentUser['id'] ?? null);
+        if ($result['success']) {
+            set_flash('success', $result['message']);
+        } else {
+            set_flash('danger', $result['error'] ?? 'Failed to update order status.');
         }
+
+        $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
+        if (!empty($searchQuery)) $redirectUrl .= "&search=" . urlencode($searchQuery);
+        header("Location: " . $redirectUrl);
+        exit;
+    }
+}
+
+// Handle Multi-Select Batch Status Update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'batch_status_update') {
+    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+        set_flash('danger', 'Invalid session token.');
+    } else {
+        $orderIds = isset($_POST['order_ids']) ? array_filter(array_map('intval', (array)$_POST['order_ids'])) : [];
+        $newStatus = clean_input($_POST['new_status'] ?? '');
+        $assignedRider = clean_input($_POST['rider_name'] ?? '');
+
+        if (!empty($orderIds) && !empty($newStatus)) {
+            $successCount = 0;
+            $failedOrders = [];
+            foreach ($orderIds as $oid) {
+                $res = transition_order_status($oid, $newStatus, $assignedRider, $currentUser['id'] ?? null);
+                if ($res['success']) {
+                    $successCount++;
+                } else {
+                    $failedOrders[] = "#ZIP-{$oid}";
+                }
+            }
+
+            if ($successCount > 0) {
+                set_flash('success', "Batch action completed: {$successCount} order(s) successfully transitioned to {$newStatus}.");
+            }
+            if (!empty($failedOrders)) {
+                set_flash('warning', "Notice: " . count($failedOrders) . " order(s) could not transition to {$newStatus} (" . implode(', ', array_slice($failedOrders, 0, 4)) . ").");
+            }
+        } else {
+            set_flash('info', 'Please select at least one order and target status for batch update.');
+        }
+
+        $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
+        if (!empty($searchQuery)) $redirectUrl .= "&search=" . urlencode($searchQuery);
+        header("Location: " . $redirectUrl);
+        exit;
     }
 }
 
@@ -162,25 +142,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 require_once __DIR__ . '/includes/header.php';
 
-// 1. Live Counters
-$cntAll = (int)db_fetch_val("SELECT COUNT(*) FROM `orders`");
-$cntLive = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')");
-$cntPreparing = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status IN ('CONFIRMED', 'COOKING')");
-$cntReady = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status = 'READY'");
-$cntDelivering = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status = 'OUT_FOR_DELIVERY'");
-$cntDelivered = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status = 'DELIVERED'");
-$cntCancelled = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status = 'CANCELLED'");
-
-// 2. Kitchen Cook-Load Aggregation (What is being prepared across the entire kitchen right now)
-$cookLoadItems = db_fetch_all("
-    SELECT m.item_name, m.is_veg, SUM(oi.quantity) as total_qty
-    FROM `order_items` oi
-    JOIN `orders` o ON oi.order_id = o.order_id
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE o.order_status IN ('CONFIRMED', 'COOKING')
-    GROUP BY oi.item_id, m.item_name, m.is_veg
-    ORDER BY total_qty DESC
-");
+// 1. Live Counters (Consolidated single query via get_order_kpis(), reused from header.php)
+$cntAll = $orderKpis['total'];
+$cntLive = $orderKpis['live'];
+$cntPreparing = $orderKpis['preparing'];
+$cntReady = $orderKpis['ready'];
+$cntDelivering = $orderKpis['delivering'];
+$cntDelivered = $orderKpis['delivered'];
+$cntCancelled = $orderKpis['cancelled'];
 
 // 3. Build Dynamic Filtering Query
 $where = "1=1";
@@ -232,7 +201,7 @@ $orders = db_fetch_all("
            u.full_name, u.phone_number, u.email,
            a.address_line, a.landmark, a.pincode,
            p.payment_mode, p.payment_status, p.transaction_reference,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status, d.dispatched_at,
+           d.rider_id, d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status, d.dispatched_at,
            TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed_minutes,
            TIMESTAMPDIFF(MINUTE, COALESCE(d.dispatched_at, o.placed_at), NOW()) AS transit_minutes
     FROM `orders` o
@@ -243,6 +212,8 @@ $orders = db_fetch_all("
     WHERE $where
     ORDER BY o.placed_at DESC
 ", $params);
+
+$registeredRiders = get_all_delivery_riders();
 
 // Fetch items for all queried orders
 $orderItemsGrouped = [];
@@ -263,12 +234,12 @@ if (!empty($orders)) {
 ?>
 
 <!-- ===========================================================================
-     OPERATIONAL STAGE METRICS CARDS & REAL-TIME STREAM HUD
+     ORDERS LEDGER & LIVE STATUS SYNC
      =========================================================================== -->
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
   <div>
-    <h4 class="fw-bold text-dark font-outfit mb-0"><i class="bi bi-broadcast text-success me-2"></i>Live Orders Command Center</h4>
-    <div class="small text-muted">Real-time sync across Customer, Kitchen, Delivery Fleet, and Financial Ledger</div>
+    <h4 class="fw-bold text-dark font-outfit mb-0"><i class="bi bi-receipt text-success me-2"></i>Orders ledger</h4>
+    <div class="small text-muted">Search and manage each order from one sortable, filterable list.</div>
   </div>
   <div class="d-flex align-items-center gap-2">
     <span class="badge bg-light text-forest border px-3 py-2 rounded-pill font-monospace shadow-xs" id="adminLiveSyncBadge">
@@ -280,114 +251,10 @@ if (!empty($orders)) {
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  
-  <div class="col-6 col-md-3 col-xl">
-    <a href="<?= ADMIN_URL ?>/orders.php?status=LIVE" class="text-decoration-none">
-      <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100 transition-hover <?= ($filterStatus === 'LIVE') ? 'border-2 border-forest' : '' ?>">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-muted text-uppercase">⚡ All Live Orders</span>
-          <span class="live-pulse-dot green"></span>
-        </div>
-        <h3 class="fw-bold font-outfit text-dark mb-0" id="adminKpiLive"><?= $cntLive ?></h3>
-        <span class="small text-forest fw-semibold">Active in Pipeline</span>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-6 col-md-3 col-xl">
-    <a href="<?= ADMIN_URL ?>/orders.php?status=PREPARING" class="text-decoration-none">
-      <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100 transition-hover <?= ($filterStatus === 'PREPARING' || $filterStatus === 'COOKING') ? 'border-2 border-warning' : '' ?>" style="border-top: 3px solid #F59E0B !important;">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-muted text-uppercase">🍳 Being Prepared</span>
-          <span class="live-pulse-dot amber"></span>
-        </div>
-        <h3 class="fw-bold font-outfit text-dark mb-0" id="adminKpiCooking"><?= $cntPreparing ?></h3>
-        <span class="small text-warning fw-semibold">Cooking in Kitchen</span>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-6 col-md-3 col-xl">
-    <a href="<?= ADMIN_URL ?>/orders.php?status=READY" class="text-decoration-none">
-      <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100 transition-hover <?= ($filterStatus === 'READY') ? 'border-2 border-success' : '' ?>" style="border-top: 3px solid #10B981 !important;">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-muted text-uppercase">📦 Ready for Pickup</span>
-          <i class="bi bi-box-seam text-success"></i>
-        </div>
-        <h3 class="fw-bold font-outfit text-dark mb-0" id="adminKpiReady"><?= $cntReady ?></h3>
-        <span class="small text-success fw-semibold">Cooked & Packed</span>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-6 col-md-3 col-xl">
-    <a href="<?= ADMIN_URL ?>/orders.php?status=OUT_FOR_DELIVERY" class="text-decoration-none">
-      <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100 transition-hover <?= ($filterStatus === 'OUT_FOR_DELIVERY') ? 'border-2 border-primary' : '' ?>" style="border-top: 3px solid #3B82F6 !important;">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-muted text-uppercase">🚴 Out for Delivery</span>
-          <span class="live-pulse-dot blue"></span>
-        </div>
-        <h3 class="fw-bold font-outfit text-dark mb-0" id="adminKpiTransit"><?= $cntDelivering ?></h3>
-        <span class="small text-primary fw-semibold">Courier In Transit</span>
-      </div>
-    </a>
-  </div>
-
-  <div class="col-6 col-md-3 col-xl">
-    <a href="<?= ADMIN_URL ?>/orders.php?status=DELIVERED" class="text-decoration-none">
-      <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100 transition-hover <?= ($filterStatus === 'DELIVERED') ? 'border-2 border-success' : '' ?>">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <span class="small fw-bold text-muted text-uppercase">✅ Delivered</span>
-          <i class="bi bi-house-check text-success"></i>
-        </div>
-        <h3 class="fw-bold font-outfit text-dark mb-0" id="adminKpiDelivered"><?= $cntDelivered ?></h3>
-        <span class="small text-muted">Completed Orders</span>
-      </div>
-    </a>
-  </div>
-
-</div>
-
-<!-- ===========================================================================
-     WHAT IS BEING PREPARED: LIVE KITCHEN COOK-LINE STRIP
-     =========================================================================== -->
-<div class="card border-0 rounded-4 shadow-sm p-3 bg-white mb-4">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-    <div class="d-flex align-items-center gap-2">
-      <span class="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold">
-        <i class="fa-solid fa-fire-burner me-1"></i> ACTIVE KITCHEN COOK-LINE
-      </span>
-      <span class="small text-muted fw-bold">Live aggregated dishes currently being prepared across all active tickets:</span>
-    </div>
-    <span class="small text-forest fw-bold">
-      <?= count($cookLoadItems) ?> distinct dishes on cook-line
-    </span>
-  </div>
-
-  <?php if (empty($cookLoadItems)): ?>
-    <div class="text-muted small py-2">
-      <i class="bi bi-check-circle-fill text-success me-1"></i> Kitchen cook-line is currently clear! No active dishes in preparation.
-    </div>
-  <?php else: ?>
-    <div class="d-flex flex-wrap align-items-center gap-2 pt-1">
-      <?php foreach ($cookLoadItems as $item): ?>
-        <div class="cook-load-badge">
-          <span class="badge-count"><?= (int)$item['total_qty'] ?>x</span>
-          <span>
-            <?= $item['is_veg'] ? '<i class="bi bi-circle-fill text-success me-1" style="font-size:0.6rem;"></i>' : '<i class="bi bi-triangle-fill text-danger me-1" style="font-size:0.6rem;"></i>' ?>
-            <?= e($item['item_name']) ?>
-          </span>
-        </div>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-</div>
-
 <!-- ===========================================================================
      MAIN LIVE ORDERS MANAGEMENT CONSOLE
      =========================================================================== -->
-<div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+<div class="card border rounded-4 shadow-xs p-4 bg-white mb-4" style="border-color:#E2ECE5 !important;">
   
   <!-- Filter Pills Bar & View Mode Toggle -->
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
@@ -397,7 +264,7 @@ if (!empty($orders)) {
       <span class="small fw-bold text-muted me-1">Filter Stage:</span>
       <a href="<?= ADMIN_URL ?>/orders.php?status=LIVE<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'LIVE') ? 'btn-dark' : 'btn-light border' ?>">
-        ⚡ Live Active (<?= $cntLive ?>)
+        ⚡ Live Active (<span id="ordersLiveCount"><?= $cntLive ?></span>)
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=PREPARING<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'PREPARING') ? 'btn-warning text-dark' : 'btn-light border' ?>">
@@ -405,11 +272,11 @@ if (!empty($orders)) {
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=READY<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'READY') ? 'btn-success' : 'btn-light border' ?>">
-        📦 Ready for Pickup (<?= $cntReady ?>)
+        📦 Ready for Pickup (<span id="ordersReadyCount"><?= $cntReady ?></span>)
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=OUT_FOR_DELIVERY<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'OUT_FOR_DELIVERY') ? 'btn-primary' : 'btn-light border' ?>">
-        🚴 Out for Delivery (<?= $cntDelivering ?>)
+        🚴 Out for Delivery (<span id="ordersTransitCount"><?= $cntDelivering ?></span>)
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=DELIVERED<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'DELIVERED') ? 'btn-secondary text-white' : 'btn-light border' ?>">
@@ -425,18 +292,8 @@ if (!empty($orders)) {
       </a>
     </div>
 
-    <!-- View Switcher & Action Tools -->
+    <!-- Ledger utilities -->
     <div class="d-flex align-items-center gap-2">
-      <!-- Cards vs Table View Toggle -->
-      <div class="btn-group btn-group-sm p-1 rounded-pill bg-light border" role="group">
-        <button type="button" class="btn rounded-pill px-3 fw-bold <?= ($viewMode !== 'table') ? 'btn-dark shadow-sm' : 'btn-light' ?>" id="btnViewCards">
-          <i class="bi bi-grid-fill me-1"></i> Cards View
-        </button>
-        <button type="button" class="btn rounded-pill px-3 fw-bold <?= ($viewMode === 'table') ? 'btn-dark shadow-sm' : 'btn-light' ?>" id="btnViewTable">
-          <i class="bi bi-table me-1"></i> Table View
-        </button>
-      </div>
-
       <a href="<?= ADMIN_URL ?>/audit-logs.php" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
         <i class="bi bi-journal-text me-1"></i> Audit Trail
       </a>
@@ -476,10 +333,9 @@ if (!empty($orders)) {
     </div>
   </div>
 
-  <!-- ===========================================================================
-       VIEW A: INTERACTIVE VISUAL CARDS (KANBAN / OPERATIONAL VIEW)
-       =========================================================================== -->
-  <div id="ordersCardsViewContainer" class="<?= ($viewMode === 'table') ? 'd-none' : '' ?>">
+  <!-- The ledger below is the only order detail view; legacy cards are not rendered. -->
+  <?php if (false): ?>
+  <div id="ordersCardsViewContainer">
     
     <?php if (empty($orders)): ?>
       <div class="text-center py-5 text-muted">
@@ -494,7 +350,7 @@ if (!empty($orders)) {
       
       <div class="row g-3" id="ordersCardsGrid">
         <?php foreach ($orders as $order): ?>
-          <?php 
+          <?php
             $items = $orderItemsGrouped[$order['order_id']] ?? [];
             $status = $order['order_status'];
             
@@ -507,6 +363,23 @@ if (!empty($orders)) {
               'CANCELLED' => 'stage-cancelled',
               default => 'stage-preparing'
             };
+
+            // Calculate Dynamic SLA Variance
+            $maxPrep = 15;
+            if (!empty($items)) {
+              $preps = array_filter(array_column($items, 'prep_time_minutes'));
+              if (!empty($preps)) $maxPrep = max($preps);
+            }
+            $slaDiff = (int)$order['elapsed_minutes'] - $maxPrep;
+            if (in_array($status, ['CONFIRMED', 'COOKING'])) {
+              if ($slaDiff > 15) {
+                $stageClass .= ' sla-breach-critical';
+              } elseif ($slaDiff > 0) {
+                $stageClass .= ' sla-breach-overdue';
+              } elseif ($slaDiff >= -5) {
+                $stageClass .= ' sla-approaching';
+              }
+            }
 
             // Search string aggregation for zero-latency client filtering
             $itemNames = array_map(fn($it) => $it['item_name'], $items);
@@ -522,12 +395,24 @@ if (!empty($orders)) {
               
               <!-- Card Header -->
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <input type="checkbox" class="form-check-input order-select-checkbox m-0" value="<?= (int)$order['order_id'] ?>" title="Select order for batch operations" style="cursor: pointer; width: 1.15em; height: 1.15em;">
                   <span class="badge bg-dark fw-bold font-monospace">#ZIP-<?= (int)$order['order_id'] ?></span>
                   <?= get_status_badge($status) ?>
+                  <?php if (in_array($status, ['CONFIRMED', 'COOKING'])): ?>
+                    <?php if ($slaDiff > 15): ?>
+                      <span class="badge rounded-pill bg-danger text-white" style="font-size:0.68rem;" title="Critical preparation delay"><i class="bi bi-exclamation-octagon-fill me-1"></i>+<?= $slaDiff ?>m Critical</span>
+                    <?php elseif ($slaDiff > 0): ?>
+                      <span class="badge rounded-pill bg-warning text-dark border border-warning" style="font-size:0.68rem;" title="Preparation time exceeded"><i class="bi bi-alarm-fill me-1"></i>+<?= $slaDiff ?>m Overdue</span>
+                    <?php elseif ($slaDiff >= -5): ?>
+                      <span class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size:0.68rem;"><i class="bi bi-hourglass-split me-1"></i><?= abs($slaDiff) ?>m left</span>
+                    <?php else: ?>
+                      <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle" style="font-size:0.68rem;"><i class="bi bi-check-circle-fill me-1"></i>On Track</span>
+                    <?php endif; ?>
+                  <?php endif; ?>
                 </div>
-                <span class="small text-muted">
-                  <?= date('h:i A', strtotime($order['placed_at'])) ?> (<?= (int)$order['elapsed_minutes'] ?>m ago)
+                <span class="small text-muted font-monospace" style="font-size:0.75rem;">
+                  <?= date('h:i A', strtotime($order['placed_at'])) ?> &bull; <?= format_minutes_ago((int)$order['elapsed_minutes']) ?>
                 </span>
               </div>
 
@@ -757,33 +642,38 @@ if (!empty($orders)) {
 
   </div>
 
+  <?php endif; ?>
+
   <!-- ===========================================================================
        VIEW B: STRUCTURED DATA TABLE (DETAILED LEDGER VIEW)
        =========================================================================== -->
-  <div id="ordersTableViewContainer" class="<?= ($viewMode === 'table') ? '' : 'd-none' ?>">
+  <div id="ordersTableViewContainer">
     <div class="table-responsive">
       <table class="table table-hover align-middle small mb-0" id="ordersMasterTable">
         <thead class="table-light">
           <tr>
-            <th>Order</th>
-            <th>Customer Details</th>
-            <th>Delivery Destination</th>
-            <th>Ordered Dishes</th>
-            <th>Bill Amount</th>
-            <th>Status</th>
+            <th style="width: 38px;">
+              <input type="checkbox" id="selectAllOrdersTable" class="form-check-input" title="Select all orders" style="cursor: pointer;">
+            </th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="1">Order <i class="bi bi-arrow-down-up small"></i></button></th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="2">Customer <i class="bi bi-arrow-down-up small"></i></button></th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="3">Delivery destination <i class="bi bi-arrow-down-up small"></i></button></th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="4">Ordered dishes <i class="bi bi-arrow-down-up small"></i></button></th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="5">Bill amount <i class="bi bi-arrow-down-up small"></i></button></th>
+            <th><button type="button" class="btn btn-link p-0 text-dark text-decoration-none fw-bold" data-sort-column="6">Status <i class="bi bi-arrow-down-up small"></i></button></th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
           <?php if (empty($orders)): ?>
             <tr>
-              <td colspan="7" class="text-center py-4 text-muted">
+              <td colspan="8" class="text-center py-4 text-muted">
                 No orders found matching the filter criteria.
               </td>
             </tr>
           <?php else: ?>
             <?php foreach ($orders as $order): ?>
-              <?php 
+              <?php
                 $items = $orderItemsGrouped[$order['order_id']] ?? [];
                 $itemNames = array_map(fn($it) => $it['item_name'], $items);
                 $rowSearchData = strtolower("ZIP-{$order['order_id']} {$order['full_name']} {$order['phone_number']} {$order['email']} {$order['address_line']} {$order['pincode']} {$order['delivery_partner_name']} {$order['delivery_otp']} {$order['payment_mode']} {$order['order_status']} " . implode(' ', $itemNames));
@@ -794,6 +684,10 @@ if (!empty($orders)) {
                   data-payment="<?= e($order['payment_mode']) ?>"
                   data-search="<?= e($rowSearchData) ?>">
                 
+                <td style="width: 38px;">
+                  <input type="checkbox" class="form-check-input order-select-checkbox" value="<?= (int)$order['order_id'] ?>" style="cursor: pointer;">
+                </td>
+
                 <td>
                   <div class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$order['order_id'] ?></div>
                   <div class="small text-muted"><?= date('d M, h:i A', strtotime($order['placed_at'])) ?></div>
@@ -863,7 +757,22 @@ if (!empty($orders)) {
                 </td>
 
                 <td>
-                  <?= get_status_badge($order['order_status']) ?>
+                  <div><?= get_status_badge($order['order_status']) ?></div>
+                  <?php if (in_array($order['order_status'], ['CONFIRMED', 'COOKING'])): ?>
+                    <?php 
+                      $rowMaxPrep = 15;
+                      if (!empty($items)) {
+                        $preps = array_filter(array_column($items, 'prep_time_minutes'));
+                        if (!empty($preps)) $rowMaxPrep = max($preps);
+                      }
+                      $rowSlaDiff = (int)$order['elapsed_minutes'] - $rowMaxPrep;
+                    ?>
+                    <?php if ($rowSlaDiff > 15): ?>
+                      <span class="badge rounded-pill bg-danger text-white mt-1" style="font-size:0.65rem;"><i class="bi bi-exclamation-octagon-fill me-1"></i>+<?= $rowSlaDiff ?>m Critical</span>
+                    <?php elseif ($rowSlaDiff > 0): ?>
+                      <span class="badge rounded-pill bg-warning text-dark border border-warning mt-1" style="font-size:0.65rem;"><i class="bi bi-alarm-fill me-1"></i>+<?= $rowSlaDiff ?>m Overdue</span>
+                    <?php endif; ?>
+                  <?php endif; ?>
                 </td>
 
                 <td>
@@ -950,9 +859,23 @@ if (!empty($orders)) {
 
             <div class="mb-3">
               <label class="form-label small fw-bold">Assigned Courier Partner</label>
-              <input type="text" name="rider_name" class="form-control rounded-3" 
-                     value="<?= e($order['delivery_partner_name'] ?: 'Suresh Kumar (Zippy Express)') ?>"
-                     placeholder="e.g. Suresh Kumar (Zippy Express)">
+              <select name="rider_name" class="form-select rounded-3">
+                <option value="">-- Select Courier Rider --</option>
+                <?php foreach ($registeredRiders as $r): ?>
+                  <?php
+                    $isSelected = (stripos($order['delivery_partner_name'], $r['full_name']) !== false)
+                               || ((int)($order['rider_id'] ?? 0) === (int)$r['user_id'])
+                               || (empty($order['delivery_partner_name']) && $r['user_id'] == 5);
+                    $isBusyOther = $r['is_busy'] && ((int)$r['active_order_id'] !== (int)$order['order_id']);
+                  ?>
+                  <option value="<?= e($r['full_name']) ?>" <?= $isSelected ? 'selected' : '' ?>>
+                    <?= e($r['full_name']) ?> <?= $isBusyOther ? "🔴 [Busy on #ZIP-{$r['active_order_id']}]" : '🟢 [Available (0/1)]' ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+              <div class="form-text small" style="font-size:0.75rem;">
+                <i class="bi bi-shield-lock text-primary me-1"></i><strong>1 Driver, 1 Delivery Policy:</strong> Busy couriers cannot be dispatched on additional orders until active trip is verified.
+              </div>
             </div>
 
             <div class="p-3 rounded-3 bg-light border small text-muted">
@@ -975,10 +898,140 @@ if (!empty($orders)) {
 <?php endforeach; ?>
 
 <!-- ===========================================================================
+     PINNED FLOATING BATCH ACTIONS BAR
+     Appears when 1 or more orders are selected via checkboxes
+     =========================================================================== -->
+<div id="batchActionBar" class="position-fixed bottom-0 start-50 translate-middle-x mb-4 p-3 bg-dark text-white rounded-pill shadow-lg d-none align-items-center gap-3 z-3 border border-secondary" style="background: #1C2B20 !important; border-color: rgba(206, 255, 220, 0.25) !important;">
+  <div class="d-flex align-items-center gap-2 ps-2">
+    <span class="badge rounded-pill bg-success text-white font-monospace px-2 py-1" id="selectedCountBadge" style="background:#2E6F40 !important;">0</span>
+    <span class="small fw-semibold text-white">Selected</span>
+  </div>
+
+  <div class="vr bg-secondary opacity-50 d-none d-sm-block"></div>
+
+  <!-- Form for Batch Status Update Submission -->
+  <form id="batchStatusForm" method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0 d-flex align-items-center gap-2">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="batch_status_update">
+    <input type="hidden" name="new_status" id="batchTargetStatusInput" value="">
+    <div id="batchSelectedIdsContainer"></div>
+
+    <button type="button" class="btn btn-warning btn-sm rounded-pill fw-bold px-3 text-dark shadow-xs" onclick="triggerBatchStatus('COOKING')" title="Advance selected to Cooking">
+      <i class="fa-solid fa-fire me-1"></i>Start Cook
+    </button>
+    <button type="button" class="btn btn-primary btn-sm rounded-pill fw-bold px-3 shadow-xs" onclick="triggerBatchStatus('READY')" title="Mark selected as Cooked & Ready">
+      <i class="bi bi-box-seam me-1"></i>Mark Ready
+    </button>
+    <button type="button" class="btn btn-success btn-sm rounded-pill fw-bold px-3 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;" onclick="triggerBatchStatus('OUT_FOR_DELIVERY')" title="Dispatch selected to couriers">
+      <i class="bi bi-bicycle me-1"></i>Dispatch
+    </button>
+  </form>
+
+  <div class="vr bg-secondary opacity-50 d-none d-sm-block"></div>
+
+  <!-- Batch KOT Print Button -->
+  <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3 shadow-xs" onclick="triggerBatchKotPrint()" title="Print thermal KOT slips for all selected tickets">
+    <i class="bi bi-printer me-1"></i>Print KOTs
+  </button>
+
+  <button type="button" class="btn btn-link text-white-50 btn-sm text-decoration-none p-0 ms-1 me-2" onclick="clearBatchSelections()" title="Cancel and deselect all">
+    <i class="bi bi-x-circle fs-5"></i>
+  </button>
+</div>
+
+<!-- ===========================================================================
      INTERACTIVE CLIENT-SIDE SEARCH, FILTER & VIEW SCRIPTS
      =========================================================================== -->
 <script>
+// =============================================================================
+// BATCH OPERATIONS ENGINE (Multi-select status advance & batch KOT slips)
+// =============================================================================
+function updateBatchBarState() {
+  const checkedBoxes = document.querySelectorAll('.order-select-checkbox:checked');
+  const batchBar = document.getElementById('batchActionBar');
+  const countBadge = document.getElementById('selectedCountBadge');
+  const selectAllTable = document.getElementById('selectAllOrdersTable');
+
+  const count = checkedBoxes.length;
+  if (countBadge) countBadge.textContent = count;
+
+  if (batchBar) {
+    if (count > 0) {
+      batchBar.classList.remove('d-none');
+      batchBar.classList.add('d-flex');
+    } else {
+      batchBar.classList.add('d-none');
+      batchBar.classList.remove('d-flex');
+    }
+  }
+
+  const allVisible = document.querySelectorAll('.order-select-checkbox');
+  if (selectAllTable && allVisible.length > 0) {
+    selectAllTable.checked = (count === allVisible.length);
+  }
+}
+
+function clearBatchSelections() {
+  document.querySelectorAll('.order-select-checkbox').forEach(cb => { cb.checked = false; });
+  const selectAllTable = document.getElementById('selectAllOrdersTable');
+  if (selectAllTable) selectAllTable.checked = false;
+  updateBatchBarState();
+}
+
+function triggerBatchStatus(targetStatus) {
+  const checkedBoxes = document.querySelectorAll('.order-select-checkbox:checked');
+  if (checkedBoxes.length === 0) return;
+
+  const container = document.getElementById('batchSelectedIdsContainer');
+  const statusInput = document.getElementById('batchTargetStatusInput');
+  const form = document.getElementById('batchStatusForm');
+
+  if (!container || !statusInput || !form) return;
+
+  container.innerHTML = '';
+  statusInput.value = targetStatus;
+
+  checkedBoxes.forEach(cb => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'order_ids[]';
+    input.value = cb.value;
+    container.appendChild(input);
+  });
+
+  const statusLabel = targetStatus.replace(/_/g, ' ');
+  if (confirm(`Advance ${checkedBoxes.length} selected order(s) to status: ${statusLabel}?`)) {
+    form.submit();
+  }
+}
+
+function triggerBatchKotPrint() {
+  const checkedBoxes = document.querySelectorAll('.order-select-checkbox:checked');
+  if (checkedBoxes.length === 0) return;
+
+  const ids = Array.from(checkedBoxes).map(cb => cb.value).join(',');
+  const url = '<?= KITCHEN_URL ?>/kot.php?order_ids=' + encodeURIComponent(ids);
+  window.open(url, '_blank', 'width=420,height=650');
+}
 document.addEventListener('DOMContentLoaded', () => {
+  // Multi-Select Checkbox Event Listeners
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.classList.contains('order-select-checkbox')) {
+      updateBatchBarState();
+    }
+  });
+
+  const selectAllTable = document.getElementById('selectAllOrdersTable');
+  if (selectAllTable) {
+    selectAllTable.addEventListener('change', () => {
+      const isChecked = selectAllTable.checked;
+      document.querySelectorAll('.order-table-row:not(.d-none) .order-select-checkbox').forEach(cb => {
+        cb.checked = isChecked;
+      });
+      updateBatchBarState();
+    });
+  }
+
   const searchInput = document.getElementById('orderLiveSearchInput');
   const clearBtn = document.getElementById('clearOrderSearchBtn');
   const resetBtn = document.getElementById('resetOrdersSearchBtn');
@@ -986,45 +1039,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const zeroState = document.getElementById('ordersZeroSearchState');
   const counterSpan = document.getElementById('filteredOrdersCount');
   
-  const btnCards = document.getElementById('btnViewCards');
-  const btnTable = document.getElementById('btnViewTable');
-  const cardsContainer = document.getElementById('ordersCardsViewContainer');
-  const tableContainer = document.getElementById('ordersTableViewContainer');
-
-  const cardItems = document.querySelectorAll('.order-card-item-col');
   const tableRows = document.querySelectorAll('.order-table-row');
 
-  // 1. View Switcher Logic
-  function setView(view) {
-    if (view === 'table') {
-      cardsContainer.classList.add('d-none');
-      tableContainer.classList.remove('d-none');
-      btnTable.classList.add('btn-dark', 'shadow-sm');
-      btnTable.classList.remove('btn-light');
-      btnCards.classList.remove('btn-dark', 'shadow-sm');
-      btnCards.classList.add('btn-light');
-      localStorage.setItem('zippy_admin_orders_view', 'table');
-    } else {
-      cardsContainer.classList.remove('d-none');
-      tableContainer.classList.add('d-none');
-      btnCards.classList.add('btn-dark', 'shadow-sm');
-      btnCards.classList.remove('btn-light');
-      btnTable.classList.remove('btn-dark', 'shadow-sm');
-      btnTable.classList.add('btn-light');
-      localStorage.setItem('zippy_admin_orders_view', 'cards');
-    }
-  }
+  document.querySelectorAll('[data-sort-column]').forEach(button => {
+    button.addEventListener('click', () => {
+      const column = Number(button.dataset.sortColumn);
+      const direction = button.dataset.sortDirection === 'asc' ? -1 : 1;
+      button.dataset.sortDirection = direction === 1 ? 'asc' : 'desc';
+      button.setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending');
 
-  // Restore saved view preference
-  const savedView = localStorage.getItem('zippy_admin_orders_view');
-  if (savedView) {
-    setView(savedView);
-  }
+      const tableBody = document.querySelector('#ordersMasterTable tbody');
+      const sortedRows = Array.from(tableRows).sort((a, b) => {
+        const left = a.cells[column]?.innerText.trim() || '';
+        const right = b.cells[column]?.innerText.trim() || '';
+        return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }) * direction;
+      });
 
-  if (btnCards) btnCards.addEventListener('click', () => setView('cards'));
-  if (btnTable) btnTable.addEventListener('click', () => setView('table'));
+      sortedRows.forEach(row => tableBody.appendChild(row));
+    });
+  });
 
-  // 2. Real-time Live Search & Payment Filter
+  // Real-time search and payment filter for the canonical ledger.
   function runLiveFilter() {
     const q = (searchInput?.value || '').trim().toLowerCase();
     const p = (paymentFilter?.value || '').trim();
@@ -1035,23 +1070,6 @@ document.addEventListener('DOMContentLoaded', () => {
       clearBtn.classList.toggle('d-none', q.length === 0);
     }
 
-    // Filter cards
-    cardItems.forEach(card => {
-      const cardSearch = card.getAttribute('data-search') || '';
-      const cardPayment = card.getAttribute('data-payment') || '';
-
-      const matchQ = (q === '') || cardSearch.includes(q);
-      const matchP = (p === '') || (cardPayment === p);
-
-      if (matchQ && matchP) {
-        card.classList.remove('d-none');
-        visibleCount++;
-      } else {
-        card.classList.add('d-none');
-      }
-    });
-
-    // Filter table rows
     tableRows.forEach(row => {
       const rowSearch = row.getAttribute('data-search') || '';
       const rowPayment = row.getAttribute('data-payment') || '';
@@ -1059,7 +1077,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const matchQ = (q === '') || rowSearch.includes(q);
       const matchP = (p === '') || (rowPayment === p);
 
-      row.classList.toggle('d-none', !(matchQ && matchP));
+      const visible = matchQ && matchP;
+      row.classList.toggle('d-none', !visible);
+      if (visible) visibleCount++;
     });
 
     if (counterSpan) {
@@ -1067,8 +1087,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (zeroState) {
-      const hasAnyVisible = (visibleCount > 0) || (cardItems.length === 0 && tableRows.length === 0);
-      zeroState.classList.toggle('d-none', hasAnyVisible);
+      zeroState.classList.toggle('d-none', visibleCount > 0 || tableRows.length === 0);
     }
   }
 
@@ -1218,17 +1237,13 @@ setInterval(async () => {
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && data.metrics) {
-        const kpiLive = document.getElementById('adminKpiLive');
-        const kpiCooking = document.getElementById('adminKpiCooking');
-        const kpiReady = document.getElementById('adminKpiReady');
-        const kpiTransit = document.getElementById('adminKpiTransit');
-        const kpiDelivered = document.getElementById('adminKpiDelivered');
+        const liveCount = document.getElementById('ordersLiveCount');
+        const readyCount = document.getElementById('ordersReadyCount');
+        const transitCount = document.getElementById('ordersTransitCount');
 
-        if (kpiLive) kpiLive.textContent = data.metrics.total_active;
-        if (kpiCooking) kpiCooking.textContent = data.metrics.cooking;
-        if (kpiReady) kpiReady.textContent = data.metrics.ready;
-        if (kpiTransit) kpiTransit.textContent = data.metrics.out_for_delivery;
-        if (kpiDelivered) kpiDelivered.textContent = data.metrics.delivered_today;
+        if (liveCount) liveCount.textContent = data.metrics.total_active;
+        if (readyCount) readyCount.textContent = data.metrics.ready;
+        if (transitCount) transitCount.textContent = data.metrics.out_for_delivery;
 
         // If new live orders arrived, alert the admin
         if (data.metrics.total_active > lastKnownLiveCount) {

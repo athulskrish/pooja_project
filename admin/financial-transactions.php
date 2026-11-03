@@ -133,6 +133,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             header("Location: " . ADMIN_URL . "/financial-transactions.php");
             exit;
         }
+
+        // 3. End-of-Day Cash Drawer Closing & Z-Report Generation
+        if ($action === 'close_cash_register') {
+            $closureDate = clean_input($_POST['closure_date'] ?? date('Y-m-d'));
+            $physicalCash = (float)($_POST['physical_cash'] ?? 0);
+            $discrepancyReason = clean_input($_POST['discrepancy_notes'] ?? '');
+
+            // Calculate system metrics for $closureDate
+            $ordSummary = db_fetch_one("
+                SELECT COUNT(*) AS total_orders, COALESCE(SUM(total_amount), 0.00) AS gross_sales 
+                FROM `orders` 
+                WHERE DATE(placed_at) = :dt AND order_status != 'CANCELLED'
+            ", [':dt' => $closureDate]);
+            $totalOrders = (int)($ordSummary['total_orders'] ?? 0);
+            $grossSales = (float)($ordSummary['gross_sales'] ?? 0.00);
+
+            // Online prepayments settled
+            $onlinePayments = (float)db_fetch_val("
+                SELECT COALESCE(SUM(amount), 0.00) 
+                FROM `money_transactions` 
+                WHERE DATE(created_at) = :dt AND txn_category = 'CUSTOMER_PAYMENT_ONLINE' AND status = 'COMPLETED'
+            ", [':dt' => $closureDate]);
+
+            // Expected COD cash in store register
+            $expectedCodCash = (float)db_fetch_val("
+                SELECT COALESCE(SUM(amount), 0.00) 
+                FROM `money_transactions` 
+                WHERE DATE(created_at) = :dt AND txn_category IN ('CUSTOMER_PAYMENT_COD', 'COD_DEPOSIT_STORE') AND status = 'COMPLETED'
+            ", [':dt' => $closureDate]);
+
+            if ($expectedCodCash <= 0) {
+                $expectedCodCash = (float)db_fetch_val("
+                    SELECT COALESCE(SUM(p.amount_paid), 0.00) 
+                    FROM `payments` p 
+                    JOIN `orders` o ON p.order_id = o.order_id 
+                    WHERE DATE(o.placed_at) = :dt AND p.payment_mode = 'COD' AND p.payment_status = 'SUCCESSFUL'
+                ", [':dt' => $closureDate]);
+            }
+
+            $discrepancy = round($physicalCash - $expectedCodCash, 2);
+
+            db_query("
+                INSERT INTO `cash_register_closures` 
+                (`closure_date`, `closing_admin_id`, `closing_admin_name`, `total_orders_count`, `gross_sales`, `online_payments_total`, `expected_cod_cash`, `actual_physical_cash`, `discrepancy_amount`, `discrepancy_reason`, `status`, `closed_at`)
+                VALUES 
+                (:dt, :aid, :aname, :tot_ord, :gross, :online, :exp_cod, :act_cod, :disc, :reason, 'SEALED', NOW())
+            ", [
+                ':dt'      => $closureDate,
+                ':aid'     => (int)($currentUser['id'] ?? 1),
+                ':aname'   => $currentUser['name'] ?? 'Store Manager',
+                ':tot_ord' => $totalOrders,
+                ':gross'   => $grossSales,
+                ':online'  => $onlinePayments,
+                ':exp_cod' => $expectedCodCash,
+                ':act_cod' => $physicalCash,
+                ':disc'    => $discrepancy,
+                ':reason'  => $discrepancyReason
+            ]);
+            $closureId = (int)db_fetch_val("SELECT LAST_INSERT_ID()");
+
+            set_flash('success', "Cash drawer successfully closed & sealed for {$closureDate}. Z-Report generated (Ref #ZREP-{$closureId}).");
+            header("Location: " . ADMIN_URL . "/financial-transactions.php?zreport={$closureId}");
+            exit;
+        }
     }
 }
 
@@ -242,6 +306,46 @@ $ridersWithCod = db_fetch_all("
     ORDER BY sp.cod_balance DESC
 ");
 
+// Fetch Recent Register Closures
+$recentClosures = db_fetch_all("
+    SELECT * FROM `cash_register_closures` ORDER BY `closed_at` DESC LIMIT 6
+");
+
+// Today's Register Closure Preview Metrics
+$todayClosureDate = date('Y-m-d');
+$todayOrdersSummary = db_fetch_one("
+    SELECT COUNT(*) AS total_orders, COALESCE(SUM(total_amount), 0.00) AS gross_sales 
+    FROM `orders` 
+    WHERE DATE(placed_at) = :dt AND order_status != 'CANCELLED'
+", [':dt' => $todayClosureDate]);
+
+$todayOnlinePayments = (float)db_fetch_val("
+    SELECT COALESCE(SUM(amount), 0.00) 
+    FROM `money_transactions` 
+    WHERE DATE(created_at) = :dt AND txn_category = 'CUSTOMER_PAYMENT_ONLINE' AND status = 'COMPLETED'
+", [':dt' => $todayClosureDate]);
+
+$todayExpectedCod = (float)db_fetch_val("
+    SELECT COALESCE(SUM(amount), 0.00) 
+    FROM `money_transactions` 
+    WHERE DATE(created_at) = :dt AND txn_category IN ('CUSTOMER_PAYMENT_COD', 'COD_DEPOSIT_STORE') AND status = 'COMPLETED'
+", [':dt' => $todayClosureDate]);
+
+if ($todayExpectedCod <= 0) {
+    $todayExpectedCod = (float)db_fetch_val("
+        SELECT COALESCE(SUM(p.amount_paid), 0.00) 
+        FROM `payments` p 
+        JOIN `orders` o ON p.order_id = o.order_id 
+        WHERE DATE(o.placed_at) = :dt AND p.payment_mode = 'COD' AND p.payment_status = 'SUCCESSFUL'
+    ", [':dt' => $todayClosureDate]);
+}
+
+// Active Z-Report viewing if ?zreport=...
+$activeZReport = null;
+if (isset($_GET['zreport'])) {
+    $activeZReport = db_fetch_one("SELECT * FROM `cash_register_closures` WHERE `closure_id` = :id", [':id' => (int)$_GET['zreport']]);
+}
+
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -259,6 +363,11 @@ require_once __DIR__ . '/includes/header.php';
   </div>
 
   <div class="d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-success rounded-pill px-3 fw-bold btn-sm shadow-sm text-white d-flex align-items-center gap-2" style="background:#2E6F40; border-color:#2E6F40;" data-bs-toggle="modal" data-bs-target="#closeDrawerModal">
+      <i class="bi bi-safe2-fill"></i>
+      <span>Close Drawer &amp; Z-Report</span>
+    </button>
+
     <?php if (!empty($ridersWithCod)): ?>
       <button type="button" class="btn btn-warning rounded-pill px-3 fw-bold btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#settleRiderCodModal">
         <i class="bi bi-safe me-1"></i> Settle Rider Cash (<?= count($ridersWithCod) ?>)
@@ -330,6 +439,103 @@ require_once __DIR__ . '/includes/header.php';
     </div>
   </div>
 
+</div>
+
+<!-- ===========================================================================
+     DAILY REGISTER CLOSURES & END-OF-DAY Z-REPORTS AUDIT
+     =========================================================================== -->
+<div class="card border-0 rounded-4 shadow-sm mb-4 bg-white overflow-hidden">
+  <div class="p-3 px-4 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2 bg-light bg-opacity-50">
+    <div class="d-flex align-items-center gap-2">
+      <div class="rounded-circle p-2 text-white d-flex align-items-center justify-content-center" style="width: 38px; height: 38px; background: #2E6F40;">
+        <i class="bi bi-safe2-fill fs-6"></i>
+      </div>
+      <div>
+        <h6 class="fw-bold font-outfit text-dark mb-0">Daily Register Closures &amp; End-of-Day Z-Reports</h6>
+        <span class="small text-muted" style="font-size:0.75rem;">Audited physical cash reconciliations, over/short variances, and sealed drawer logs</span>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-success btn-sm rounded-pill px-3 fw-bold shadow-xs d-flex align-items-center gap-1" style="background:#2E6F40; border-color:#2E6F40;" data-bs-toggle="modal" data-bs-target="#closeDrawerModal">
+        <i class="bi bi-plus-circle me-1"></i> New Drawer Close
+      </button>
+    </div>
+  </div>
+
+  <?php if (empty($recentClosures)): ?>
+    <div class="p-4 text-center">
+      <div class="rounded-circle p-3 text-muted bg-light d-inline-flex align-items-center justify-content-center mb-2" style="width: 52px; height: 52px;">
+        <i class="bi bi-receipt fs-4 text-forest"></i>
+      </div>
+      <h6 class="fw-bold text-dark mb-1">No Daily Register Closures Sealed Yet</h6>
+      <p class="small text-muted mb-3" style="max-width: 480px; margin: 0 auto;">
+        At the end of each shift or business day, perform a cash count and seal the drawer to generate an audited Z-Report balancing expected COD handover against physical cash in drawer.
+      </p>
+      <button type="button" class="btn btn-outline-forest btn-sm rounded-pill px-4 fw-bold" style="border-color:#2E6F40; color:#2E6F40;" data-bs-toggle="modal" data-bs-target="#closeDrawerModal">
+        Perform Today's Drawer Count (<?= format_inr($todayExpectedCod) ?> Expected)
+      </button>
+    </div>
+  <?php else: ?>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Report #</th>
+            <th>Closure Date</th>
+            <th>Manager</th>
+            <th>Orders</th>
+            <th>Gross Sales</th>
+            <th>Expected COD</th>
+            <th>Physical Count</th>
+            <th>Variance</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($recentClosures as $cl): ?>
+            <?php 
+              $variance = (float)$cl['discrepancy_amount'];
+              $varBadge = match(true) {
+                $variance == 0.0 => ['class' => 'bg-success-subtle text-success border border-success-subtle', 'text' => 'Balanced (₹0)'],
+                $variance > 0.0  => ['class' => 'bg-info-subtle text-info-emphasis border border-info-subtle', 'text' => '+' . format_inr($variance) . ' Over'],
+                default          => ['class' => 'bg-danger-subtle text-danger border border-danger-subtle', 'text' => '-' . format_inr(abs($variance)) . ' Short']
+              };
+            ?>
+            <tr>
+              <td class="font-monospace fw-bold text-dark">#ZREP-<?= (int)$cl['closure_id'] ?></td>
+              <td>
+                <div class="fw-bold text-dark"><?= date('d M Y', strtotime($cl['closure_date'])) ?></div>
+                <div class="text-muted" style="font-size:0.75rem;"><?= date('h:i A', strtotime($cl['closed_at'])) ?></div>
+              </td>
+              <td><?= e($cl['closing_admin_name']) ?></td>
+              <td><span class="badge bg-light text-dark border"><?= (int)$cl['total_orders_count'] ?> orders</span></td>
+              <td class="fw-bold text-dark"><?= format_inr($cl['gross_sales']) ?></td>
+              <td><?= format_inr($cl['expected_cod_cash']) ?></td>
+              <td class="fw-bold text-forest"><?= format_inr($cl['actual_physical_cash']) ?></td>
+              <td>
+                <span class="badge <?= $varBadge['class'] ?> rounded-pill px-2 py-1 font-monospace">
+                  <?= $varBadge['text'] ?>
+                </span>
+              </td>
+              <td>
+                <span class="badge bg-dark bg-opacity-75 text-white rounded-pill px-2 py-1 font-monospace" style="font-size:0.7rem;">
+                  <i class="bi bi-shield-lock me-1"></i><?= e($cl['status']) ?>
+                </span>
+              </td>
+              <td>
+                <a href="<?= ADMIN_URL ?>/financial-transactions.php?zreport=<?= (int)$cl['closure_id'] ?>" class="btn btn-outline-forest btn-sm rounded-pill px-3 py-1 shadow-xs d-inline-flex align-items-center gap-1" style="border-color:#2E6F40; color:#2E6F40; font-size:0.75rem;">
+                  <i class="bi bi-printer"></i>
+                  <span>Print Z-Report</span>
+                </a>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
 </div>
 
 <!-- ===========================================================================
@@ -712,6 +918,286 @@ require_once __DIR__ . '/includes/header.php';
       }
     });
   }
+</script>
+
+<!-- ===========================================================================
+     MODAL: END-OF-DAY CASH DRAWER CLOSING & SEALING WIZARD
+     =========================================================================== -->
+<div class="modal fade" id="closeDrawerModal" tabindex="-1" aria-labelledby="closeDrawerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 540px;">
+    <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+      
+      <div class="modal-header border-bottom p-3 px-4 bg-light">
+        <div class="d-flex align-items-center gap-2">
+          <div class="rounded-circle p-2 text-white d-flex align-items-center justify-content-center" style="width: 36px; height: 36px; background: #2E6F40;">
+            <i class="bi bi-safe2-fill"></i>
+          </div>
+          <div>
+            <h6 class="modal-title fw-bold font-outfit text-dark mb-0" id="closeDrawerModalLabel">End-of-Day Cash Drawer Closing</h6>
+            <span class="small text-muted" style="font-size:0.75rem;">Audit physical cash handover &amp; seal daily register</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form method="POST" action="<?= ADMIN_URL ?>/financial-transactions.php" id="closeDrawerForm">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="close_cash_register">
+        <input type="hidden" id="systemExpectedCodVal" value="<?= (float)$todayExpectedCod ?>">
+
+        <div class="modal-body p-4">
+          
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-dark">Register Closure Business Date</label>
+            <input type="date" name="closure_date" class="form-control rounded-3" value="<?= $todayClosureDate ?>" required>
+          </div>
+
+          <!-- Live System Financial Reading -->
+          <div class="p-3 rounded-3 mb-3 border bg-light">
+            <span class="small text-muted fw-bold text-uppercase d-block mb-2" style="font-size:0.7rem; letter-spacing:0.5px;">SYSTEM COMPUTED LEDGER (TODAY)</span>
+            
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+              <span class="text-muted">Orders Placed &amp; Completed:</span>
+              <span class="fw-bold text-dark font-monospace"><?= (int)$todayOrdersSummary['total_orders'] ?> orders</span>
+            </div>
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+              <span class="text-muted">Gross Transaction Value:</span>
+              <span class="fw-bold text-dark font-monospace"><?= format_inr($todayOrdersSummary['gross_sales']) ?></span>
+            </div>
+            <div class="d-flex justify-content-between py-1 border-bottom small">
+              <span class="text-muted">Digital UPI / Card Prepayments:</span>
+              <span class="fw-bold text-primary font-monospace"><?= format_inr($todayOnlinePayments) ?></span>
+            </div>
+            <div class="d-flex justify-content-between pt-2 small">
+              <span class="fw-bold text-dark">Expected Cash in Drawer:</span>
+              <span class="fw-bold text-forest fs-6 font-monospace" id="expectedCodDisplay"><?= format_inr($todayExpectedCod) ?></span>
+            </div>
+          </div>
+
+          <!-- Physical Cash Count Input -->
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-dark d-flex justify-content-between">
+              <span>Actual Physical Cash Counted (INR) <span class="text-danger">*</span></span>
+              <span class="text-muted small fw-normal">Count bills &amp; coins in drawer</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-white fw-bold">₹</span>
+              <input type="number" step="0.01" min="0" name="physical_cash" id="physicalCashInput" class="form-control form-control-lg rounded-end-3 font-outfit fs-4 fw-bold" placeholder="0.00" required oninput="recalcDrawerVariance()">
+            </div>
+          </div>
+
+          <!-- Dynamic Variance Box -->
+          <div id="varianceBox" class="p-3 rounded-3 mb-3 border d-flex align-items-center justify-content-between" style="background:#F9FAFB;">
+            <div>
+              <div class="small fw-bold text-dark" id="varianceTitle">Awaiting Cash Count</div>
+              <span class="text-muted" style="font-size:0.75rem;" id="varianceSubtext">Enter actual counted cash to calculate drawer variance</span>
+            </div>
+            <span class="badge bg-secondary rounded-pill px-3 py-2 font-monospace fs-6" id="varianceBadge">₹0.00</span>
+          </div>
+
+          <!-- Discrepancy Remarks -->
+          <div class="mb-2">
+            <label class="form-label small fw-bold text-dark" id="discrepancyLabel">Discrepancy Notes / Remarks</label>
+            <textarea name="discrepancy_notes" id="discrepancyNotesInput" class="form-control rounded-3 small" rows="2" placeholder="Required if physical count differs from expected amount..."></textarea>
+          </div>
+
+        </div>
+
+        <div class="modal-footer border-top p-3 px-4 bg-light">
+          <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
+            <i class="bi bi-shield-lock-fill me-1"></i> Seal Drawer &amp; Print Z-Report
+          </button>
+        </div>
+
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<!-- ===========================================================================
+     MODAL: 80MM THERMAL PRINTABLE Z-REPORT VIEW
+     =========================================================================== -->
+<?php if (!empty($activeZReport)): ?>
+<div class="modal fade" id="zReportModal" tabindex="-1" aria-labelledby="zReportModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+    <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+      
+      <div class="modal-header border-bottom p-3 px-4 bg-light">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-receipt-cutoff text-forest fs-5"></i>
+          <h6 class="modal-title fw-bold font-outfit text-dark mb-0">Daily Register Z-Report</h6>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body p-4 bg-light bg-opacity-25">
+        
+        <!-- Printable 80mm Thermal Slip Area -->
+        <div id="zReportPrintArea" class="zreport-paper mx-auto">
+          <div class="text-center mb-3">
+            <div class="fw-bold fs-6">ZIPPY CLOUD KITCHEN</div>
+            <div class="small">100ft Road, Indiranagar, Bengaluru</div>
+            <div class="small text-muted font-monospace">GSTIN: 29AAAAZ0000A1Z5</div>
+            <div class="zreport-divider-double"></div>
+            <div class="fw-bold font-monospace">*** DAILY REGISTER Z-REPORT ***</div>
+            <div class="small text-muted">AUDITED END-OF-DAY REGISTER CLOSE</div>
+          </div>
+
+          <div class="zreport-divider"></div>
+
+          <div class="d-flex justify-content-between">
+            <span>Z-REPORT REF:</span>
+            <strong>#ZREP-<?= (int)$activeZReport['closure_id'] ?></strong>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span>CLOSURE DATE:</span>
+            <span><?= date('d-M-Y', strtotime($activeZReport['closure_date'])) ?></span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span>SEALED TIME:</span>
+            <span><?= date('h:i:s A', strtotime($activeZReport['closed_at'])) ?></span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span>MANAGER:</span>
+            <span><?= e($activeZReport['closing_admin_name']) ?></span>
+          </div>
+
+          <div class="zreport-divider"></div>
+
+          <div class="fw-bold mb-1">FINANCIAL RECONCILIATION</div>
+          <div class="d-flex justify-content-between py-1">
+            <span>TOTAL ORDERS:</span>
+            <span><?= (int)$activeZReport['total_orders_count'] ?></span>
+          </div>
+          <div class="d-flex justify-content-between py-1">
+            <span>GROSS ORDER VALUE:</span>
+            <span><?= format_inr($activeZReport['gross_sales']) ?></span>
+          </div>
+          <div class="d-flex justify-content-between py-1">
+            <span>ONLINE PREPAYMENTS:</span>
+            <span><?= format_inr($activeZReport['online_payments_total']) ?></span>
+          </div>
+          <div class="d-flex justify-content-between py-1 border-top pt-1">
+            <span>EXPECTED COD CASH:</span>
+            <strong><?= format_inr($activeZReport['expected_cod_cash']) ?></strong>
+          </div>
+          <div class="d-flex justify-content-between py-1">
+            <span>ACTUAL PHYSICAL COUNT:</span>
+            <strong><?= format_inr($activeZReport['actual_physical_cash']) ?></strong>
+          </div>
+
+          <div class="zreport-divider-double"></div>
+
+          <?php 
+            $zVar = (float)$activeZReport['discrepancy_amount'];
+          ?>
+          <div class="d-flex justify-content-between fw-bold fs-6">
+            <span>CASH VARIANCE:</span>
+            <span><?= ($zVar >= 0 ? '+' : '') . format_inr($zVar) ?></span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted">
+            <span>DRAWER STATUS:</span>
+            <strong><?= ($zVar == 0 ? 'BALANCED' : ($zVar > 0 ? 'CASH OVERAGE' : 'CASH SHORTAGE')) ?></strong>
+          </div>
+
+          <?php if (!empty($activeZReport['discrepancy_reason'])): ?>
+            <div class="mt-2 p-2 bg-light border rounded small">
+              <strong>Audit Remarks:</strong><br>
+              <?= nl2br(e($activeZReport['discrepancy_reason'])) ?>
+            </div>
+          <?php endif; ?>
+
+          <div class="zreport-divider"></div>
+
+          <div class="mt-4 pt-3 border-top d-flex justify-content-between text-center small text-muted">
+            <div style="width: 45%;">
+              <div class="border-top pt-1">Cashier Sign</div>
+            </div>
+            <div style="width: 45%;">
+              <div class="border-top pt-1">Manager Sign</div>
+            </div>
+          </div>
+
+          <div class="text-center mt-3 small text-muted font-monospace" style="font-size:0.7rem;">
+            * SYSTEM GENERATED AUDIT RECORD *
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer border-top p-3 px-4 bg-light d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-3 btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success rounded-pill px-4 btn-sm fw-bold shadow-xs" style="background:#2E6F40; border-color:#2E6F40;" onclick="window.print()">
+          <i class="bi bi-printer-fill me-1"></i> Print 80mm Slip
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
+<script>
+function recalcDrawerVariance() {
+  const expected = parseFloat(document.getElementById('systemExpectedCodVal')?.value || 0);
+  const physicalInput = document.getElementById('physicalCashInput');
+  const physical = parseFloat(physicalInput?.value || 0);
+  const variance = physical - expected;
+
+  const box = document.getElementById('varianceBox');
+  const badge = document.getElementById('varianceBadge');
+  const title = document.getElementById('varianceTitle');
+  const subtext = document.getElementById('varianceSubtext');
+  const notes = document.getElementById('discrepancyNotesInput');
+
+  if (physicalInput.value === '') {
+    box.style.background = '#F9FAFB';
+    box.style.borderColor = '#E5E7EB';
+    badge.className = 'badge bg-secondary rounded-pill px-3 py-2 font-monospace fs-6';
+    badge.textContent = '₹0.00';
+    title.textContent = 'Awaiting Cash Count';
+    subtext.textContent = 'Enter actual counted cash to calculate drawer variance';
+    if (notes) notes.required = false;
+    return;
+  }
+
+  if (Math.abs(variance) < 0.01) {
+    box.style.background = '#EDFBF2';
+    box.style.borderColor = '#68BA7F';
+    badge.className = 'badge bg-success rounded-pill px-3 py-2 font-monospace fs-6';
+    badge.textContent = '₹0.00 (Balanced)';
+    title.textContent = 'Perfect Balance';
+    subtext.textContent = 'Physical cash matches system expected register handover perfectly';
+    if (notes) notes.required = false;
+  } else if (variance > 0) {
+    box.style.background = '#EFF6FF';
+    box.style.borderColor = '#93C5FD';
+    badge.className = 'badge bg-primary rounded-pill px-3 py-2 font-monospace fs-6';
+    badge.textContent = `+₹${variance.toFixed(2)} (Over)`;
+    title.textContent = 'Cash Surplus / Overage';
+    subtext.textContent = `Physical cash is higher than expected by ₹${variance.toFixed(2)}`;
+    if (notes) notes.required = false;
+  } else {
+    box.style.background = '#FFF1F2';
+    box.style.borderColor = '#FDA4AF';
+    badge.className = 'badge bg-danger rounded-pill px-3 py-2 font-monospace fs-6';
+    badge.textContent = `-₹${Math.abs(variance).toFixed(2)} (Short)`;
+    title.textContent = 'Cash Shortage Warning';
+    subtext.textContent = `Physical cash is short by ₹${Math.abs(variance).toFixed(2)}. Please record explanation below.`;
+    if (notes) notes.required = true;
+  }
+}
+
+// Auto-open Z-Report modal if launched from URL
+document.addEventListener('DOMContentLoaded', () => {
+  const zModalEl = document.getElementById('zReportModal');
+  if (zModalEl && typeof bootstrap !== 'undefined') {
+    const m = new bootstrap.Modal(zModalEl);
+    m.show();
+  }
+});
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

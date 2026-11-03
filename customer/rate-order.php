@@ -159,7 +159,7 @@ $isEdit = !empty($_GET['edit']);
             </div>
           </div>
         </div>
-        <span class="badge bg-success bg-opacity-15 text-success fw-bold px-3 py-2 rounded-pill">
+        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 fw-bold px-3 py-2 rounded-pill">
           <i class="bi bi-check-circle-fill me-1"></i> <?= e($order['order_status'] ?? 'DELIVERED') ?>
         </span>
       </div>

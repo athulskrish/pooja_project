@@ -1,218 +1,179 @@
 <?php
 /**
- * Executive BI Reports & SES Demand Forecasting
+ * Executive BI Reports
  * Zippy - Online Food Ordering Platform
- * Demonstrates: Chart.js interactive visualizations,
- * Single Exponential Smoothing (SES) algorithm for inventory predictions
- * Student: Pooja JP | MCSP-232
  */
 
-$pageTitle = 'Executive BI Reports & Analytics';
+$pageTitle = 'Business Insights';
 $activePage = 'reports';
 
 require_once __DIR__ . '/includes/header.php';
-require_once __DIR__ . '/../includes/SESDemandForecast.php';
 
-// Aggregations
-$totalRevenue = db_fetch_val("SELECT COALESCE(SUM(total_amount), 0) FROM `orders` WHERE order_status != 'CANCELLED'") ?: 0;
-$totalGst = db_fetch_val("SELECT COALESCE(SUM(tax_amount), 0) FROM `orders` WHERE order_status != 'CANCELLED'") ?: 0;
-$deliveredCount = db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE order_status = 'DELIVERED'") ?: 0;
-$avgPrepTime = db_fetch_val("SELECT COALESCE(AVG(prep_time_minutes), 20) FROM `menu_items`") ?: 20;
+$period = clean_input($_GET['period'] ?? '7d');
+$periodDays = [
+    '7d' => 7,
+    '30d' => 30,
+    '90d' => 90,
+];
 
-// Category Sales Distribution for Chart.js
-$catSales = db_fetch_all("
-    SELECT c.category_name, COALESCE(SUM(oi.line_total), 0) AS category_revenue
+if (!isset($periodDays[$period])) {
+    $period = '7d';
+}
+
+$days = $periodDays[$period];
+$periodStart = date('Y-m-d 00:00:00', strtotime('-' . ($days - 1) . ' days'));
+
+$dailySales = db_fetch_all("
+    SELECT DATE(placed_at) AS sales_date,
+           COALESCE(SUM(total_amount), 0) AS revenue,
+           COUNT(*) AS order_count
+    FROM `orders`
+    WHERE order_status != 'CANCELLED'
+      AND placed_at >= :period_start
+    GROUP BY DATE(placed_at)
+    ORDER BY sales_date ASC
+", [':period_start' => $periodStart]);
+
+$categorySales = db_fetch_all("
+    SELECT c.category_name,
+           COALESCE(SUM(oi.line_total), 0) AS category_revenue
     FROM `categories` c
-    LEFT JOIN `menu_items` m ON c.category_id = m.category_id
-    LEFT JOIN `order_items` oi ON m.item_id = oi.item_id
-    GROUP BY c.category_id
+    JOIN `menu_items` m ON c.category_id = m.category_id
+    JOIN `order_items` oi ON m.item_id = oi.item_id
+    JOIN `orders` o ON oi.order_id = o.order_id
+    WHERE o.order_status != 'CANCELLED'
+      AND o.placed_at >= :period_start
+    GROUP BY c.category_id, c.category_name
     ORDER BY category_revenue DESC
-");
+    LIMIT 8
+", [':period_start' => $periodStart]);
 
-$chartLabels = array_column($catSales, 'category_name');
-$chartValues = array_map('floatval', array_column($catSales, 'category_revenue'));
+$dailyRowsByDate = [];
+foreach ($dailySales as $row) {
+    $dailyRowsByDate[$row['sales_date']] = $row;
+}
 
-// SES Demand Forecast for all dishes
-$forecastReport = SESDemandForecast::forecastCatalogDemand(0.3);
+$trendLabels = [];
+$revenueValues = [];
+$orderValues = [];
+for ($offset = $days - 1; $offset >= 0; $offset--) {
+    $date = date('Y-m-d', strtotime("-{$offset} days"));
+    $trendLabels[] = date('M j', strtotime($date));
+    $revenueValues[] = (float)($dailyRowsByDate[$date]['revenue'] ?? 0);
+    $orderValues[] = (int)($dailyRowsByDate[$date]['order_count'] ?? 0);
+}
+
+$categoryLabels = array_column($categorySales, 'category_name');
+$categoryValues = array_map('floatval', array_column($categorySales, 'category_revenue'));
 ?>
 
-<div class="row g-4 mb-4">
-  
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="small fw-bold text-muted text-uppercase mb-1">TOTAL REVENUE</div>
-      <h3 class="fw-bold font-outfit text-dark mb-0"><?= format_inr($totalRevenue) ?></h3>
-      <span class="small text-success"><i class="bi bi-graph-up-arrow me-1"></i>ACID transactions</span>
-    </div>
+<div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+  <div>
+    <span class="small fw-bold text-success text-uppercase">Business insights</span>
+    <h1 class="h3 fw-bold font-outfit text-dark mb-1">Sales &amp; demand trends</h1>
+    <p class="text-muted mb-0">Historical performance for the selected period. Operational totals and inventory actions live in their respective workspaces.</p>
   </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="small fw-bold text-muted text-uppercase mb-1">GST TAX REMITTANCE</div>
-      <h3 class="fw-bold font-outfit text-dark mb-0"><?= format_inr($totalGst) ?></h3>
-      <span class="small text-muted">5% SAC 996331</span>
-    </div>
-  </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="small fw-bold text-muted text-uppercase mb-1">ORDERS FULFILLED</div>
-      <h3 class="fw-bold font-outfit text-dark mb-0"><?= (int)$deliveredCount ?> Delivered</h3>
-      <span class="small text-success"><i class="bi bi-shield-check me-1"></i>OTP Verified</span>
-    </div>
-  </div>
-
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="small fw-bold text-muted text-uppercase mb-1">AVG KITCHEN PREP</div>
-      <h3 class="fw-bold font-outfit text-dark mb-0"><?= round($avgPrepTime) ?> Mins</h3>
-      <span class="small text-warning"><i class="bi bi-clock me-1"></i>WSJF target met</span>
-    </div>
-  </div>
-
+  <form method="GET" action="<?= ADMIN_URL ?>/reports.php" class="d-flex align-items-center gap-2">
+    <label for="reportPeriod" class="small fw-semibold text-muted">Period</label>
+    <select class="form-select form-select-sm rounded-pill" name="period" id="reportPeriod" onchange="this.form.submit()">
+      <option value="7d" <?= $period === '7d' ? 'selected' : '' ?>>Last 7 days</option>
+      <option value="30d" <?= $period === '30d' ? 'selected' : '' ?>>Last 30 days</option>
+      <option value="90d" <?= $period === '90d' ? 'selected' : '' ?>>Last 90 days</option>
+    </select>
+  </form>
 </div>
 
-<!-- Interactive Chart.js Visualizations -->
-<div class="row g-4 mb-4">
-  
-  <!-- Category Share Doughnut -->
-  <div class="col-lg-5">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <h5 class="fw-bold font-outfit mb-3 text-dark">Category Sales Share</h5>
-      <div style="height: 280px; position: relative;">
-        <canvas id="categoryShareChart"></canvas>
+<div class="row g-3">
+  <div class="col-xl-8">
+    <section class="card border rounded-4 shadow-xs p-3 p-xl-4 bg-white h-100" style="border-color:#E2ECE5 !important;" aria-labelledby="salesTrendHeading">
+      <div class="mb-3">
+        <h2 class="h5 fw-bold font-outfit text-dark mb-1" id="salesTrendHeading">Daily revenue &amp; orders</h2>
+        <p class="small text-muted mb-0">Cancelled orders are excluded. Hover over a point for the daily value.</p>
       </div>
-    </div>
+      <div style="height:320px;position:relative">
+        <canvas id="salesTrendChart" role="img" aria-label="Daily revenue and order count over the selected period"></canvas>
+      </div>
+    </section>
   </div>
 
-  <!-- Hourly / Daily Volume Bar Chart -->
-  <div class="col-lg-7">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <h5 class="fw-bold font-outfit mb-3 text-dark">Hourly Sales Distribution (Bangalore Service)</h5>
-      <div style="height: 280px; position: relative;">
-        <canvas id="hourlySalesChart"></canvas>
+  <div class="col-xl-4">
+    <section class="card border rounded-4 shadow-xs p-3 p-xl-4 bg-white h-100" style="border-color:#E2ECE5 !important;" aria-labelledby="categoryMixHeading">
+      <div class="mb-3">
+        <h2 class="h5 fw-bold font-outfit text-dark mb-1" id="categoryMixHeading">Revenue by category</h2>
+        <p class="small text-muted mb-0">Top categories for the selected period.</p>
       </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ===========================================================================
-     ALGORITHMIC SECTION: SINGLE EXPONENTIAL SMOOTHING (SES) DEMAND FORECAST
-     =========================================================================== -->
-<div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-  <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
-    <div>
-      <div class="d-flex align-items-center gap-2 mb-1">
-        <span class="badge rounded-pill px-3 py-1" style="background:#2E6F40; color:#CEFFDC;">
-          🧠 SES ALGORITHM (α = 0.3)
-        </span>
-        <span class="small text-muted fw-bold">Predictive Inventory Demand & Stockout Forecasting</span>
-      </div>
-      <h4 class="fw-bold font-outfit mb-0 text-dark">Menu Item Demand Predictions & Kitchen Procurement</h4>
-    </div>
-    <span class="small text-muted font-monospace">Formula: Ŷ_{t+1} = α·Y_t + (1-α)·Ŷ_t</span>
-  </div>
-
-  <div class="table-responsive">
-    <table class="table table-hover align-middle small mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Dish Title</th>
-          <th>Category</th>
-          <th>Current Stock</th>
-          <th>Total Sold</th>
-          <th>Tomorrow's Demand</th>
-          <th>Weekend Forecast</th>
-          <th>Days of Supply</th>
-          <th>Stockout Risk</th>
-          <th>Procurement Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($forecastReport as $fc): ?>
-          <tr>
-            <td class="fw-bold text-dark"><?= e($fc['item_name']) ?></td>
-            <td><?= e($fc['category_name']) ?></td>
-            <td class="fw-bold fs-6 <?= ($fc['current_stock'] <= 15) ? 'text-danger' : 'text-dark' ?>">
-              <?= (int)$fc['current_stock'] ?>
-            </td>
-            <td><?= (int)$fc['total_sold'] ?> portions</td>
-            <td class="fw-bold text-forest">~<?= (int)$fc['forecast_tomorrow'] ?> portions</td>
-            <td class="fw-bold text-primary">~<?= (int)$fc['forecast_weekend'] ?> portions</td>
-            <td><?= $fc['days_of_supply'] ?> days</td>
-            <td>
-              <?php if ($fc['stockout_risk']): ?>
-                <span class="badge bg-danger rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>RISK (Low)</span>
-              <?php else: ?>
-                <span class="badge bg-success bg-opacity-25 text-success rounded-pill px-2 py-1">Adequate</span>
-              <?php endif; ?>
-            </td>
-            <td>
-              <?php if ($fc['stockout_risk']): ?>
-                <a href="<?= ADMIN_URL ?>/dishes.php" class="btn btn-sm btn-danger rounded-pill px-3 py-0">
-                  Restock +<?= (int)$fc['reorder_recommended_qty'] ?>
-                </a>
-              <?php else: ?>
-                <span class="text-muted small">Reserve Optimal</span>
-              <?php endif; ?>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
+      <?php if (empty($categorySales)): ?>
+        <div class="d-flex align-items-center justify-content-center text-center text-muted small h-100 py-5">
+          No category sales are available for this period.
+        </div>
+      <?php else: ?>
+        <div style="height:320px;position:relative">
+          <canvas id="categorySalesChart" role="img" aria-label="Revenue comparison across top categories"></canvas>
+        </div>
+      <?php endif; ?>
+    </section>
   </div>
 </div>
 
 <script>
-// Chart.js Visualizations
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Doughnut Chart: Category Share
-  const catCtx = document.getElementById('categoryShareChart');
-  if (catCtx) {
-    new Chart(catCtx, {
-      type: 'doughnut',
+  const trendCanvas = document.getElementById('salesTrendChart');
+  if (trendCanvas) {
+    new Chart(trendCanvas, {
+      type: 'line',
       data: {
-        labels: <?= json_encode($chartLabels) ?>,
-        datasets: [{
-          data: <?= json_encode($chartValues) ?>,
-          backgroundColor: [
-            '#2E6F40', '#68BA7F', '#CEFFDC', '#243E2C', '#1C2B20', '#E5A100', '#229947'
-          ],
-          borderWidth: 2,
-          borderColor: '#ffffff'
-        }]
+        labels: <?= json_encode($trendLabels) ?>,
+        datasets: [
+          {
+            label: 'Revenue (INR)',
+            data: <?= json_encode($revenueValues) ?>,
+            yAxisID: 'revenue',
+            borderColor: '#2E6F40',
+            backgroundColor: 'rgba(46,111,64,0.12)',
+            fill: true,
+            tension: 0.3
+          },
+          {
+            label: 'Orders',
+            data: <?= json_encode($orderValues) ?>,
+            yAxisID: 'orders',
+            borderColor: '#2563EB',
+            backgroundColor: '#2563EB',
+            tension: 0.3
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'bottom' }
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          revenue: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Revenue (INR)' } },
+          orders: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'Orders' } }
         }
       }
     });
   }
 
-  // 2. Bar Chart: Hourly Sales Volume
-  const hourlyCtx = document.getElementById('hourlySalesChart');
-  if (hourlyCtx) {
-    new Chart(hourlyCtx, {
+  const categoryCanvas = document.getElementById('categorySalesChart');
+  if (categoryCanvas) {
+    new Chart(categoryCanvas, {
       type: 'bar',
       data: {
-        labels: ['11 AM', '12 PM', '1 PM (Peak)', '2 PM', '4 PM', '6 PM', '7 PM', '8 PM (Peak)', '9 PM', '10 PM'],
+        labels: <?= json_encode($categoryLabels) ?>,
         datasets: [{
-          label: 'Order Volume (Portions)',
-          data: [14, 38, 72, 45, 18, 26, 52, 94, 80, 31],
+          label: 'Revenue (INR)',
+          data: <?= json_encode($categoryValues) ?>,
           backgroundColor: '#2E6F40',
-          borderRadius: 8
+          borderRadius: 6
         }]
       },
       options: {
+        indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
-        scales: {
-          y: { beginAtZero: true }
-        }
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } }
       }
     });
   }

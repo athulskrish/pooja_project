@@ -369,17 +369,17 @@
     // Background poller for delivery fleet: checks for ready orders every 4 seconds
     setInterval(async () => {
       try {
-        const res = await fetch('../api/live-stream.php?portal=delivery');
+        const res = await fetch('../api/live-stream.php?portal=delivery&rider_id=<?= (int)($currentUser['id'] ?? 0) ?>');
         if (!res.ok) return;
         const data = await res.json();
         if (data.success && data.counts) {
           const readyCount = data.counts.ready_for_pickup;
-          const activeCount = data.counts.in_transit;
+          const riderActive = data.rider_has_active ? 1 : (document.querySelectorAll('.active-trip-card').length > 0 ? 1 : 0);
           // Tab badge update
           const tabBtn = document.getElementById('tabBtnOrders');
           if (tabBtn) {
             const badge = tabBtn.querySelector('.badge');
-            if (badge) badge.textContent = readyCount + activeCount;
+            if (badge) badge.textContent = readyCount + riderActive;
           }
         }
       } catch(e) {}

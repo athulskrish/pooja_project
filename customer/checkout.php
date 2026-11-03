@@ -249,25 +249,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ':pstat' => $payStatus
                     ]);
 
-                    // Step 8: Create Delivery Dispatch Ticket with 6-digit Secret OTP & Geolocation
+                    // Step 8: Create Delivery Dispatch Ticket with 6-digit Secret OTP & Geolocation (1 Driver 1 Delivery Policy)
+                    $availableRider = get_available_delivery_partner();
+                    $assignedRiderId = $availableRider ? (int)$availableRider['user_id'] : null;
+                    $assignedRiderName = $availableRider ? $availableRider['full_name'] : 'Zippy Fleet Courier Pool';
+                    $assignedRiderPhone = $availableRider ? ($availableRider['phone_number'] ?? '+91 96320 98765') : '+91 96320 98765';
+
                     $deliveryOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
                     $dispStmt = $pdo->prepare("
                         INSERT INTO `delivery_dispatches` (
-                            `order_id`, `delivery_partner_name`, `delivery_partner_phone`, 
+                            `order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, 
                             `delivery_otp`, `assigned_at`, `delivery_status`,
                             `current_latitude`, `current_longitude`, `delivery_latitude`, `delivery_longitude`,
                             `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`
                         ) VALUES (
-                            :oid, 'Suresh Kumar (Zippy Express)', '+91 96320 98765', 
+                            :oid, :rid, :rname, :rphone, 
                             :otp, NOW(), 'ASSIGNED',
                             12.97840000, 77.64080000, 12.96980000, 77.64990000,
                             0, 2.40, :eta
                         )
                     ");
                     $dispStmt->execute([
-                        ':oid' => $orderId,
-                        ':otp' => $deliveryOtp,
-                        ':eta' => $etaMinutes
+                        ':oid'   => $orderId,
+                        ':rid'   => $assignedRiderId,
+                        ':rname' => $assignedRiderName,
+                        ':rphone'=> $assignedRiderPhone,
+                        ':otp'   => $deliveryOtp,
+                        ':eta'   => $etaMinutes
                     ]);
 
                     // Step 9: Audit Trail Logging

@@ -36,6 +36,19 @@ $dbStatus = checkDBStatus();
   
   <!-- Custom Figma Lush Forest Palette Stylesheet -->
   <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css">
+
+  <script>
+    <?php
+    $catalogRows = db_fetch_all("SELECT item_id, image_url FROM `menu_items`");
+    $dishImageMap = [];
+    if (!empty($catalogRows)) {
+        foreach ($catalogRows as $cr) {
+            $dishImageMap[$cr['item_id']] = get_dish_image_url($cr['image_url'] ?? '');
+        }
+    }
+    ?>
+    window.DISH_IMAGES_MAP = <?= json_encode($dishImageMap) ?>;
+  </script>
 </head>
 <body>
 
@@ -98,34 +111,30 @@ $dbStatus = checkDBStatus();
         </div>
 
         <!-- Right: Cart & User Account -->
-        <div class="d-flex align-items-center gap-2 gap-sm-3">
+        <div class="d-flex align-items-center gap-2 gap-sm-3 flex-shrink-0">
           
-          <!-- Dedicated Cart Button (Triggers Offcanvas Drawer) -->
-          <button class="cart-btn position-relative border-0" type="button" data-bs-toggle="offcanvas" data-bs-target="#cartDrawer" aria-controls="cartDrawer">
-            <div class="cart-icon-wrapper">
-              <i class="bi bi-bag-fill"></i>
-              <span class="cart-count-badge">0</span>
-            </div>
-            <span class="cart-text d-none d-sm-inline">Cart</span>
+          <!-- Dedicated Material Design 3 Cart Button (Triggers Offcanvas Drawer) -->
+          <button class="btn m3-cart-btn rounded-pill position-relative d-flex align-items-center gap-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#cartDrawer" aria-controls="cartDrawer" aria-label="Open Shopping Cart">
+            <i class="bi bi-bag-fill fs-6"></i>
+            <span class="d-none d-sm-inline">Cart</span>
+            <span class="badge rounded-pill cart-count-badge">0</span>
           </button>
 
           <!-- User Account Actions -->
           <?php if ($currentUser): ?>
-            <!-- Multi-Actor Session Scope Pill -->
-          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill small d-none d-xl-inline-flex align-items-center gap-1 font-monospace" title="Isolated Session: ZIPPY_CUSTOMER_SESS">
-            <i class="bi bi-person-check-fill"></i> Customer Scope
-          </span>
-
-          <div class="dropdown">
+            <div class="dropdown">
               <button class="btn btn-outline-success dropdown-toggle d-flex align-items-center gap-2 rounded-pill px-3 py-2 fw-semibold" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-color: #68BA7F; color: #243E2C;">
                 <i class="bi bi-person-circle fs-5 text-success"></i>
-                <span class="d-none d-md-inline"><?= e($currentUser['name']) ?></span>
+                <span class="d-none d-sm-inline text-truncate" style="max-width: 120px;"><?= e($currentUser['name']) ?></span>
               </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-4 mt-2" style="min-width: 220px;">
-                <li class="px-3 py-2 border-bottom">
-                  <div class="fw-bold text-truncate"><?= e($currentUser['name']) ?></div>
-                  <div class="small text-muted text-truncate"><?= e($currentUser['email']) ?></div>
-                  <div class="mt-1"><?= get_role_badge($currentUser['role_name'] ?? 'CUSTOMER') ?></div>
+              <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-4 mt-2" style="min-width: 230px;">
+                <li class="px-3 py-2 border-bottom bg-light bg-opacity-50">
+                  <div class="fw-bold text-dark text-truncate"><?= e($currentUser['name']) ?></div>
+                  <div class="small text-muted text-truncate mb-1"><?= e($currentUser['email']) ?></div>
+                  <div class="d-flex align-items-center gap-1 flex-wrap">
+                    <?= get_role_badge($currentUser['role_name'] ?? 'CUSTOMER') ?>
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 font-monospace" style="font-size: 0.65rem;" title="Isolated Session: ZIPPY_CUSTOMER_SESS">Customer Scope</span>
+                  </div>
                 </li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/profile.php"><i class="bi bi-person me-2 text-success"></i>My Profile</a></li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/order-history.php"><i class="bi bi-receipt me-2 text-success"></i>Orders & History</a></li>

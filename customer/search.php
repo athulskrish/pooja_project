@@ -123,14 +123,14 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
     </div>
 
     <!-- Search Results Grid -->
-    <div class="row g-4">
+    <div class="row g-3 g-md-4">
       <?php if (!empty($dishes)): ?>
         <?php foreach ($dishes as $dish): ?>
           <?php 
             $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
           ?>
-          <div class="col-xl-3 col-lg-4 col-md-6">
-            <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift">
+          <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+            <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift m3-card">
               
               <div class="position-relative" style="height: 180px;">
                 <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
@@ -158,14 +158,15 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
                   <div class="small text-muted text-uppercase mb-1" style="font-size:0.65rem;"><?= e($dish['category_name']) ?></div>
                   <h6 class="fw-bold mb-1 text-dark text-truncate" title="<?= e($dish['item_name']) ?>"><?= e($dish['item_name']) ?></h6>
                   
-                  <!-- Star Rating & Reviews Link -->
+                  <!-- Material Design 3 Star Rating & Reviews Link -->
                   <div class="d-flex align-items-center gap-2 mb-2">
-                    <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-0 rounded-pill" style="font-size: 0.72rem;">
-                      <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                    <span class="dish-rating-badge" title="<?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?> out of 5 stars">
+                      <i class="bi bi-star-fill rating-star"></i>
+                      <span class="rating-val"><?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?></span>
                     </span>
                     <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                             style="font-size: 0.72rem;" 
-                            onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                            onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                       (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                     </button>
                   </div>
@@ -178,10 +179,10 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
                   
                   <button 
                     type="button" 
-                    class="btn btn-outline-success btn-sm rounded-pill px-3 fw-bold add-to-cart-btn"
-                    onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                    class="btn m3-add-btn rounded-pill px-3 py-1 fw-bold shadow-sm"
+                    onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
                   >
-                    ADD +
+                    ADD <i class="bi bi-plus-lg ms-1"></i>
                   </button>
                 </div>
 

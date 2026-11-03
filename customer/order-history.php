@@ -377,7 +377,7 @@ require_once __DIR__ . '/includes/header.php';
       </div>
       <div class="col-6 col-lg-3">
         <div class="order-stat-card d-flex align-items-center gap-3">
-          <div class="stat-icon-box bg-danger bg-opacity-15 text-danger">
+          <div class="stat-icon-box bg-danger bg-opacity-10 text-danger">
             <i class="bi bi-x-circle"></i>
           </div>
           <div>

@@ -91,7 +91,9 @@ pooja_project/
 ├── admin/                             # 👨‍💼 Admin Management & Kitchen Console
 │   ├── index.php                      # Executive Dashboard with KPI cards & live orders
 │   ├── orders.php                     # Full Order Management & status lifecycle transitions
-│   ├── kitchen.php                    # Quick redirect bridge to dedicated Kitchen Station
+│   ├── kitchen-view.php               # Kitchen Staff Roster, shift attendance & salary disbursements
+│   ├── delivery-view.php              # Delivery Fleet Partner status, live map & COD settlements
+│   ├── financial-transactions.php     # Money & COD financial ledger with CSV export
 │   ├── categories.php                 # Food Categories CRUD (slugs, display order, active toggle)
 │   ├── dishes.php                     # Menu Catalog CRUD (pricing, stock reserves, prep time)
 │   ├── users.php                      # User & Staff RBAC (Admin, Kitchen Chef, Delivery Rider)

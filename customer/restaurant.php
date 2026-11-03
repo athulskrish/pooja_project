@@ -153,12 +153,15 @@ foreach ($categories as $cat) {
                   </div>
                   <h6 class="fw-bold text-dark small mb-1 text-truncate" title="<?= e($rec['item_name']) ?>"><?= e($rec['item_name']) ?></h6>
                   <div class="d-flex align-items-center justify-content-center gap-1 mb-1">
-                    <span class="badge bg-success bg-opacity-15 text-success small px-2 py-0" style="font-size:0.65rem;"><i class="bi bi-star-fill text-warning"></i> <?= number_format($rec['rating'] ?? 4.8, 1) ?></span>
+                    <span class="dish-rating-badge" style="font-size: 0.68rem; padding: 2px 7px;" title="<?= number_format((float)(!empty($rec['rating']) ? $rec['rating'] : 4.8), 1) ?> stars">
+                      <i class="bi bi-star-fill rating-star"></i>
+                      <span class="rating-val"><?= number_format((float)(!empty($rec['rating']) ? $rec['rating'] : 4.8), 1) ?></span>
+                    </span>
                   </div>
                   <div class="text-muted small mb-2"><?= format_inr($rec['price']) ?></div>
                   <button type="button" 
                           class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
-                          onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= e(addslashes($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>); showToast('Added <?= e(addslashes($rec['item_name'])) ?> to cart'); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
+                          onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= e(addslashes($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>, 'Meghana Foods', '<?= e(get_dish_image_url($rec['image_url'] ?? '')) ?>'); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
                     <i class="bi bi-plus-lg me-1"></i> Add
                   </button>
                 </div>
@@ -214,12 +217,13 @@ foreach ($categories as $cat) {
                     
                     <!-- Star Rating & Review Count -->
                     <div class="d-flex align-items-center gap-2 mb-1">
-                      <span class="badge bg-success bg-opacity-15 text-success fw-bold d-inline-flex align-items-center gap-1 px-2 py-0 rounded-pill" style="font-size: 0.72rem;">
-                        <i class="bi bi-star-fill text-warning"></i> <?= number_format($dish['rating'] ?? 4.8, 1) ?>
+                      <span class="dish-rating-badge" title="<?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?> out of 5 stars">
+                        <i class="bi bi-star-fill rating-star"></i>
+                        <span class="rating-val"><?= number_format((float)(!empty($dish['rating']) ? $dish['rating'] : 4.8), 1) ?></span>
                       </span>
                       <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                               style="font-size: 0.72rem;" 
-                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)($dish['rating'] ?? 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                         (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                       </button>
                     </div>
@@ -234,13 +238,13 @@ foreach ($categories as $cat) {
                   <div class="position-relative text-center flex-shrink-0" style="width: 130px;">
                     <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
                     
-                    <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" style="margin-bottom: -14px;">
+                    <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(get_dish_image_url($dish['image_url'])) ?>" style="margin-bottom: -14px;">
                       <button 
                         type="button" 
-                        class="btn btn-white btn-sm rounded-pill shadow px-3 py-1 fw-bold text-success border add-to-cart-btn"
-                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods')"
+                        class="btn m3-add-btn rounded-pill shadow-sm px-3 py-1 fw-bold"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
                       >
-                        ADD +
+                        ADD <i class="bi bi-plus-lg ms-1"></i>
                       </button>
                     </div>
                   </div>
@@ -353,10 +357,16 @@ function refreshAprioriRecommendations() {
                 </span>
               </div>
               <h6 class="fw-bold text-dark small mb-1 text-truncate" title="${rec.item_name}">${rec.item_name}</h6>
+              <div class="d-flex align-items-center justify-content-center gap-1 mb-1">
+                <span class="dish-rating-badge" style="font-size:0.65rem; padding: 2px 6px;">
+                  <i class="bi bi-star-fill rating-star"></i>
+                  <span class="rating-val">${parseFloat(rec.rating || 4.8).toFixed(1)}</span>
+                </span>
+              </div>
               <div class="text-muted small mb-2">₹${parseFloat(rec.price).toFixed(2)}</div>
               <button type="button" 
                       class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
-                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}); showToast('Added ${rec.item_name.replace(/'/g, "\\'")} to cart'); refreshAprioriRecommendations();">
+                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}, 'Meghana Foods', '${rec.image_url || ''}'); refreshAprioriRecommendations();">
                 <i class="bi bi-plus-lg me-1"></i> Add
               </button>
             </div>

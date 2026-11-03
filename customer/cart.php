@@ -205,26 +205,45 @@ function renderDedicatedCart() {
 
   cart.forEach((item, index) => {
     subtotal += item.price * item.qty;
+    const isVeg = (item.isVeg === true || item.isVeg === 1 || item.isVeg === '1' || item.isVeg === 'true');
+    const safeName = (item.name || '').replace(/'/g, "\\'");
+    const itemImg = item.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+    const itemTotal = (item.price * item.qty).toFixed(2);
+
     const itemRow = document.createElement('div');
-    itemRow.className = 'd-flex justify-content-between align-items-center py-2 border-bottom';
+    itemRow.className = 'd-flex justify-content-between align-items-center py-3 border-bottom cart-dish-item-row';
     itemRow.innerHTML = `
       <div class="d-flex align-items-center gap-3">
-        <span class="food-badge-dot ${item.isVeg ? 'veg' : 'nonveg'}" style="width:12px; height:12px; border-radius:50%; background:${item.isVeg ? '#229947' : '#D32F2F'}; display:inline-block;"></span>
+        <!-- Dish Thumbnail with Veg/Non-Veg Indicator Dot -->
+        <div class="position-relative flex-shrink-0" style="width: 64px; height: 64px;">
+          <img src="${itemImg}" 
+               alt="${item.name}" 
+               class="rounded-3 w-100 h-100 object-fit-cover shadow-sm border"
+               onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
+          <span class="position-absolute top-0 start-0 m-1 food-badge-dot ${isVeg ? 'veg' : 'nonveg'}" 
+                style="width: 10px; height: 10px; border-radius: 50%; background: ${isVeg ? '#229947' : '#D32F2F'}; border: 1.5px solid #fff; display: inline-block;"
+                title="${isVeg ? 'Pure Veg' : 'Non-Veg'}"></span>
+        </div>
+
         <div>
-          <h6 class="fw-bold mb-0 text-dark">${item.name}</h6>
-          <span class="small text-muted">₹${item.price} each</span>
+          <h6 class="fw-bold mb-1 text-dark" style="font-size: 0.98rem;">${item.name}</h6>
+          <span class="small text-muted fw-semibold">₹${Number(item.price).toFixed(2)} each</span>
         </div>
       </div>
 
       <div class="d-flex align-items-center gap-3">
-        <!-- Qty Controls -->
-        <div class="btn-group btn-group-sm rounded-pill border overflow-hidden" role="group">
-          <button type="button" class="btn btn-light px-2" onclick="decrementCartItem(${item.id}); renderDedicatedCart();">-</button>
-          <span class="btn btn-white px-3 fw-bold disabled text-dark">${item.qty}</span>
-          <button type="button" class="btn btn-light px-2" onclick="addToCart(${item.id}, '${item.name.replace(/'/g, "\\'")}', ${item.price}, ${item.isVeg ? 1 : 0}); renderDedicatedCart();">+</button>
+        <!-- Material 3 Stepper Quantity Controls -->
+        <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
+          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem(${item.id}); renderDedicatedCart();" aria-label="Decrease quantity">
+            <i class="bi bi-dash"></i>
+          </button>
+          <span class="m3-stepper-qty">${item.qty}</span>
+          <button type="button" class="m3-stepper-btn" onclick="addToCart(${item.id}, '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}'); renderDedicatedCart();" aria-label="Increase quantity">
+            <i class="bi bi-plus"></i>
+          </button>
         </div>
 
-        <span class="fw-bold text-dark" style="min-width: 70px; text-align: right;">₹${(item.price * item.qty).toFixed(2)}</span>
+        <span class="fw-bold text-dark fs-6" style="min-width: 80px; text-align: right;">₹${itemTotal}</span>
       </div>
     `;
     container.appendChild(itemRow);
@@ -289,10 +308,16 @@ function loadCartAprioriRecommendations() {
                 </span>
               </div>
               <h6 class="fw-bold text-dark small mb-1 text-truncate" title="${rec.item_name}">${rec.item_name}</h6>
+              <div class="d-flex align-items-center justify-content-center gap-1 mb-1">
+                <span class="dish-rating-badge" style="font-size:0.65rem; padding: 2px 6px;">
+                  <i class="bi bi-star-fill rating-star"></i>
+                  <span class="rating-val">${parseFloat(rec.rating || 4.8).toFixed(1)}</span>
+                </span>
+              </div>
               <div class="text-muted small mb-2">₹${parseFloat(rec.price).toFixed(2)}</div>
               <button type="button" 
                       class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
-                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}); showToast('Added ${rec.item_name.replace(/'/g, "\\'")} to cart'); renderDedicatedCart();">
+                      onclick="addToCart(${rec.item_id}, '${rec.item_name.replace(/'/g, "\\'")}', ${rec.price}, ${rec.is_veg == 1}, 'Meghana Foods', '${rec.image_url || ''}'); renderDedicatedCart();">
                 <i class="bi bi-plus-lg me-1"></i> Add
               </button>
             </div>

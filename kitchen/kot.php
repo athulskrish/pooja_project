@@ -1,6 +1,6 @@
 <?php
 /**
- * Printable Kitchen Order Ticket (KOT)
+ * Printable Kitchen Order Ticket (KOT) — Single & Batch Support
  * Zippy - Online Food Ordering Platform
  * MCSP-232 Major Project | Student: Pooja JP
  */
@@ -11,13 +11,16 @@ require_once __DIR__ . '/../includes/auth.php';
 
 require_kitchen();
 
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+// Support both comma-separated batch order_ids or single order_id
+$orderIdsRaw = $_GET['order_ids'] ?? ($_GET['order_id'] ?? '');
+$targetOrderIds = array_filter(array_map('intval', explode(',', (string)$orderIdsRaw)));
 
-if ($orderId <= 0) {
-    die("Invalid order ID.");
+if (empty($targetOrderIds)) {
+    die("Invalid order ID(s) provided for KOT slip generation.");
 }
 
-$order = db_fetch_one("
+$placeholders = implode(',', array_fill(0, count($targetOrderIds), '?'));
+$ordersList = db_fetch_all("
     SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
            a.address_line, a.landmark, a.pincode,
            d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp
@@ -25,30 +28,32 @@ $order = db_fetch_one("
     JOIN `users` u ON o.user_id = u.user_id
     LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
     LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_id = :id
-", [':id' => $orderId]);
+    WHERE o.order_id IN ($placeholders)
+    ORDER BY o.placed_at ASC
+", $targetOrderIds);
 
-if (!$order) {
-    die("Order ticket not found.");
+if (empty($ordersList)) {
+    die("Order ticket(s) not found.");
 }
 
-$items = db_fetch_all("
+$allItems = db_fetch_all("
     SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes, m.kitchen_station
     FROM `order_items` oi
     JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id = :id
-", [':id' => $orderId]);
+    WHERE oi.order_id IN ($placeholders)
+    ORDER BY oi.order_item_id ASC
+", $targetOrderIds);
 
-$totalPortions = 0;
-foreach ($items as $it) {
-    $totalPortions += (int)$it['quantity'];
+$itemsByOrder = [];
+foreach ($allItems as $it) {
+    $itemsByOrder[$it['order_id']][] = $it;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>KOT Ticket #ZIP-<?= $orderId ?> - Zippy Kitchen</title>
+  <title>KOT Ticket<?= count($ordersList) > 1 ? 's (Batch of ' . count($ordersList) . ')' : ' #ZIP-' . (int)$ordersList[0]['order_id'] ?> - Zippy Kitchen</title>
   <style>
     @page {
       size: 80mm auto;
@@ -94,8 +99,13 @@ foreach ($items as $it) {
       background: #f8f9fa;
       border-radius: 6px;
     }
+    .kot-ticket-wrapper {
+      margin-bottom: 20px;
+    }
     @media print {
       .no-print { display: none; }
+      .page-break-after { page-break-after: always; }
+      .kot-ticket-wrapper { margin-bottom: 0; }
     }
   </style>
 </head>
@@ -103,76 +113,85 @@ foreach ($items as $it) {
 
   <div class="no-print">
     <button onclick="window.print()" style="padding: 8px 16px; font-weight:bold; cursor:pointer; background:#2E6F40; color:#fff; border:none; border-radius:4px;">
-      🖨️ Print KOT Slip
+      🖨️ Print <?= count($ordersList) > 1 ? count($ordersList) . ' Batch KOT Slips' : 'KOT Slip' ?>
     </button>
     <button onclick="window.close()" style="padding: 8px 16px; margin-left:8px; cursor:pointer;">
       ✕ Close
     </button>
   </div>
 
-  <div class="text-center">
-    <div class="title">ZIPPY RESTAURANT</div>
-    <div>*** KITCHEN ORDER TICKET (KOT) ***</div>
-    <div class="bold" style="font-size: 16px; margin-top:4px;">TICKET #ZIP-<?= $orderId ?></div>
-  </div>
+  <?php foreach ($ordersList as $idx => $order): ?>
+    <?php 
+      $items = $itemsByOrder[$order['order_id']] ?? [];
+      $totalPortions = array_sum(array_column($items, 'quantity'));
+      $isLast = ($idx === count($ordersList) - 1);
+    ?>
+    <div class="kot-ticket-wrapper <?= !$isLast ? 'page-break-after' : '' ?>">
+      <div class="text-center">
+        <div class="title">ZIPPY RESTAURANT</div>
+        <div>*** KITCHEN ORDER TICKET (KOT) ***</div>
+        <div class="bold" style="font-size: 16px; margin-top:4px;">TICKET #ZIP-<?= (int)$order['order_id'] ?></div>
+      </div>
 
-  <div class="divider"></div>
+      <div class="divider"></div>
 
-  <div><strong>Date/Time:</strong> <?= date('d-M-Y h:i A', strtotime($order['placed_at'])) ?></div>
-  <div><strong>Order Type:</strong> ONLINE DELIVERY (EXPRESS)</div>
-  <div><strong>Status:</strong> <?= e($order['order_status']) ?></div>
-  <div><strong>Customer:</strong> <?= e($order['customer_name']) ?> (<?= e($order['customer_phone']) ?>)</div>
-  <div><strong>Assigned Rider:</strong> <?= e($order['delivery_partner_name'] ?? 'Pending Assignment') ?></div>
-  <?php if (!empty($order['delivery_otp'])): ?>
-    <div><strong>Doorstep OTP:</strong> <?= e($order['delivery_otp']) ?></div>
-  <?php endif; ?>
+      <div><strong>Date/Time:</strong> <?= date('d-M-Y h:i A', strtotime($order['placed_at'])) ?></div>
+      <div><strong>Order Type:</strong> ONLINE DELIVERY (EXPRESS)</div>
+      <div><strong>Status:</strong> <?= e($order['order_status']) ?></div>
+      <div><strong>Customer:</strong> <?= e($order['customer_name']) ?> (<?= e($order['customer_phone']) ?>)</div>
+      <div><strong>Assigned Rider:</strong> <?= e($order['delivery_partner_name'] ?? 'Pending Assignment') ?></div>
+      <?php if (!empty($order['delivery_otp'])): ?>
+        <div><strong>Doorstep OTP:</strong> <?= e($order['delivery_otp']) ?></div>
+      <?php endif; ?>
 
-  <?php if (!empty($order['order_notes'])): ?>
-    <div class="notes-box">
-      ⚠️ SPECIAL INSTRUCTIONS:<br>
-      <?= nl2br(e($order['order_notes'])) ?>
+      <?php if (!empty($order['order_notes'])): ?>
+        <div class="notes-box">
+          ⚠️ SPECIAL INSTRUCTIONS:<br>
+          <?= nl2br(e($order['order_notes'])) ?>
+        </div>
+      <?php endif; ?>
+
+      <div class="double-divider"></div>
+
+      <table class="table-items">
+        <thead>
+          <tr>
+            <th class="qty">QTY</th>
+            <th>ITEM NAME</th>
+            <th class="text-right">TIME</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($items as $it): ?>
+            <tr>
+              <td class="qty">[<?= (int)$it['quantity'] ?>x]</td>
+              <td>
+                <span class="bold"><?= e($it['item_name']) ?></span>
+                <br>
+                <span class="badge"><?= $it['is_veg'] ? 'VEG' : 'NON-VEG' ?></span>
+                <span style="font-size:10px; color:#444;"><?= e($it['kitchen_station'] ?? 'Main Kitchen') ?></span>
+              </td>
+              <td class="text-right"><?= (int)$it['prep_time_minutes'] ?>m</td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+
+      <div class="double-divider"></div>
+
+      <div style="display: flex; justify-content: space-between;">
+        <span><strong>Total Portions:</strong> <?= $totalPortions ?> items</span>
+        <span><strong>Items Count:</strong> <?= count($items) ?></span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="text-center" style="margin-top: 15px; font-size:11px;">
+        <div>Expeditor: ___________________</div>
+        <div style="margin-top: 4px;">Zippy KDS Engine • Station MCSP-232</div>
+      </div>
     </div>
-  <?php endif; ?>
-
-  <div class="double-divider"></div>
-
-  <table class="table-items">
-    <thead>
-      <tr>
-        <th class="qty">QTY</th>
-        <th>ITEM NAME</th>
-        <th class="text-right">TIME</th>
-      </tr>
-    </thead>
-    <tbody>
-      <?php foreach ($items as $it): ?>
-        <tr>
-          <td class="qty">[<?= (int)$it['quantity'] ?>x]</td>
-          <td>
-            <span class="bold"><?= e($it['item_name']) ?></span>
-            <br>
-            <span class="badge"><?= $it['is_veg'] ? 'VEG' : 'NON-VEG' ?></span>
-            <span style="font-size:10px; color:#444;"><?= e($it['kitchen_station'] ?? 'Main Kitchen') ?></span>
-          </td>
-          <td class="text-right"><?= (int)$it['prep_time_minutes'] ?>m</td>
-        </tr>
-      <?php endforeach; ?>
-    </tbody>
-  </table>
-
-  <div class="double-divider"></div>
-
-  <div style="display: flex; justify-content: space-between;">
-    <span><strong>Total Portions:</strong> <?= $totalPortions ?> items</span>
-    <span><strong>Items Count:</strong> <?= count($items) ?></span>
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="text-center" style="margin-top: 15px; font-size:11px;">
-    <div>Expeditor: ___________________</div>
-    <div style="margin-top: 4px;">Zippy KDS Engine • Station MCSP-232</div>
-  </div>
+  <?php endforeach; ?>
 
 </body>
 </html>

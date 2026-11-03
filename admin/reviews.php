@@ -228,7 +228,7 @@ $dishReviewsList = db_fetch_all($dishReviewSql, $dishParams);
 
                 <td>
                   <?php if ((float)$rev['rider_tip'] > 0): ?>
-                    <span class="badge bg-success bg-opacity-15 text-success fw-bold px-2 py-1">
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 fw-bold px-2 py-1">
                       <i class="bi bi-heart-fill me-1"></i> <?= format_inr($rev['rider_tip']) ?>
                     </span>
                   <?php else: ?>
