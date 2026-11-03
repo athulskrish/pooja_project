@@ -213,6 +213,14 @@ $orders = db_fetch_all("
     ORDER BY o.placed_at DESC
 ", $params);
 
+$codPendingOrders = (int)(db_fetch_val(
+    "SELECT COUNT(*) FROM `orders` o LEFT JOIN `payments` p ON o.order_id = p.order_id WHERE p.payment_mode = 'COD' AND (p.payment_status IS NULL OR p.payment_status != 'SUCCESSFUL') AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')"
+) ?: 0);
+
+$delayedOrders = (int)(db_fetch_val(
+    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) > 45"
+) ?: 0);
+
 $registeredRiders = get_all_delivery_riders();
 
 // Fetch items for all queried orders
@@ -329,6 +337,45 @@ if (!empty($orders)) {
         <span class="badge bg-light text-dark border px-3 py-2 rounded-pill small" id="ordersCounterBadge">
           <span id="filteredOrdersCount"><?= count($orders) ?></span> orders
         </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="orders-kpi-strip row g-3 mb-4">
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-live">
+        <span class="metric-kicker">Live active</span>
+        <strong><?= number_format($cntLive) ?></strong>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-prep">
+        <span class="metric-kicker">Waiting prep</span>
+        <strong><?= number_format($cntPreparing) ?></strong>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-ready">
+        <span class="metric-kicker">Ready pickup</span>
+        <strong><?= number_format($cntReady) ?></strong>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-delivery">
+        <span class="metric-kicker">Out for delivery</span>
+        <strong><?= number_format($cntDelivering) ?></strong>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-cod">
+        <span class="metric-kicker">COD pending</span>
+        <strong><?= number_format($codPendingOrders) ?></strong>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="orders-metric metric-delay">
+        <span class="metric-kicker">Delayed</span>
+        <strong><?= number_format($delayedOrders) ?></strong>
       </div>
     </div>
   </div>
@@ -677,8 +724,33 @@ if (!empty($orders)) {
                 $items = $orderItemsGrouped[$order['order_id']] ?? [];
                 $itemNames = array_map(fn($it) => $it['item_name'], $items);
                 $rowSearchData = strtolower("ZIP-{$order['order_id']} {$order['full_name']} {$order['phone_number']} {$order['email']} {$order['address_line']} {$order['pincode']} {$order['delivery_partner_name']} {$order['delivery_otp']} {$order['payment_mode']} {$order['order_status']} " . implode(' ', $itemNames));
+                $rowRiskClass = '';
+                $riskLabel = '';
+                $elapsedMinutes = (int)($order['elapsed_minutes'] ?? 0);
+                $rowMaxPrep = 15;
+                if (!empty($items)) {
+                  $preps = array_filter(array_column($items, 'prep_time_minutes'));
+                  if (!empty($preps)) {
+                    $rowMaxPrep = max($preps);
+                  }
+                }
+                $rowSlaDiff = $elapsedMinutes - $rowMaxPrep;
+
+                if (in_array($order['order_status'], ['CONFIRMED', 'COOKING']) && $rowSlaDiff > 15) {
+                  $rowRiskClass = 'order-row-critical';
+                  $riskLabel = '<span class="risk-chip danger"><i class="bi bi-exclamation-octagon-fill me-1"></i>Critical</span>';
+                } elseif (in_array($order['order_status'], ['CONFIRMED', 'COOKING']) && $rowSlaDiff > 0) {
+                  $rowRiskClass = 'order-row-warning';
+                  $riskLabel = '<span class="risk-chip warning"><i class="bi bi-alarm-fill me-1"></i>Overdue</span>';
+                } elseif ($order['payment_mode'] === 'COD' && ($order['payment_status'] ?? '') !== 'SUCCESSFUL') {
+                  $rowRiskClass = 'order-row-warning';
+                  $riskLabel = '<span class="risk-chip warning"><i class="bi bi-cash-stack me-1"></i>COD</span>';
+                } elseif ($order['order_status'] === 'OUT_FOR_DELIVERY' && $elapsedMinutes > 45) {
+                  $rowRiskClass = 'order-row-critical';
+                  $riskLabel = '<span class="risk-chip danger"><i class="bi bi-bicycle me-1"></i>Delayed</span>';
+                }
               ?>
-              <tr class="order-table-row" 
+              <tr class="order-table-row <?= $rowRiskClass ?>" 
                   data-order-id="<?= (int)$order['order_id'] ?>"
                   data-status="<?= e($order['order_status']) ?>"
                   data-payment="<?= e($order['payment_mode']) ?>"
@@ -757,36 +829,33 @@ if (!empty($orders)) {
                 </td>
 
                 <td>
-                  <div><?= get_status_badge($order['order_status']) ?></div>
-                  <?php if (in_array($order['order_status'], ['CONFIRMED', 'COOKING'])): ?>
-                    <?php 
-                      $rowMaxPrep = 15;
-                      if (!empty($items)) {
-                        $preps = array_filter(array_column($items, 'prep_time_minutes'));
-                        if (!empty($preps)) $rowMaxPrep = max($preps);
-                      }
-                      $rowSlaDiff = (int)$order['elapsed_minutes'] - $rowMaxPrep;
-                    ?>
-                    <?php if ($rowSlaDiff > 15): ?>
-                      <span class="badge rounded-pill bg-danger text-white mt-1" style="font-size:0.65rem;"><i class="bi bi-exclamation-octagon-fill me-1"></i>+<?= $rowSlaDiff ?>m Critical</span>
-                    <?php elseif ($rowSlaDiff > 0): ?>
-                      <span class="badge rounded-pill bg-warning text-dark border border-warning mt-1" style="font-size:0.65rem;"><i class="bi bi-alarm-fill me-1"></i>+<?= $rowSlaDiff ?>m Overdue</span>
+                  <div class="d-flex flex-column gap-1">
+                    <div class="status-badge-wrap"><?= get_status_badge($order['order_status']) ?></div>
+                    <?php if (!empty($riskLabel)): ?>
+                      <div class="status-risk-wrap"><?= $riskLabel ?></div>
                     <?php endif; ?>
-                  <?php endif; ?>
+                    <?php if (in_array($order['order_status'], ['CONFIRMED', 'COOKING'])): ?>
+                      <?php if ($rowSlaDiff > 15): ?>
+                        <span class="risk-chip danger mt-1"><i class="bi bi-exclamation-octagon-fill me-1"></i>+<?= $rowSlaDiff ?>m Critical</span>
+                      <?php elseif ($rowSlaDiff > 0): ?>
+                        <span class="risk-chip warning mt-1"><i class="bi bi-alarm-fill me-1"></i>+<?= $rowSlaDiff ?>m Overdue</span>
+                      <?php endif; ?>
+                    <?php endif; ?>
+                  </div>
                 </td>
 
                 <td>
-                  <div class="d-flex flex-column gap-1">
+                  <div class="order-action-stack">
                     <?php if ($order['order_status'] === 'OUT_FOR_DELIVERY'): ?>
-                      <button type="button" class="btn btn-sm btn-outline-primary rounded-pill py-1" onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['full_name'])) ?>', '<?= e(addslashes($order['delivery_partner_name'] ?: 'Rider')) ?>', '<?= e(addslashes($order['delivery_otp'] ?: '')) ?>')">
-                        <i class="fa-solid fa-location-arrow me-1"></i> Live GPS
+                      <button type="button" class="order-action-btn order-action-primary" onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['full_name'])) ?>', '<?= e(addslashes($order['delivery_partner_name'] ?: 'Rider')) ?>', '<?= e(addslashes($order['delivery_otp'] ?: '')) ?>')">
+                        <i class="fa-solid fa-location-arrow me-1"></i> GPS
                       </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-sm btn-outline-success rounded-pill" data-bs-toggle="modal" data-bs-target="#statusModal<?= (int)$order['order_id'] ?>">
-                      Advance Status
+                    <button type="button" class="order-action-btn order-action-primary" data-bs-toggle="modal" data-bs-target="#statusModal<?= (int)$order['order_id'] ?>">
+                      Status
                     </button>
-                    <a href="<?= CUSTOMER_URL ?>/invoice.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-sm btn-light border rounded-pill text-muted" target="_blank">
-                      Tax Invoice
+                    <a href="<?= CUSTOMER_URL ?>/invoice.php?order_id=<?= (int)$order['order_id'] ?>" class="order-action-btn order-action-secondary" target="_blank">
+                      Invoice
                     </a>
                   </div>
                 </td>

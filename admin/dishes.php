@@ -2,6 +2,7 @@
 /**
  * Dish Catalog & Live Stock Inventory Management (CRUD)
  * Zippy - Online Food Ordering Platform
+ * Design: Figma "Lush Forest" Palette (#Combination-4)
  */
 
 $pageTitle = 'Dish Catalog & Inventory Management';
@@ -13,6 +14,52 @@ require_once __DIR__ . '/../includes/functions.php';
 require_admin();
 $currentUser = current_user();
 
+// Handle CSV Export
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=zippy_dishes_catalog_' . date('Ymd_His') . '.csv');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Dish ID', 'Dish Name', 'Category', 'Kitchen Station', 'Diet Type', 'Healthy', 'Price (INR)', 'Stock Quantity', 'Prep Time (Mins)', 'Availability', 'Rating', 'Total Reviews', 'Created At']);
+
+    $exportDishes = db_fetch_all("
+        SELECT m.*, c.category_name 
+        FROM `menu_items` m
+        JOIN `categories` c ON m.category_id = c.category_id
+        ORDER BY m.category_id ASC, m.item_name ASC
+    ");
+
+    foreach ($exportDishes as $d) {
+        fputcsv($output, [
+            $d['item_id'],
+            $d['item_name'],
+            $d['category_name'],
+            $d['kitchen_station'] ?? 'Main Kitchen',
+            $d['is_veg'] ? 'Vegetarian' : 'Non-Vegetarian',
+            !empty($d['is_healthy']) ? 'Yes' : 'No',
+            $d['price'],
+            $d['stock_quantity'],
+            $d['prep_time_minutes'],
+            $d['is_available'] ? 'Available' : 'Sold Out / 86',
+            $d['rating'],
+            $d['total_reviews'],
+            $d['created_at']
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+
+// Available Kitchen Stations
+$kitchenStations = [
+    'Main Kitchen',
+    'Tandoor & Grills',
+    'Curry & Biryani',
+    'Salad & Cold Bar',
+    'Fryer & Snacks',
+    'Beverage Bar',
+    'Dessert Bar'
+];
+
 // Handle Add / Edit / Stock Update / Delete
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
     if (!verify_csrf($_POST['csrf_token'] ?? '')) {
@@ -20,6 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'add_dish') {
         $name = clean_input($_POST['item_name']);
         $catId = (int)$_POST['category_id'];
+        $station = clean_input($_POST['kitchen_station'] ?? 'Main Kitchen');
         $price = (float)$_POST['price'];
         $stock = (int)$_POST['stock_quantity'];
         $prep = (int)$_POST['prep_time_minutes'];
@@ -27,6 +75,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         $isHealthy = !empty($_POST['is_healthy']) ? 1 : 0;
         $image = clean_input($_POST['image_url'] ?? '');
         $desc = clean_input($_POST['description']);
+
+        if (empty($station)) {
+            $station = 'Main Kitchen';
+        }
 
         // Check if a food photo was uploaded
         $upload = handle_food_photo_upload('dish_image');
@@ -46,8 +98,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
 
         if (!empty($name) && $price > 0) {
             db_query("
-                INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `prep_time_minutes`, `image_url`) 
-                VALUES (:cid, :name, :desc, :price, :stock, 1, :veg, :healthy, :prep, :img)
+                INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `prep_time_minutes`, `kitchen_station`, `image_url`) 
+                VALUES (:cid, :name, :desc, :price, :stock, 1, :veg, :healthy, :prep, :station, :img)
             ", [
                 ':cid' => $catId,
                 ':name' => $name,
@@ -57,16 +109,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 ':veg' => $isVeg,
                 ':healthy' => $isHealthy,
                 ':prep' => $prep,
+                ':station' => $station,
                 ':img' => $image
             ]);
-            set_flash('success', "Food item '{$name}' added to catalog with photo.");
+            set_flash('success', "Food item '{$name}' added to catalog under {$station}.");
             header("Location: " . ADMIN_URL . "/dishes.php");
             exit;
+        } else {
+            set_flash('danger', 'Dish name and a valid positive price are required.');
         }
     } elseif ($_POST['action'] === 'edit_dish') {
         $itemId = (int)$_POST['item_id'];
         $name = clean_input($_POST['item_name']);
         $catId = (int)$_POST['category_id'];
+        $station = clean_input($_POST['kitchen_station'] ?? 'Main Kitchen');
         $price = (float)$_POST['price'];
         $stock = (int)$_POST['stock_quantity'];
         $prep = (int)$_POST['prep_time_minutes'];
@@ -75,6 +131,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         $isAvailable = !empty($_POST['is_available']) ? 1 : 0;
         $image = clean_input($_POST['image_url'] ?? '');
         $desc = clean_input($_POST['description']);
+
+        if (empty($station)) {
+            $station = 'Main Kitchen';
+        }
 
         // Check if a new food photo was uploaded
         $upload = handle_food_photo_upload('dish_image');
@@ -100,7 +160,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             UPDATE `menu_items` 
             SET `category_id` = :cid, `item_name` = :name, `description` = :desc, 
                 `price` = :price, `stock_quantity` = :stock, `is_available` = :avail, 
-                `is_veg` = :veg, `is_healthy` = :healthy, `prep_time_minutes` = :prep, `image_url` = :img 
+                `is_veg` = :veg, `is_healthy` = :healthy, `prep_time_minutes` = :prep, 
+                `kitchen_station` = :station, `image_url` = :img 
             WHERE `item_id` = :id
         ", [
             ':cid' => $catId,
@@ -112,6 +173,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             ':veg' => $isVeg,
             ':healthy' => $isHealthy,
             ':prep' => $prep,
+            ':station' => $station,
             ':img' => $image,
             ':id' => $itemId
         ]);
@@ -119,6 +181,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         header("Location: " . ADMIN_URL . "/dishes.php");
         exit;
     } elseif ($_POST['action'] === 'quick_stock') {
+        // Fallback synchronous POST handler (if JS is disabled)
         $itemId = (int)$_POST['item_id'];
         $delta = (int)$_POST['delta'];
         db_query("UPDATE `menu_items` SET `stock_quantity` = GREATEST(0, `stock_quantity` + :d), `is_available` = IF(`stock_quantity` + :d > 0, 1, 0) WHERE `item_id` = :id", [
@@ -130,8 +193,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         exit;
     } elseif ($_POST['action'] === 'delete_dish') {
         $itemId = (int)$_POST['item_id'];
-        db_query("DELETE FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-        set_flash('success', "Dish removed from catalog.");
+        $dish = db_fetch_one("SELECT item_name FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
+        $dishName = $dish ? $dish['item_name'] : 'Dish';
+
+        // Check if dish has past order history in order_items
+        $orderCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_items` WHERE `item_id` = :id", [':id' => $itemId]);
+
+        if ($orderCount > 0) {
+            // Prevent breaking foreign key constraints on past order receipts
+            // Soft-archive by setting availability to 0 and stock to 0
+            db_query("UPDATE `menu_items` SET `is_available` = 0, `stock_quantity` = 0 WHERE `item_id` = :id", [':id' => $itemId]);
+            set_flash('warning', "Dish '{$dishName}' cannot be permanently deleted because it exists in {$orderCount} past customer order(s). It has been safely archived and 86-ed / hidden from customer menus instead.");
+        } else {
+            // Safe to permanently delete
+            db_query("DELETE FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
+            set_flash('success', "Dish '{$dishName}' permanently removed from catalog.");
+        }
         header("Location: " . ADMIN_URL . "/dishes.php");
         exit;
     }
@@ -142,12 +219,83 @@ require_once __DIR__ . '/includes/header.php';
 // Fetch categories for filter and dropdowns
 $categories = db_fetch_all("SELECT * FROM `categories` ORDER BY `display_order` ASC");
 
+// Calculate KPI Summary Metrics
+$kpiTotalDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items`");
+$kpiAvailableDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 1 AND `stock_quantity` > 0");
+$kpiLowStockDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 1 AND `stock_quantity` > 0 AND `stock_quantity` <= 15");
+$kpiSoldOutDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 0 OR `stock_quantity` <= 0");
+$kpiVegDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_veg` = 1");
+$kpiNonVegDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_veg` = 0");
+$kpiAvgPrice = (float)db_fetch_val("SELECT AVG(`price`) FROM `menu_items`");
+
+// Filter, Search, and Sort Parameters
+$searchQuery = clean_input($_GET['search'] ?? '');
 $filterCat = clean_input($_GET['category'] ?? '');
+$filterStation = clean_input($_GET['station'] ?? '');
+$filterDiet = clean_input($_GET['diet'] ?? '');
+$filterStock = clean_input($_GET['stock_status'] ?? '');
+$sortBy = clean_input($_GET['sort'] ?? 'category');
+
 $where = "1=1";
 $params = [];
+
+if (!empty($searchQuery)) {
+    $where .= " AND (m.item_name LIKE :search OR m.description LIKE :search)";
+    $params[':search'] = '%' . $searchQuery . '%';
+}
+
 if (!empty($filterCat)) {
     $where .= " AND m.category_id = :cid";
     $params[':cid'] = (int)$filterCat;
+}
+
+if (!empty($filterStation)) {
+    $where .= " AND m.kitchen_station = :station";
+    $params[':station'] = $filterStation;
+}
+
+if ($filterDiet === 'veg') {
+    $where .= " AND m.is_veg = 1";
+} elseif ($filterDiet === 'non_veg') {
+    $where .= " AND m.is_veg = 0";
+} elseif ($filterDiet === 'healthy') {
+    $where .= " AND m.is_healthy = 1";
+}
+
+if ($filterStock === 'in_stock') {
+    $where .= " AND m.is_available = 1 AND m.stock_quantity > 0";
+} elseif ($filterStock === 'low_stock') {
+    $where .= " AND m.stock_quantity > 0 AND m.stock_quantity <= 15";
+} elseif ($filterStock === 'out_of_stock') {
+    $where .= " AND (m.is_available = 0 OR m.stock_quantity <= 0)";
+}
+
+$orderBy = "m.category_id ASC, m.item_name ASC";
+switch ($sortBy) {
+    case 'name_asc':
+        $orderBy = "m.item_name ASC";
+        break;
+    case 'price_low':
+        $orderBy = "m.price ASC";
+        break;
+    case 'price_high':
+        $orderBy = "m.price DESC";
+        break;
+    case 'stock_low':
+        $orderBy = "m.stock_quantity ASC";
+        break;
+    case 'stock_high':
+        $orderBy = "m.stock_quantity DESC";
+        break;
+    case 'prep_time':
+        $orderBy = "m.prep_time_minutes ASC";
+        break;
+    case 'rating':
+        $orderBy = "m.rating DESC, m.total_reviews DESC";
+        break;
+    default:
+        $orderBy = "m.category_id ASC, m.item_name ASC";
+        break;
 }
 
 $dishes = db_fetch_all("
@@ -155,163 +303,505 @@ $dishes = db_fetch_all("
     FROM `menu_items` m
     JOIN `categories` c ON m.category_id = c.category_id
     WHERE $where
-    ORDER BY m.category_id ASC, m.item_name ASC
+    ORDER BY $orderBy
 ", $params);
+
+$hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filterStation) || !empty($filterDiet) || !empty($filterStock) || ($sortBy !== 'category');
 ?>
 
-<div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-  
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 border-bottom pb-3 mb-4">
-    <div>
-      <h4 class="fw-bold font-outfit mb-1 text-dark">Menu Catalog & Stock Reserves</h4>
-      <p class="text-muted small mb-0">Synchronized with pessimistic concurrency locks on checkout</p>
-    </div>
+<style>
+  /* Custom UI Styles for Dishes Catalog */
+  .dish-table-thumb {
+    width: 48px;
+    height: 48px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+  }
+  .dish-table-thumb:hover {
+    transform: scale(1.6);
+    z-index: 10;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2) !important;
+  }
+  .diet-icon-fssai {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 3px;
+    background: #ffffff;
+    vertical-align: middle;
+  }
+  .diet-icon-fssai.veg {
+    border: 1.5px solid #229947;
+  }
+  .diet-icon-fssai.veg .diet-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #229947;
+  }
+  .diet-icon-fssai.nonveg {
+    border: 1.5px solid #D32F2F;
+  }
+  .diet-icon-fssai.nonveg .diet-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #D32F2F;
+  }
+  .floating-bulk-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120px);
+    z-index: 1050;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    background: #243E2C;
+    box-shadow: 0 12px 30px rgba(36, 62, 44, 0.35);
+  }
+  .floating-bulk-bar.show {
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
 
-    <div class="d-flex align-items-center gap-2">
-      <!-- Filter Category -->
-      <form method="GET" action="<?= ADMIN_URL ?>/dishes.php" class="d-flex gap-2 m-0">
-        <select name="category" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="">All Categories</option>
-          <?php foreach ($categories as $cat): ?>
-            <option value="<?= (int)$cat['category_id'] ?>" <?= ($filterCat == $cat['category_id']) ? 'selected' : '' ?>>
-              <?= e($cat['category_name']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </form>
-
-      <button type="button" class="btn btn-success rounded-pill px-3 btn-sm fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#addDishModal" style="background:#2E6F40; border-color:#2E6F40;">
-        <i class="bi bi-plus-lg me-1"></i> Add New Dish
-      </button>
-    </div>
+<!-- Header & Quick Actions -->
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+  <div>
+    <h4 class="fw-bold font-outfit mb-1 text-dark">
+      <i class="fa-solid fa-utensils text-forest me-2"></i>Menu Catalog & Live Inventory
+    </h4>
+    <p class="text-muted small mb-0">
+      Manage live menu offerings, portion reserves, dietary tags, kitchen stations, and pricing.
+    </p>
   </div>
 
-  <div class="table-responsive">
-    <table class="table table-hover align-middle small mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Dish Item</th>
-          <th>Category</th>
-          <th>Type</th>
-          <th>Price</th>
-          <th>Live Stock</th>
-          <th>Prep Time</th>
-          <th>Status</th>
-          <th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($dishes as $dish): ?>
-          <tr>
-            <td>
-              <div class="d-flex align-items-center gap-3">
-                <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-3 object-fit-cover shadow-sm" style="width: 45px; height: 45px;">
-                <div>
-                  <div class="fw-bold text-dark"><?= e($dish['item_name']) ?></div>
-                  <div class="d-flex align-items-center gap-1 small text-warning mb-1">
-                    <i class="bi bi-star-fill"></i>
-                    <span class="fw-bold text-dark"><?= number_format($dish['rating'] ?? 4.8, 1) ?></span>
-                    <span class="text-muted" style="font-size:0.75rem;">(<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)</span>
-                  </div>
-                  <div class="small text-muted text-truncate" style="max-width: 250px;"><?= e($dish['description']) ?></div>
-                </div>
-              </div>
-            </td>
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <a href="<?= ADMIN_URL ?>/dishes.php?export=csv" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-xs">
+      <i class="bi bi-file-earmark-arrow-down me-1"></i> Export CSV
+    </a>
 
-            <td><?= e($dish['category_name']) ?></td>
-
-            <td>
-              <?php if ($dish['is_veg']): ?>
-                <span class="badge bg-white text-success border border-success px-2 py-1" style="font-size:0.65rem;">VEG</span>
-              <?php else: ?>
-                <span class="badge bg-white text-danger border border-danger px-2 py-1" style="font-size:0.65rem;">NON-VEG</span>
-              <?php endif; ?>
-              <?php if (!empty($dish['is_healthy'])): ?>
-                <span class="badge rounded-pill border px-2 py-1 d-inline-block mt-1" style="background:#CEFFDC; color:#243E2C; font-size:0.65rem; border-color:#68BA7F !important;">
-                  <i class="fa-solid fa-leaf me-1"></i>HEALTHY
-                </span>
-              <?php endif; ?>
-            </td>
-
-            <td class="fw-bold text-forest fs-6"><?= format_inr($dish['price']) ?></td>
-
-            <td>
-              <div class="d-flex align-items-center gap-2">
-                <span class="badge <?= ($dish['stock_quantity'] <= 15) ? 'bg-danger' : 'bg-light text-dark border' ?> fs-6 px-2 py-1">
-                  <?= (int)$dish['stock_quantity'] ?> left
-                </span>
-
-                <!-- Quick Delta Buttons -->
-                <form method="POST" action="<?= ADMIN_URL ?>/dishes.php" class="d-inline m-0">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="action" value="quick_stock">
-                  <input type="hidden" name="item_id" value="<?= (int)$dish['item_id'] ?>">
-                  <input type="hidden" name="delta" value="10">
-                  <button type="submit" class="btn btn-outline-success btn-sm py-0 px-2" title="Add 10 portions">+10</button>
-                </form>
-              </div>
-            </td>
-
-            <td><i class="bi bi-clock me-1 text-muted"></i> <?= (int)$dish['prep_time_minutes'] ?>m</td>
-
-            <td>
-              <div class="d-flex align-items-center gap-2">
-                <div class="form-check form-switch m-0" title="Click to instantly toggle dish availability (86-list)">
-                  <input class="form-check-input dish-stock-toggle" 
-                         type="checkbox" 
-                         role="switch" 
-                         id="dishSwitch<?= (int)$dish['item_id'] ?>"
-                         data-item-id="<?= (int)$dish['item_id'] ?>"
-                         data-item-name="<?= e(addslashes($dish['item_name'])) ?>"
-                         <?= ($dish['is_available'] && $dish['stock_quantity'] > 0) ? 'checked' : '' ?>
-                         style="cursor: pointer; width: 2.2em; height: 1.2em;">
-                </div>
-                <span class="badge <?= ($dish['is_available'] && $dish['stock_quantity'] > 0) ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle' ?> rounded-pill px-2 py-1 small dish-status-pill-<?= (int)$dish['item_id'] ?>">
-                  <?= ($dish['is_available'] && $dish['stock_quantity'] > 0) ? 'In Stock' : '86 / Sold Out' ?>
-                </span>
-              </div>
-            </td>
-
-            <td class="text-end">
-              <div class="d-flex justify-content-end gap-2">
-                <button type="button" 
-                        class="btn btn-sm btn-outline-primary rounded-pill px-3 btn-edit-dish" 
-                        data-bs-toggle="modal" 
-                        data-bs-target="#editDishModal"
-                        data-id="<?= (int)$dish['item_id'] ?>"
-                        data-name="<?= e($dish['item_name']) ?>"
-                        data-category-id="<?= (int)$dish['category_id'] ?>"
-                        data-price="<?= (float)$dish['price'] ?>"
-                        data-stock="<?= (int)$dish['stock_quantity'] ?>"
-                        data-prep="<?= (int)$dish['prep_time_minutes'] ?>"
-                        data-veg="<?= (int)$dish['is_veg'] ?>"
-                        data-healthy="<?= (int)($dish['is_healthy'] ?? 0) ?>"
-                        data-available="<?= (int)$dish['is_available'] ?>"
-                        data-image="<?= e($dish['image_url'] ?? '') ?>"
-                        data-display-image="<?= e(get_dish_image_url($dish['image_url'])) ?>"
-                        data-description="<?= e($dish['description'] ?? '') ?>">
-                  Edit
-                </button>
-
-                <form method="POST" action="<?= ADMIN_URL ?>/dishes.php" class="m-0" onsubmit="return confirm('Delete this dish from menu?');">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="action" value="delete_dish">
-                  <input type="hidden" name="item_id" value="<?= (int)$dish['item_id'] ?>">
-                  <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2">
-                    <i class="bi bi-trash3"></i>
-                  </button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
+    <button type="button" class="btn btn-success rounded-pill px-3 btn-sm fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#addDishModal" style="background:#2E6F40; border-color:#2E6F40;">
+      <i class="bi bi-plus-lg me-1"></i> Add New Dish
+    </button>
   </div>
-
 </div>
 
-<!-- Single Parameterized Edit Food / Dish Modal -->
+<!-- Executive KPI Summary Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card border-0 rounded-4 shadow-xs p-3 bg-white h-100 border-start border-4 border-success">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted small fw-semibold">Total Catalog</span>
+          <h3 class="fw-bold font-outfit text-dark mb-0 mt-1"><?= $kpiTotalDishes ?></h3>
+          <div class="small text-muted mt-1" style="font-size:0.75rem;">
+            <span class="text-success fw-bold"><?= $kpiVegDishes ?> Veg</span> • <span class="text-danger fw-bold"><?= $kpiNonVegDishes ?> Non-Veg</span>
+          </div>
+        </div>
+        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:44px; height:44px; background:#EDFBF2; color:#2E6F40;">
+          <i class="fa-solid fa-bowl-food fs-5"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card border-0 rounded-4 shadow-xs p-3 bg-white h-100 border-start border-4 border-primary">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted small fw-semibold">Active & Serving</span>
+          <h3 class="fw-bold font-outfit text-dark mb-0 mt-1"><?= $kpiAvailableDishes ?></h3>
+          <div class="small text-muted mt-1" style="font-size:0.75rem;">
+            Avg Price: <strong class="text-dark">₹<?= number_format($kpiAvgPrice, 0) ?></strong>
+          </div>
+        </div>
+        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:44px; height:44px; background:#EBF3FF; color:#0D6EFD;">
+          <i class="bi bi-check-circle-fill fs-5"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card border-0 rounded-4 shadow-xs p-3 bg-white h-100 border-start border-4 border-warning">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted small fw-semibold">Low Stock Alert</span>
+          <h3 class="fw-bold font-outfit text-warning mb-0 mt-1"><?= $kpiLowStockDishes ?></h3>
+          <div class="small text-muted mt-1" style="font-size:0.75rem;">
+            ≤ 15 portions remaining
+          </div>
+        </div>
+        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:44px; height:44px; background:#FFF8E5; color:#E5A100;">
+          <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card border-0 rounded-4 shadow-xs p-3 bg-white h-100 border-start border-4 border-danger">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted small fw-semibold">86-List / Sold Out</span>
+          <h3 class="fw-bold font-outfit text-danger mb-0 mt-1"><?= $kpiSoldOutDishes ?></h3>
+          <div class="small text-muted mt-1" style="font-size:0.75rem;">
+            Disabled or 0 portions
+          </div>
+        </div>
+        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width:44px; height:44px; background:#FDECE8; color:#D32F2F;">
+          <i class="bi bi-slash-circle fs-5"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Search & Multi-Criteria Filter Bar -->
+<div class="card border-0 rounded-4 shadow-sm p-3 bg-white mb-4">
+  <form method="GET" action="<?= ADMIN_URL ?>/dishes.php" class="row g-2 align-items-center">
+    <!-- Search Query -->
+    <div class="col-12 col-md-3">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-light border-end-0 text-muted">
+          <i class="bi bi-search"></i>
+        </span>
+        <input type="text" 
+               name="search" 
+               class="form-control border-start-0 bg-light" 
+               placeholder="Search dish, description..." 
+               value="<?= e($searchQuery) ?>">
+      </div>
+    </div>
+
+    <!-- Category Filter -->
+    <div class="col-6 col-md-2">
+      <select name="category" class="form-select form-select-sm">
+        <option value="">All Categories</option>
+        <?php foreach ($categories as $cat): ?>
+          <option value="<?= (int)$cat['category_id'] ?>" <?= ($filterCat == $cat['category_id']) ? 'selected' : '' ?>>
+            <?= e($cat['category_name']) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <!-- Kitchen Station Filter -->
+    <div class="col-6 col-md-2">
+      <select name="station" class="form-select form-select-sm">
+        <option value="">All Stations</option>
+        <?php foreach ($kitchenStations as $stn): ?>
+          <option value="<?= e($stn) ?>" <?= ($filterStation === $stn) ? 'selected' : '' ?>>
+            <?= e($stn) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <!-- Diet Filter -->
+    <div class="col-6 col-md-2">
+      <select name="diet" class="form-select form-select-sm">
+        <option value="">Diet: All</option>
+        <option value="veg" <?= ($filterDiet === 'veg') ? 'selected' : '' ?>>Vegetarian Only</option>
+        <option value="non_veg" <?= ($filterDiet === 'non_veg') ? 'selected' : '' ?>>Non-Vegetarian</option>
+        <option value="healthy" <?= ($filterDiet === 'healthy') ? 'selected' : '' ?>>🌿 Healthy Only</option>
+      </select>
+    </div>
+
+    <!-- Stock Status Filter -->
+    <div class="col-6 col-md-1">
+      <select name="stock_status" class="form-select form-select-sm">
+        <option value="">Stock: All</option>
+        <option value="in_stock" <?= ($filterStock === 'in_stock') ? 'selected' : '' ?>>In Stock</option>
+        <option value="low_stock" <?= ($filterStock === 'low_stock') ? 'selected' : '' ?>>Low Stock</option>
+        <option value="out_of_stock" <?= ($filterStock === 'out_of_stock') ? 'selected' : '' ?>>Sold Out</option>
+      </select>
+    </div>
+
+    <!-- Sort By -->
+    <div class="col-6 col-md-1">
+      <select name="sort" class="form-select form-select-sm">
+        <option value="category" <?= ($sortBy === 'category') ? 'selected' : '' ?>>Default</option>
+        <option value="name_asc" <?= ($sortBy === 'name_asc') ? 'selected' : '' ?>>Name A-Z</option>
+        <option value="price_low" <?= ($sortBy === 'price_low') ? 'selected' : '' ?>>Price: Low-High</option>
+        <option value="price_high" <?= ($sortBy === 'price_high') ? 'selected' : '' ?>>Price: High-Low</option>
+        <option value="stock_low" <?= ($sortBy === 'stock_low') ? 'selected' : '' ?>>Stock: Low First</option>
+        <option value="stock_high" <?= ($sortBy === 'stock_high') ? 'selected' : '' ?>>Stock: High First</option>
+        <option value="rating" <?= ($sortBy === 'rating') ? 'selected' : '' ?>>Top Rated</option>
+        <option value="prep_time" <?= ($sortBy === 'prep_time') ? 'selected' : '' ?>>Fastest Prep</option>
+      </select>
+    </div>
+
+    <!-- Actions -->
+    <div class="col-6 col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-success btn-sm w-100 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+        Filter
+      </button>
+      <?php if ($hasActiveFilters): ?>
+        <a href="<?= ADMIN_URL ?>/dishes.php" class="btn btn-outline-secondary btn-sm" title="Clear All Filters">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      <?php endif; ?>
+    </div>
+  </form>
+</div>
+
+<!-- Main Dishes Catalog Table Card -->
+<div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="small text-muted">
+      Showing <strong class="text-dark"><?= count($dishes) ?></strong> food items
+      <?php if ($hasActiveFilters): ?>
+        <span class="badge bg-light text-forest border ms-2">Filtered View</span>
+      <?php endif; ?>
+    </div>
+    <div class="small text-muted">
+      <i class="bi bi-info-circle me-1"></i> Use switches for instant 86-listing; stepper buttons adjust reserves without reload.
+    </div>
+  </div>
+
+  <?php if (empty($dishes)): ?>
+    <!-- Empty State -->
+    <div class="text-center py-5">
+      <div class="mb-3 text-muted opacity-50">
+        <i class="fa-solid fa-utensils display-3"></i>
+      </div>
+      <h5 class="fw-bold text-dark">No dishes found</h5>
+      <p class="text-muted small mb-3">We couldn't find any dishes matching your current search or filter criteria.</p>
+      <div class="d-flex justify-content-center gap-2">
+        <?php if ($hasActiveFilters): ?>
+          <a href="<?= ADMIN_URL ?>/dishes.php" class="btn btn-outline-secondary rounded-pill px-3 btn-sm">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Clear Filters
+          </a>
+        <?php endif; ?>
+        <button type="button" class="btn btn-success rounded-pill px-3 btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addDishModal" style="background:#2E6F40;">
+          <i class="bi bi-plus-lg me-1"></i> Add New Dish
+        </button>
+      </div>
+    </div>
+  <?php else: ?>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width: 38px;">
+              <input class="form-check-input" type="checkbox" id="selectAllDishes" title="Select All Visible Dishes">
+            </th>
+            <th>Dish Item</th>
+            <th>Category & Station</th>
+            <th>Diet Type</th>
+            <th>Price</th>
+            <th>Live Stock</th>
+            <th>Prep Time</th>
+            <th>Status</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($dishes as $dish): ?>
+            <?php
+              $stock = (int)$dish['stock_quantity'];
+              $isAvail = (bool)$dish['is_available'];
+            ?>
+            <tr id="dishRow<?= (int)$dish['item_id'] ?>">
+              <!-- Checkbox -->
+              <td>
+                <input class="form-check-input dish-row-checkbox" 
+                       type="checkbox" 
+                       value="<?= (int)$dish['item_id'] ?>" 
+                       data-name="<?= e($dish['item_name']) ?>">
+              </td>
+
+              <!-- Dish Item -->
+              <td>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="position-relative flex-shrink-0">
+                    <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" 
+                         alt="<?= e($dish['item_name']) ?>" 
+                         class="rounded-3 object-fit-cover shadow-sm dish-table-thumb" 
+                         onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
+                  </div>
+                  <div>
+                    <div class="fw-bold text-dark fs-6"><?= e($dish['item_name']) ?></div>
+                    <div class="d-flex align-items-center gap-1 small text-warning mb-1">
+                      <a href="<?= ADMIN_URL ?>/reviews.php?tab=dishes&search=<?= urlencode($dish['item_name']) ?>" 
+                         class="text-decoration-none text-warning d-inline-flex align-items-center gap-1"
+                         title="View customer feedback on this dish in Reviews console">
+                        <i class="bi bi-star-fill"></i>
+                        <span class="fw-bold text-dark"><?= number_format($dish['rating'] ?? 4.5, 1) ?></span>
+                        <span class="text-muted" style="font-size:0.75rem;">(<?= (int)($dish['total_reviews'] ?? 0) ?>)</span>
+                      </a>
+                    </div>
+                    <div class="small text-muted text-truncate" style="max-width: 250px;" title="<?= e($dish['description']) ?>">
+                      <?= e($dish['description']) ?>
+                    </div>
+                  </div>
+                </div>
+              </td>
+
+              <!-- Category & Station -->
+              <td>
+                <div class="fw-bold text-dark"><?= e($dish['category_name']) ?></div>
+                <div class="small text-muted mt-1">
+                  <i class="fa-solid fa-kitchen-set me-1 text-forest" style="font-size:0.75rem;"></i>
+                  <span><?= e($dish['kitchen_station'] ?? 'Main Kitchen') ?></span>
+                </div>
+              </td>
+
+              <!-- Diet Type -->
+              <td>
+                <div class="d-flex flex-column gap-1 align-items-start">
+                  <?php if ($dish['is_veg']): ?>
+                    <div class="d-inline-flex align-items-center gap-1">
+                      <span class="diet-icon-fssai veg" title="Pure Vegetarian"><span class="diet-dot"></span></span>
+                      <span class="text-success fw-bold" style="font-size:0.7rem;">VEG</span>
+                    </div>
+                  <?php else: ?>
+                    <div class="d-inline-flex align-items-center gap-1">
+                      <span class="diet-icon-fssai nonveg" title="Non-Vegetarian"><span class="diet-dot"></span></span>
+                      <span class="text-danger fw-bold" style="font-size:0.7rem;">NON-VEG</span>
+                    </div>
+                  <?php endif; ?>
+
+                  <?php if (!empty($dish['is_healthy'])): ?>
+                    <span class="badge rounded-pill border px-2 py-1" style="background:#CEFFDC; color:#243E2C; font-size:0.65rem; border-color:#68BA7F !important;">
+                      <i class="fa-solid fa-leaf me-1"></i>HEALTHY
+                    </span>
+                  <?php endif; ?>
+                </div>
+              </td>
+
+              <!-- Price -->
+              <td class="fw-bold text-forest fs-6"><?= format_inr($dish['price']) ?></td>
+
+              <!-- Live Stock (Tri-State Badge + AJAX Stepper) -->
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <span id="stockBadge<?= (int)$dish['item_id'] ?>" 
+                        class="badge rounded-pill px-2 py-1 fs-6 <?= ($stock <= 0) ? 'bg-danger text-white' : (($stock <= 15) ? 'bg-warning-subtle text-dark border border-warning' : 'bg-light text-dark border') ?>">
+                    <?php if ($stock <= 0): ?>
+                      0 (Sold Out)
+                    <?php elseif ($stock <= 15): ?>
+                      <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i><?= $stock ?> left
+                    <?php else: ?>
+                      <?= $stock ?> in stock
+                    <?php endif; ?>
+                  </span>
+
+                  <!-- AJAX Stock Steppers -->
+                  <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" 
+                            class="btn btn-outline-secondary py-0 px-2 btn-stock-stepper" 
+                            data-item-id="<?= (int)$dish['item_id'] ?>" 
+                            data-delta="-5" 
+                            title="Deduct 5 portions">
+                      -5
+                    </button>
+                    <button type="button" 
+                            class="btn btn-outline-success py-0 px-2 btn-stock-stepper" 
+                            data-item-id="<?= (int)$dish['item_id'] ?>" 
+                            data-delta="5" 
+                            title="Add 5 portions">
+                      +5
+                    </button>
+                    <button type="button" 
+                            class="btn btn-outline-success py-0 px-2 btn-stock-stepper" 
+                            data-item-id="<?= (int)$dish['item_id'] ?>" 
+                            data-delta="10" 
+                            title="Add 10 portions">
+                      +10
+                    </button>
+                  </div>
+                </div>
+              </td>
+
+              <!-- Prep Time -->
+              <td><i class="bi bi-clock me-1 text-muted"></i> <?= (int)$dish['prep_time_minutes'] ?>m</td>
+
+              <!-- Status (Instant 86-List AJAX Toggle) -->
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch m-0" title="Click to instantly toggle dish availability (86-list)">
+                    <input class="form-check-input dish-stock-toggle" 
+                           type="checkbox" 
+                           role="switch" 
+                           id="dishSwitch<?= (int)$dish['item_id'] ?>"
+                           data-item-id="<?= (int)$dish['item_id'] ?>"
+                           data-item-name="<?= e(addslashes($dish['item_name'])) ?>"
+                           <?= ($isAvail && $stock > 0) ? 'checked' : '' ?>
+                           style="cursor: pointer; width: 2.2em; height: 1.2em;">
+                  </div>
+                  <span class="badge <?= ($isAvail && $stock > 0) ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle' ?> rounded-pill px-2 py-1 small dish-status-pill-<?= (int)$dish['item_id'] ?>">
+                    <?= ($isAvail && $stock > 0) ? 'In Stock' : '86 / Sold Out' ?>
+                  </span>
+                </div>
+              </td>
+
+              <!-- Actions -->
+              <td class="text-end">
+                <div class="d-flex justify-content-end gap-2">
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-primary rounded-pill px-3 btn-edit-dish" 
+                          data-bs-toggle="modal" 
+                          data-bs-target="#editDishModal"
+                          data-id="<?= (int)$dish['item_id'] ?>"
+                          data-name="<?= e($dish['item_name']) ?>"
+                          data-category-id="<?= (int)$dish['category_id'] ?>"
+                          data-station="<?= e($dish['kitchen_station'] ?? 'Main Kitchen') ?>"
+                          data-price="<?= (float)$dish['price'] ?>"
+                          data-stock="<?= (int)$dish['stock_quantity'] ?>"
+                          data-prep="<?= (int)$dish['prep_time_minutes'] ?>"
+                          data-veg="<?= (int)$dish['is_veg'] ?>"
+                          data-healthy="<?= (int)($dish['is_healthy'] ?? 0) ?>"
+                          data-available="<?= (int)$dish['is_available'] ?>"
+                          data-image="<?= e($dish['image_url'] ?? '') ?>"
+                          data-display-image="<?= e(get_dish_image_url($dish['image_url'])) ?>"
+                          data-description="<?= e($dish['description'] ?? '') ?>">
+                    <i class="bi bi-pencil me-1"></i> Edit
+                  </button>
+
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-danger rounded-pill px-2 btn-delete-dish"
+                          data-id="<?= (int)$dish['item_id'] ?>"
+                          data-name="<?= e($dish['item_name']) ?>"
+                          title="Delete or Archive Dish">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
+
+<!-- Floating Bulk Actions Toolbar (Appears when 1+ rows selected) -->
+<div class="floating-bulk-bar rounded-pill px-4 py-2 text-white d-flex align-items-center gap-3" id="bulkActionBar">
+  <div>
+    <span class="badge bg-white text-dark rounded-pill px-2 py-1 me-2 fw-bold" id="bulkSelectedCount">0</span>
+    <span class="small">dishes selected</span>
+  </div>
+  <div class="vr bg-light opacity-50 my-1"></div>
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-3" onclick="triggerBulkAction('mark_available')">
+      <i class="bi bi-check2-circle me-1"></i> Mark In Stock
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="triggerBulkAction('add_stock')">
+      <i class="bi bi-plus-lg me-1"></i> Add +10 Stock
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3" onclick="triggerBulkAction('mark_soldout')">
+      <i class="bi bi-slash-circle me-1"></i> 86 / Sold Out
+    </button>
+    <button type="button" class="btn btn-sm btn-link text-white text-decoration-none px-2" onclick="clearBulkSelection()">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Parameterized Edit Food / Dish Modal -->
 <div class="modal fade" id="editDishModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered text-start">
     <div class="modal-content rounded-4 border-0 shadow-lg">
@@ -346,20 +836,38 @@ $dishes = db_fetch_all("
             </div>
 
             <div class="col-md-6">
-              <label class="form-label small fw-bold">Price (₹) *</label>
-              <input type="number" step="0.01" name="price" id="editDishPrice" class="form-control rounded-3" required>
+              <label class="form-label small fw-bold">Kitchen Station *</label>
+              <select name="kitchen_station" id="editDishStation" class="form-select rounded-3">
+                <?php foreach ($kitchenStations as $stn): ?>
+                  <option value="<?= e($stn) ?>"><?= e($stn) ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
           </div>
 
           <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-bold">Current Stock Quantity *</label>
-              <input type="number" name="stock_quantity" id="editDishStock" class="form-control rounded-3" required>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Price *</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light">₹</span>
+                <input type="number" step="0.01" min="1" name="price" id="editDishPrice" class="form-control" required>
+              </div>
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label small fw-bold">Prep Time (Mins) *</label>
-              <input type="number" name="prep_time_minutes" id="editDishPrep" class="form-control rounded-3" required>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Stock Reserve *</label>
+              <div class="input-group">
+                <input type="number" min="0" name="stock_quantity" id="editDishStock" class="form-control" required>
+                <span class="input-group-text bg-light small">qty</span>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Prep Time *</label>
+              <div class="input-group">
+                <input type="number" min="1" name="prep_time_minutes" id="editDishPrep" class="form-control" required>
+                <span class="input-group-text bg-light small">mins</span>
+              </div>
             </div>
           </div>
 
@@ -435,7 +943,7 @@ $dishes = db_fetch_all("
             <div class="col-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_veg" value="1" id="editDishVeg">
-                <label class="form-check-label small" for="editDishVeg">Veg</label>
+                <label class="form-check-label small" for="editDishVeg">Pure Veg</label>
               </div>
             </div>
             <div class="col-4">
@@ -447,7 +955,7 @@ $dishes = db_fetch_all("
             <div class="col-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_available" value="1" id="editDishAvail">
-                <label class="form-check-label small" for="editDishAvail">In Stock</label>
+                <label class="form-check-label small" for="editDishAvail">In Stock (Active)</label>
               </div>
             </div>
           </div>
@@ -455,7 +963,9 @@ $dishes = db_fetch_all("
 
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">Save Dish</button>
+          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+            Save Changes
+          </button>
         </div>
       </form>
     </div>
@@ -494,20 +1004,38 @@ $dishes = db_fetch_all("
             </div>
 
             <div class="col-md-6">
-              <label class="form-label small fw-bold">Price (₹) *</label>
-              <input type="number" step="0.01" name="price" class="form-control rounded-3" placeholder="249.00" required>
+              <label class="form-label small fw-bold">Kitchen Station *</label>
+              <select name="kitchen_station" class="form-select rounded-3">
+                <?php foreach ($kitchenStations as $stn): ?>
+                  <option value="<?= e($stn) ?>"><?= e($stn) ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
           </div>
 
           <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-bold">Initial Stock (Portions) *</label>
-              <input type="number" name="stock_quantity" class="form-control rounded-3" value="40" required>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Price *</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light">₹</span>
+                <input type="number" step="0.01" min="1" name="price" class="form-control" placeholder="249.00" required>
+              </div>
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label small fw-bold">Estimated Prep Time (Mins) *</label>
-              <input type="number" name="prep_time_minutes" class="form-control rounded-3" value="20" required>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Initial Stock *</label>
+              <div class="input-group">
+                <input type="number" min="0" name="stock_quantity" class="form-control" value="40" required>
+                <span class="input-group-text bg-light small">qty</span>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Prep Time *</label>
+              <div class="input-group">
+                <input type="number" min="1" name="prep_time_minutes" class="form-control" value="20" required>
+                <span class="input-group-text bg-light small">mins</span>
+              </div>
             </div>
           </div>
 
@@ -556,7 +1084,7 @@ $dishes = db_fetch_all("
                 </div>
               </div>
 
-              <!-- Option 2: Direct Photo URL (Always Visible!) -->
+              <!-- Option 2: Direct Photo URL -->
               <div class="border-top pt-2">
                 <label class="form-label small fw-bold text-dark mb-1" for="dishUrlInput_add">
                   <i class="bi bi-link-45deg text-forest me-1"></i> Option 2: Photo Web URL
@@ -576,7 +1104,7 @@ $dishes = db_fetch_all("
 
           <div class="mb-3">
             <label class="form-label small fw-bold">Description & Ingredients</label>
-            <textarea name="description" class="form-control rounded-3" rows="2" placeholder="Culinary flavor profile..."></textarea>
+            <textarea name="description" class="form-control rounded-3" rows="2" placeholder="Culinary flavor profile, key ingredients..."></textarea>
           </div>
 
           <div class="row g-3">
@@ -606,6 +1134,41 @@ $dishes = db_fetch_all("
   </div>
 </div>
 
+<!-- Safe Delete / Archive Confirmation Modal -->
+<div class="modal fade" id="deleteDishModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom">
+        <h5 class="modal-title fw-bold text-danger">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>Remove Dish from Menu
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <form method="POST" action="<?= ADMIN_URL ?>/dishes.php">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="delete_dish">
+        <input type="hidden" name="item_id" id="deleteDishId" value="">
+
+        <div class="modal-body p-4 text-start">
+          <p class="mb-2">Are you sure you want to remove <strong id="deleteDishName" class="text-dark"></strong> from the active catalog?</p>
+          <div class="alert alert-warning border-0 small rounded-3 mb-0">
+            <i class="bi bi-shield-lock-fill me-1"></i>
+            <strong>Audit Protection:</strong> If this dish exists in past customer order receipts, it will be safely <strong>archived and hidden</strong> rather than hard-deleted to preserve legal tax and financial records.
+          </div>
+        </div>
+
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-bold">
+            Confirm Remove
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   // Populate Single Parameterized Edit Food Modal
@@ -616,6 +1179,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editDishTitle').textContent = d.name;
       document.getElementById('editDishName').value = d.name;
       document.getElementById('editDishCategory').value = d.categoryId;
+      document.getElementById('editDishStation').value = d.station || 'Main Kitchen';
       document.getElementById('editDishPrice').value = d.price;
       document.getElementById('editDishStock').value = d.stock;
       document.getElementById('editDishPrep').value = d.prep;
@@ -632,6 +1196,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  // Populate Delete / Archive Modal
+  document.querySelectorAll('.btn-delete-dish').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const id = this.getAttribute('data-id');
+      const name = this.getAttribute('data-name');
+      document.getElementById('deleteDishId').value = id;
+      document.getElementById('deleteDishName').textContent = name;
+      const modal = new bootstrap.Modal(document.getElementById('deleteDishModal'));
+      modal.show();
+    });
+  });
+
+  // Food Photo Upload Preview & File Size Display
   document.querySelectorAll('.dish-photo-upload').forEach(function(input) {
     input.addEventListener('change', function(e) {
       const file = e.target.files && e.target.files[0];
@@ -673,9 +1250,9 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.dish-stock-toggle').forEach(function(toggle) {
     toggle.addEventListener('change', function() {
       const itemId = toggle.getAttribute('data-item-id');
-      const itemName = toggle.getAttribute('data-item-name');
       const isAvailable = toggle.checked ? 1 : 0;
       const statusPill = document.querySelector('.dish-status-pill-' + itemId);
+      const stockBadge = document.getElementById('stockBadge' + itemId);
 
       toggle.disabled = true;
 
@@ -697,6 +1274,9 @@ document.addEventListener('DOMContentLoaded', function() {
               statusPill.textContent = '86 / Sold Out';
             }
           }
+          if (stockBadge && typeof data.stock_quantity !== 'undefined') {
+            updateStockBadgeUI(stockBadge, data.stock_quantity);
+          }
           if (typeof showAdminToast === 'function') {
             showAdminToast(data.message, data.is_available ? 'success' : 'danger');
           }
@@ -716,6 +1296,138 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   });
+
+  // Instant AJAX Quick-Stock Steppers (-5, +5, +10)
+  document.querySelectorAll('.btn-stock-stepper').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const itemId = this.getAttribute('data-item-id');
+      const delta = parseInt(this.getAttribute('data-delta'), 10);
+      const stockBadge = document.getElementById('stockBadge' + itemId);
+      const toggle = document.getElementById('dishSwitch' + itemId);
+      const statusPill = document.querySelector('.dish-status-pill-' + itemId);
+
+      this.disabled = true;
+
+      fetch('<?= ADMIN_URL ?>/ajax/adjust-stock.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: itemId, delta: delta })
+      })
+      .then(response => response.json())
+      .then(data => {
+        this.disabled = false;
+        if (data.success) {
+          if (stockBadge) {
+            updateStockBadgeUI(stockBadge, data.stock_quantity);
+          }
+          if (toggle) {
+            toggle.checked = data.is_available;
+          }
+          if (statusPill) {
+            if (data.is_available) {
+              statusPill.className = 'badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small dish-status-pill-' + itemId;
+              statusPill.textContent = 'In Stock';
+            } else {
+              statusPill.className = 'badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1 small dish-status-pill-' + itemId;
+              statusPill.textContent = '86 / Sold Out';
+            }
+          }
+          if (typeof showAdminToast === 'function') {
+            showAdminToast(data.message, 'success');
+          }
+        } else {
+          if (typeof showAdminToast === 'function') {
+            showAdminToast(data.message || 'Failed to adjust stock.', 'danger');
+          }
+        }
+      })
+      .catch(err => {
+        this.disabled = false;
+        if (typeof showAdminToast === 'function') {
+          showAdminToast('Network error while adjusting stock.', 'danger');
+        }
+      });
+    });
+  });
+
+  // Bulk Checkbox Selection & Floating Action Bar
+  const selectAll = document.getElementById('selectAllDishes');
+  const rowCheckboxes = document.querySelectorAll('.dish-row-checkbox');
+  const bulkBar = document.getElementById('bulkActionBar');
+  const countLabel = document.getElementById('bulkSelectedCount');
+
+  function updateBulkBar() {
+    const checked = document.querySelectorAll('.dish-row-checkbox:checked');
+    if (countLabel) countLabel.textContent = checked.length;
+    if (checked.length > 0) {
+      bulkBar.classList.add('show');
+    } else {
+      bulkBar.classList.remove('show');
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function() {
+      rowCheckboxes.forEach(cb => cb.checked = selectAll.checked);
+      updateBulkBar();
+    });
+  }
+
+  rowCheckboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+      if (!this.checked && selectAll) selectAll.checked = false;
+      updateBulkBar();
+    });
+  });
+
+  window.clearBulkSelection = function() {
+    if (selectAll) selectAll.checked = false;
+    rowCheckboxes.forEach(cb => cb.checked = false);
+    updateBulkBar();
+  };
+
+  window.triggerBulkAction = function(action) {
+    const checked = Array.from(document.querySelectorAll('.dish-row-checkbox:checked')).map(cb => cb.value);
+    if (checked.length === 0) return;
+
+    fetch('<?= ADMIN_URL ?>/ajax/bulk-dishes.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, item_ids: checked })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        if (typeof showAdminToast === 'function') {
+          showAdminToast(data.message, 'success');
+        }
+        setTimeout(() => location.reload(), 800);
+      } else {
+        if (typeof showAdminToast === 'function') {
+          showAdminToast(data.message || 'Bulk operation failed', 'danger');
+        }
+      }
+    })
+    .catch(() => {
+      if (typeof showAdminToast === 'function') {
+        showAdminToast('Network error during bulk operation', 'danger');
+      }
+    });
+  };
+
+  function updateStockBadgeUI(badgeElem, qty) {
+    const quantity = parseInt(qty, 10);
+    if (quantity <= 0) {
+      badgeElem.className = 'badge rounded-pill px-2 py-1 fs-6 bg-danger text-white';
+      badgeElem.textContent = '0 (Sold Out)';
+    } else if (quantity <= 15) {
+      badgeElem.className = 'badge rounded-pill px-2 py-1 fs-6 bg-warning-subtle text-dark border border-warning';
+      badgeElem.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' + quantity + ' left';
+    } else {
+      badgeElem.className = 'badge rounded-pill px-2 py-1 fs-6 bg-light text-dark border';
+      badgeElem.textContent = quantity + ' in stock';
+    }
+  }
 
   function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         // 3. End-of-Day Cash Drawer Closing & Z-Report Generation
         if ($action === 'close_cash_register') {
-            $closureDate = clean_input($_POST['closure_date'] ?? date('Y-m-d'));
+            $closureDate = date('Y-m-d');
             $physicalCash = (float)($_POST['physical_cash'] ?? 0);
             $discrepancyReason = clean_input($_POST['discrepancy_notes'] ?? '');
 
@@ -270,18 +270,46 @@ if (!empty($dateTo)) {
 
 if (!empty($searchQuery)) {
     $where .= " AND (
-        mt.txn_number LIKE :sq
-        OR mt.reference_id LIKE :sq
-        OR mt.handled_by LIKE :sq
-        OR mt.notes LIKE :sq
-        OR u.full_name LIKE :sq
-        OR mt.order_id = :sq_id
+        mt.txn_number LIKE :search_txn
+        OR mt.reference_id LIKE :search_reference
+        OR mt.handled_by LIKE :search_handler
+        OR mt.notes LIKE :search_notes
+        OR u.full_name LIKE :search_name
+        OR u.phone_number LIKE :search_phone
+        OR mt.payment_method LIKE :search_method
+        OR mt.txn_category LIKE :search_category
+        OR mt.status LIKE :search_status
+        OR mt.order_id = :search_order_id
     )";
-    $params[':sq'] = "%" . $searchQuery . "%";
-    $params[':sq_id'] = (int)preg_replace('/[^0-9]/', '', $searchQuery);
+    $searchTerm = '%' . $searchQuery . '%';
+    $params[':search_txn'] = $searchTerm;
+    $params[':search_reference'] = $searchTerm;
+    $params[':search_handler'] = $searchTerm;
+    $params[':search_notes'] = $searchTerm;
+    $params[':search_name'] = $searchTerm;
+    $params[':search_phone'] = $searchTerm;
+    $params[':search_method'] = $searchTerm;
+    $params[':search_category'] = $searchTerm;
+    $params[':search_status'] = $searchTerm;
+    $params[':search_order_id'] = (int)preg_replace('/[^0-9]/', '', $searchQuery);
 }
 
-// Query transactions with customer / staff counterparty info
+// Count all matching transactions so pagination and result labels stay accurate.
+$totalTransactions = (int)db_fetch_val("
+    SELECT COUNT(*)
+    FROM `money_transactions` mt
+    LEFT JOIN `users` u ON mt.user_id = u.user_id
+    WHERE $where
+", $params);
+
+$pageSize = 50;
+$totalPages = max(1, (int)ceil($totalTransactions / $pageSize));
+$currentPage = min(max(1, (int)($_GET['page'] ?? 1)), $totalPages);
+$offset = ($currentPage - 1) * $pageSize;
+$firstResult = $totalTransactions > 0 ? $offset + 1 : 0;
+$lastResult = min($offset + $pageSize, $totalTransactions);
+
+// Query the current page with customer / staff counterparty info.
 $transactions = db_fetch_all("
     SELECT mt.*, 
            u.full_name AS counterparty_name, 
@@ -294,8 +322,18 @@ $transactions = db_fetch_all("
     LEFT JOIN `orders` o ON mt.order_id = o.order_id
     WHERE $where
     ORDER BY mt.created_at DESC, mt.txn_id DESC
-    LIMIT 250
+    LIMIT $pageSize OFFSET $offset
 ", $params);
+
+$paginationParams = $_GET;
+unset($paginationParams['page'], $paginationParams['zreport'], $paginationParams['export']);
+$searchFormParams = [
+    'category' => $filterCat,
+    'flow' => $filterFlow,
+    'status' => $filterStatus,
+    'date_from' => $dateFrom,
+    'date_to' => $dateTo
+];
 
 // Fetch list of riders with outstanding COD cash balance for settlement modal
 $ridersWithCod = db_fetch_all("
@@ -549,7 +587,7 @@ require_once __DIR__ . '/includes/header.php';
       <div class="d-flex flex-wrap gap-2">
         <a href="<?= ADMIN_URL ?>/financial-transactions.php?category=ALL" 
            class="btn btn-sm rounded-pill fw-bold <?= ($filterCat === 'ALL') ? 'btn-dark' : 'btn-light border' ?>">
-          All Entries (<?= count($transactions) ?>)
+          All Entries
         </a>
         <a href="<?= ADMIN_URL ?>/financial-transactions.php?category=CUSTOMER_PAYMENT_ONLINE" 
            class="btn btn-sm rounded-pill fw-bold <?= ($filterCat === 'CUSTOMER_PAYMENT_ONLINE') ? 'btn-primary' : 'btn-light border' ?>">
@@ -577,15 +615,20 @@ require_once __DIR__ . '/includes/header.php';
     <!-- Quick Search Box -->
     <div class="col-12 col-xl-4">
       <form method="GET" action="<?= ADMIN_URL ?>/financial-transactions.php" class="d-flex gap-2 m-0">
-        <?php if ($filterCat !== 'ALL'): ?>
-          <input type="hidden" name="category" value="<?= e($filterCat) ?>">
-        <?php endif; ?>
+        <?php foreach ($searchFormParams as $name => $value): ?>
+          <input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>">
+        <?php endforeach; ?>
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
-          <input type="text" name="search" id="liveFinanceSearchInput" class="form-control border-start-0" 
-                 placeholder="Search Txn #, ZIP ID, name..." value="<?= e($searchQuery) ?>" onkeyup="filterFinanceTable()">
+          <input type="text" name="search" class="form-control border-start-0"
+                 placeholder="Search transaction, order, party..." value="<?= e($searchQuery) ?>">
+          <button type="submit" class="btn btn-outline-forest" style="border-color:#2E6F40; color:#2E6F40;">Search</button>
           <?php if (!empty($searchQuery)): ?>
-            <a href="<?= ADMIN_URL ?>/financial-transactions.php" class="btn btn-outline-secondary">Clear</a>
+            <?php
+              $clearSearchParams = $_GET;
+              unset($clearSearchParams['search'], $clearSearchParams['page'], $clearSearchParams['zreport']);
+            ?>
+            <a href="<?= ADMIN_URL ?>/financial-transactions.php<?= $clearSearchParams ? '?' . e(http_build_query($clearSearchParams)) : '' ?>" class="btn btn-outline-secondary">Clear</a>
           <?php endif; ?>
         </div>
       </form>
@@ -603,7 +646,7 @@ require_once __DIR__ . '/includes/header.php';
       <i class="bi bi-list-columns-reverse me-2 text-forest"></i>Audited Monetary Ledger Records
     </div>
     <span class="badge bg-light text-dark border font-monospace">
-      Showing <?= count($transactions) ?> Entries
+      Showing <?= $firstResult ?>–<?= $lastResult ?> of <?= $totalTransactions ?> entries
     </span>
   </div>
 
@@ -643,9 +686,8 @@ require_once __DIR__ . '/includes/header.php';
                   default                   => $t['txn_category']
               };
 
-              $searchRowData = strtolower("{$t['txn_number']} ZIP-{$t['order_id']} {$t['counterparty_name']} {$t['counterparty_phone']} {$t['payment_method']} {$t['txn_category']} {$t['status']} {$t['handled_by']} {$t['notes']}");
             ?>
-            <tr class="finance-table-row" data-search="<?= e($searchRowData) ?>">
+            <tr>
               
               <!-- Txn # and Date -->
               <td>
@@ -836,6 +878,24 @@ require_once __DIR__ . '/includes/header.php';
   </div>
 </div>
 
+<?php if ($totalPages > 1): ?>
+  <nav class="mt-3" aria-label="Transaction pages">
+    <ul class="pagination pagination-sm justify-content-center flex-wrap">
+      <li class="page-item <?= $currentPage <= 1 ? 'disabled' : '' ?>">
+        <?php $paginationParams['page'] = max(1, $currentPage - 1); ?>
+        <a class="page-link" href="<?= ADMIN_URL ?>/financial-transactions.php?<?= e(http_build_query($paginationParams)) ?>" aria-label="Previous page">Previous</a>
+      </li>
+      <li class="page-item disabled">
+        <span class="page-link">Page <?= $currentPage ?> of <?= $totalPages ?></span>
+      </li>
+      <li class="page-item <?= $currentPage >= $totalPages ? 'disabled' : '' ?>">
+        <?php $paginationParams['page'] = min($totalPages, $currentPage + 1); ?>
+        <a class="page-link" href="<?= ADMIN_URL ?>/financial-transactions.php?<?= e(http_build_query($paginationParams)) ?>" aria-label="Next page">Next</a>
+      </li>
+    </ul>
+  </nav>
+<?php endif; ?>
+
 <!-- ===========================================================================
      MODAL: SETTLE RIDER COD CASH TO STORE DRAWER
      =========================================================================== -->
@@ -904,22 +964,6 @@ require_once __DIR__ . '/includes/header.php';
   </script>
 <?php endif; ?>
 
-<script>
-  // Real-time table filter
-  function filterFinanceTable() {
-    const q = document.getElementById('liveFinanceSearchInput').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('.finance-table-row');
-    rows.forEach(r => {
-      const searchData = r.getAttribute('data-search') || '';
-      if (!q || searchData.includes(q)) {
-        r.style.display = '';
-      } else {
-        r.style.display = 'none';
-      }
-    });
-  }
-</script>
-
 <!-- ===========================================================================
      MODAL: END-OF-DAY CASH DRAWER CLOSING & SEALING WIZARD
      =========================================================================== -->
@@ -949,7 +993,8 @@ require_once __DIR__ . '/includes/header.php';
           
           <div class="mb-3">
             <label class="form-label small fw-bold text-dark">Register Closure Business Date</label>
-            <input type="date" name="closure_date" class="form-control rounded-3" value="<?= $todayClosureDate ?>" required>
+            <input type="text" class="form-control rounded-3 bg-light" value="<?= date('d M Y', strtotime($todayClosureDate)) ?>" readonly>
+            <input type="hidden" name="closure_date" value="<?= e($todayClosureDate) ?>">
           </div>
 
           <!-- Live System Financial Reading -->

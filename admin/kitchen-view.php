@@ -219,29 +219,102 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
 
 </div>
 
+<style>
+  .kitchen-roster-card {
+    background: #fff;
+    transition: box-shadow 160ms ease, transform 160ms ease;
+  }
+
+  .kitchen-roster-card:hover {
+    box-shadow: 0 0.5rem 1.25rem rgba(20, 40, 25, 0.08) !important;
+    transform: translateY(-2px);
+  }
+
+  .kitchen-staff-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .kitchen-summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.2rem;
+    min-width: 0;
+    min-height: 64px;
+    padding: 0.65rem 0.75rem;
+    border-radius: 0.75rem;
+    background: #f7f9f7;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+  }
+
+  .kitchen-summary-label {
+    color: #6c757d;
+    font-size: 0.72rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kitchen-roster-card {
+      transition: none;
+    }
+
+    .kitchen-roster-card:hover {
+      transform: none;
+    }
+  }
+</style>
+
 <!-- ===========================================================================
      KITCHEN STAFF ROSTER & ATTENDANCE MANAGEMENT
      =========================================================================== -->
 <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
   
-  <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-4 gap-2">
+  <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-3">
     <div>
-      <div class="d-flex align-items-center gap-2 mb-1">
-        <span class="badge rounded-pill px-3 py-1" style="background:#FFFBEB; color:#B45309; border: 1px solid #FDE68A;">
-          <i class="fa-solid fa-kitchen-set me-1"></i> CULINARY ATTENDANCE & SHIFTS
-        </span>
-        <span class="small text-muted fw-bold">Station Presence, Contact Details & Salary</span>
-      </div>
       <h4 class="fw-bold font-outfit mb-0 text-dark">Kitchen Staff Roster</h4>
+      <span class="small text-muted">Attendance, shift details and monthly payroll at a glance.</span>
     </div>
 
-    <div class="d-flex align-items-center gap-2">
-      <span class="small text-muted">Current Shift Cycle: <strong>General Kitchen Shift</strong></span>
+    <span class="small text-muted"><i class="bi bi-clock me-1"></i>General kitchen shift</span>
+  </div>
+
+  <div class="row g-2 align-items-end mb-4" aria-label="Filter kitchen staff">
+    <div class="col-lg-5">
+      <label for="kitchenStaffSearch" class="form-label small fw-semibold text-muted mb-1">Search staff</label>
+      <div class="input-group">
+        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="search" class="form-control bg-light border-start-0" id="kitchenStaffSearch"
+               placeholder="Name or designation" autocomplete="off">
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <label for="kitchenDutyFilter" class="form-label small fw-semibold text-muted mb-1">Duty status</label>
+      <select class="form-select bg-light" id="kitchenDutyFilter">
+        <option value="">All duty statuses</option>
+        <option value="ON_DUTY">Present & on duty</option>
+        <option value="ON_BREAK">On break</option>
+        <option value="OFF_DUTY">Off duty</option>
+        <option value="ON_LEAVE">On leave</option>
+      </select>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <label for="kitchenPaymentFilter" class="form-label small fw-semibold text-muted mb-1">Monthly payment</label>
+      <select class="form-select bg-light" id="kitchenPaymentFilter">
+        <option value="">All payment statuses</option>
+        <option value="paid">Paid</option>
+        <option value="due">Payment due</option>
+      </select>
+    </div>
+    <div class="col-lg-1 text-lg-end">
+      <span class="small text-muted d-block py-2" id="kitchenStaffCount" aria-live="polite"><?= $totalStaff ?> shown</span>
     </div>
   </div>
 
   <!-- Staff Cards Grid -->
-  <div class="row g-4">
+  <div class="row g-3" id="kitchenStaffGrid">
     <?php foreach ($kitchenStaff as $staff): ?>
       <?php 
         $uid = (int)$staff['user_id'];
@@ -249,82 +322,72 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
         $isPaidThisMonth = !empty($curPayout) && $curPayout['payout_status'] === 'PAID';
         
         $dutyBadge = match($staff['duty_status']) {
-          'ON_DUTY' => ['class' => 'bg-success text-white', 'icon' => 'bi-check-circle-fill', 'label' => 'Present & On Duty'],
-          'ON_BREAK' => ['class' => 'bg-warning text-dark', 'icon' => 'bi-pause-circle-fill', 'label' => 'On Break'],
-          'ON_LEAVE' => ['class' => 'bg-danger text-white', 'icon' => 'bi-x-circle-fill', 'label' => 'On Leave'],
-          default => ['class' => 'bg-secondary text-white', 'icon' => 'bi-moon-fill', 'label' => 'Off Duty']
+          'ON_DUTY' => ['class' => 'bg-success-subtle text-success', 'icon' => 'bi-check-circle-fill', 'label' => 'On duty'],
+          'ON_BREAK' => ['class' => 'bg-warning-subtle text-warning-emphasis', 'icon' => 'bi-pause-circle-fill', 'label' => 'On break'],
+          'ON_LEAVE' => ['class' => 'bg-danger-subtle text-danger', 'icon' => 'bi-x-circle-fill', 'label' => 'On leave'],
+          default => ['class' => 'bg-secondary-subtle text-secondary', 'icon' => 'bi-moon-fill', 'label' => 'Off duty']
         };
       ?>
-      <div class="col-md-6 col-xl-4">
-        <div class="card border rounded-4 p-4 h-100 shadow-sm d-flex flex-column justify-content-between position-relative" style="border-color: <?= ($staff['duty_status'] === 'ON_DUTY') ? '#A7F3D0' : '#E5E7EB' ?> !important;">
+      <div class="col-md-6 col-xl-4 kitchen-staff-item"
+           data-search="<?= e($staff['full_name'] . ' ' . $staff['designation']) ?>"
+           data-duty="<?= e($staff['duty_status']) ?>"
+           data-payment="<?= $isPaidThisMonth ? 'paid' : 'due' ?>">
+        <div class="card border-0 rounded-4 p-3 p-lg-4 h-100 shadow-sm d-flex flex-column justify-content-between kitchen-roster-card">
           
           <div>
             <!-- Staff Profile Header -->
-            <div class="d-flex align-items-start justify-content-between mb-3">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
               <div class="d-flex align-items-center gap-3">
-                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white fs-5" style="width: 52px; height: 52px; background: #2E6F40;">
+                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white fs-5 flex-shrink-0" style="width: 48px; height: 48px; background: #2E6F40;">
                   <?= strtoupper(substr($staff['full_name'], 0, 1)) ?>
                 </div>
-                <div>
+                <div class="min-w-0">
                   <h6 class="fw-bold font-outfit text-dark mb-0"><?= e($staff['full_name']) ?></h6>
-                  <span class="small text-forest fw-semibold"><?= e($staff['designation']) ?></span>
-                  <div class="small text-muted" style="font-size:0.75rem;">Staff ID: #KIT-<?= str_pad((string)$staff['profile_id'], 3, '0', STR_PAD_LEFT) ?></div>
+                  <span class="small text-muted"><?= e($staff['designation']) ?> · #KIT-<?= str_pad((string)$staff['profile_id'], 3, '0', STR_PAD_LEFT) ?></span>
                 </div>
               </div>
 
-              <span class="badge <?= $dutyBadge['class'] ?> rounded-pill px-2 py-1 small">
+              <span class="badge <?= $dutyBadge['class'] ?> rounded-pill px-2 py-2 small flex-shrink-0">
                 <i class="bi <?= $dutyBadge['icon'] ?> me-1"></i><?= $dutyBadge['label'] ?>
               </span>
             </div>
 
-            <!-- Details Box -->
-            <div class="p-3 rounded-3 bg-light border mb-3 small">
-              <div class="d-flex justify-content-between py-1 border-bottom">
-                <span class="text-muted"><i class="bi bi-clock me-1"></i>Shift Hours:</span>
-                <strong class="text-dark font-monospace"><?= e($staff['shift_timings']) ?></strong>
+            <div class="kitchen-staff-summary mb-3">
+              <div class="kitchen-summary-item">
+                <span class="kitchen-summary-label"><i class="bi bi-clock me-1"></i>Shift</span>
+                <strong class="font-monospace"><?= e($staff['shift_timings']) ?></strong>
               </div>
-              <div class="d-flex justify-content-between py-1 border-bottom">
-                <span class="text-muted"><i class="bi bi-telephone me-1"></i>Contact:</span>
-                <a href="tel:<?= e($staff['phone_number']) ?>" class="text-forest text-decoration-none fw-bold"><?= e($staff['phone_number']) ?></a>
+              <div class="kitchen-summary-item">
+                <span class="kitchen-summary-label"><i class="bi bi-telephone me-1"></i>Contact</span>
+                <a href="tel:<?= e($staff['phone_number']) ?>" class="text-forest text-decoration-none fw-semibold"><?= e($staff['phone_number']) ?></a>
               </div>
-              <div class="d-flex justify-content-between py-1 border-bottom">
-                <span class="text-muted"><i class="bi bi-award me-1"></i>Performance:</span>
-                <span class="fw-bold text-dark"><?= (int)$staff['total_orders_handled'] ?> orders • ⭐ <?= number_format($staff['rating'], 1) ?></span>
+              <div class="kitchen-summary-item">
+                <span class="kitchen-summary-label"><i class="bi bi-wallet2 me-1"></i>Monthly pay</span>
+                <strong><?= format_inr($staff['base_salary']) ?></strong>
               </div>
-              <div class="pt-2 text-muted" style="font-size:0.75rem;">
-                <strong>Specialization:</strong> <?= e($staff['specialization'] ?: 'General Gourmet Preparation') ?>
+              <div class="kitchen-summary-item">
+                <span class="kitchen-summary-label"><i class="bi bi-receipt me-1"></i><?= date('M Y') ?> payout</span>
+                <?php if ($isPaidThisMonth): ?>
+                  <span class="badge bg-success-subtle text-success rounded-pill"><?= format_inr($curPayout['net_paid']) ?> paid</span>
+                <?php else: ?>
+                  <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">Payment due</span>
+                <?php endif; ?>
               </div>
             </div>
 
-            <!-- Salary & Compensation Box -->
-            <div class="p-3 rounded-3 mb-3" style="background:#F9FAFB; border: 1px dashed #D1D5DB;">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small text-muted fw-bold text-uppercase" style="font-size:0.7rem;">MONTHLY SALARY:</span>
-                <span class="fw-bold font-outfit fs-6 text-dark"><?= format_inr($staff['base_salary']) ?></span>
-              </div>
-              
-              <div class="d-flex justify-content-between align-items-center">
-                <span class="small text-muted" style="font-size:0.75rem;">Status (<?= date('M Y') ?>):</span>
-                <?php if ($isPaidThisMonth): ?>
-                  <span class="badge bg-success bg-opacity-25 text-success border border-success rounded-pill px-2" style="font-size:0.7rem;">
-                    <i class="bi bi-check-circle-fill me-1"></i>PAID (<?= format_inr($curPayout['net_paid']) ?>)
-                  </span>
-                <?php else: ?>
-                  <span class="badge bg-warning bg-opacity-25 text-dark border border-warning rounded-pill px-2" style="font-size:0.7rem;">
-                    <i class="bi bi-clock-history me-1"></i>PAYMENT DUE
-                  </span>
-                <?php endif; ?>
-              </div>
+            <div class="small text-muted mb-3">
+              <span class="me-3"><i class="bi bi-award me-1"></i><?= (int)$staff['total_orders_handled'] ?> orders · <?= number_format($staff['rating'], 1) ?> rating</span>
+              <span><i class="bi bi-stars me-1"></i><?= e($staff['specialization'] ?: 'General preparation') ?></span>
             </div>
           </div>
 
           <!-- Action Buttons -->
-          <div class="d-flex gap-2 pt-2 border-top">
+          <div class="d-flex flex-wrap gap-2 pt-3 border-top">
             
             <!-- Attendance Dropdown -->
             <div class="dropdown flex-grow-1">
-              <button class="btn btn-outline-secondary btn-sm rounded-pill w-100 dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
-                Change Duty Status
+              <button class="btn btn-outline-secondary btn-sm rounded-3 w-100 dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown" aria-label="Update duty status for <?= e($staff['full_name']) ?>">
+                <i class="bi bi-person-check me-1"></i>Update status
               </button>
               <ul class="dropdown-menu shadow-sm border-0 rounded-3 small">
                 <li>
@@ -367,9 +430,9 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
             </div>
 
             <!-- Disburse Salary Button -->
-            <button type="button" class="btn btn-sm <?= $isPaidThisMonth ? 'btn-outline-success' : 'btn-success' ?> rounded-pill px-3 fw-bold" 
+            <button type="button" class="btn btn-sm <?= $isPaidThisMonth ? 'btn-outline-success' : 'btn-success' ?> rounded-3 px-3 fw-bold"
                     data-bs-toggle="modal" data-bs-target="#paySalaryModal<?= (int)$staff['profile_id'] ?>" style="<?= !$isPaidThisMonth ? 'background:#2E6F40; border-color:#2E6F40;' : '' ?>">
-              <i class="bi bi-cash-stack me-1"></i>Pay Salary
+              <i class="bi bi-cash-stack me-1"></i>Pay salary
             </button>
 
           </div>
@@ -444,6 +507,10 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
 
     <?php endforeach; ?>
   </div>
+  <div class="text-center text-muted py-5" id="kitchenStaffNoResults" <?= empty($kitchenStaff) ? '' : 'hidden' ?>>
+    <i class="bi bi-people fs-2 d-block mb-2"></i>
+    <span><?= empty($kitchenStaff) ? 'No kitchen staff profiles yet.' : 'No staff match these filters.' ?></span>
+  </div>
 
 </div>
 
@@ -511,5 +578,40 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
   </div>
 
 </div>
+
+<script>
+  (() => {
+    const searchInput = document.getElementById('kitchenStaffSearch');
+    const dutyFilter = document.getElementById('kitchenDutyFilter');
+    const paymentFilter = document.getElementById('kitchenPaymentFilter');
+    const staffCards = Array.from(document.querySelectorAll('.kitchen-staff-item'));
+    const resultCount = document.getElementById('kitchenStaffCount');
+    const noResults = document.getElementById('kitchenStaffNoResults');
+
+    const filterStaff = () => {
+      const searchTerm = searchInput.value.trim().toLocaleLowerCase();
+      const selectedDuty = dutyFilter.value;
+      const selectedPayment = paymentFilter.value;
+      let visibleCount = 0;
+
+      staffCards.forEach((card) => {
+        const matchesSearch = card.dataset.search.toLocaleLowerCase().includes(searchTerm);
+        const matchesDuty = !selectedDuty || card.dataset.duty === selectedDuty;
+        const matchesPayment = !selectedPayment || card.dataset.payment === selectedPayment;
+        const isVisible = matchesSearch && matchesDuty && matchesPayment;
+
+        card.hidden = !isVisible;
+        visibleCount += isVisible ? 1 : 0;
+      });
+
+      resultCount.textContent = `${visibleCount} shown`;
+      noResults.hidden = visibleCount > 0;
+    };
+
+    searchInput.addEventListener('input', filterStaff);
+    dutyFilter.addEventListener('change', filterStaff);
+    paymentFilter.addEventListener('change', filterStaff);
+  })();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
