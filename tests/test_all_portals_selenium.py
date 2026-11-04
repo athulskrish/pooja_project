@@ -100,7 +100,7 @@ class ZippyAllPortalsSeleniumTest(unittest.TestCase):
             lambda d: "admin/index.php" in d.current_url or "admin" in d.current_url
         )
         self.snap("13_admin_dashboard_kpis.png")
-        print("  [PASS] Logged in successfully as Admin (Pooja JP)")
+        print("  [PASS] Logged in successfully as Admin (Pooja)")
 
     def test_02_admin_dashboard_kpis_and_wsjf(self):
         """Test Admin Operations Dashboard KPIs and WSJF Queue"""
@@ -368,7 +368,7 @@ class ZippyAllPortalsSeleniumTest(unittest.TestCase):
         # Open Doorstep OTP Modal
         self.driver.execute_script(f"""
             if (typeof openOtpModal === 'function') {{
-                openOtpModal({del_order_id}, '{secret_otp}', 'Pooja JP (Customer)', 'COD', '₹332.95');
+                openOtpModal({del_order_id}, '{secret_otp}', 'Athul (Customer)', 'COD', '₹332.95');
             }}
         """)
         time.sleep(1)
@@ -492,7 +492,7 @@ class ZippyAllPortalsSeleniumTest(unittest.TestCase):
         email_input = self.driver.find_element(By.ID, "loginEmail")
         pwd_input = self.driver.find_element(By.ID, "loginPassword")
         email_input.clear()
-        email_input.send_keys("pooja@example.com")
+        email_input.send_keys("athul@example.com")
         pwd_input.clear()
         pwd_input.send_keys("password123")
         submit_btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")

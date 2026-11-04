@@ -4,10 +4,10 @@ Course: MCSP-232 | Student: Pooja JP | Zippy Food Ordering Platform
 
 Tests that a single browser (simulated with a single http.cookiejar.CookieJar)
 can simultaneously hold active sessions for:
-1. Customer (Pooja JP - role: CUSTOMER) via ZIPPY_CUSTOMER_SESS
+1. Customer (Athul - role: CUSTOMER) via ZIPPY_CUSTOMER_SESS
 2. Kitchen Chef (Sanjeev - role: KITCHEN) via ZIPPY_KITCHEN_SESS
 3. Delivery Rider (Suresh Kumar - role: RIDER) via ZIPPY_RIDER_SESS
-4. Admin (Pooja JP - role: ADMIN) via ZIPPY_ADMIN_SESS
+4. Admin (Pooja - role: ADMIN) via ZIPPY_ADMIN_SESS
 
 All four actors make simultaneous/interleaved requests in the same cookiejar
 without session overwrites, privilege leaks, or state collision.
@@ -47,28 +47,28 @@ class TestMultiBrowserSessions(unittest.TestCase):
         self.assertEqual(code, 200)
         cookie_names = [c.name for c in self.cj]
         self.assertIn("ZIPPY_CUSTOMER_SESS", cookie_names)
-        print("[OK] Tab 1 (Customer): Logged in as Pooja JP (CUSTOMER)")
+        print("[OK] Tab 1 (Customer): Logged in as Athul (CUSTOMER)")
 
         # Tab 2: Kitchen Chef Login
         code, url, text = self.get("/kitchen/login.php?demo=1")
         self.assertEqual(code, 200)
         cookie_names = [c.name for c in self.cj]
         self.assertIn("ZIPPY_KITCHEN_SESS", cookie_names)
-        print("[OK] Tab 2 (Kitchen): Logged in as Chef Sanjeev (KITCHEN)")
+        print("[OK] Tab 2 (Kitchen): Logged in as Chef Sajeev (KITCHEN)")
 
         # Tab 3: Delivery Rider Login
         code, url, text = self.get("/delivery/login.php?demo=1")
         self.assertEqual(code, 200)
         cookie_names = [c.name for c in self.cj]
         self.assertIn("ZIPPY_RIDER_SESS", cookie_names)
-        print("[OK] Tab 3 (Delivery): Logged in as Suresh Kumar (RIDER)")
+        print("[OK] Tab 3 (Delivery): Logged in as Shaji (RIDER)")
 
         # Tab 4: Restaurant Admin Login
         code, url, text = self.get("/admin/login.php?demo=1")
         self.assertEqual(code, 200)
         cookie_names = [c.name for c in self.cj]
         self.assertIn("ZIPPY_ADMIN_SESS", cookie_names)
-        print("[OK] Tab 4 (Admin): Logged in as Pooja JP (ADMIN)")
+        print("[OK] Tab 4 (Admin): Logged in as Pooja (ADMIN)")
 
         # Verify the single browser's cookie jar holds all 4 distinct session cookies simultaneously
         all_cookies = [cookie.name for cookie in self.cj]
@@ -88,38 +88,38 @@ class TestMultiBrowserSessions(unittest.TestCase):
         self.get("/delivery/login.php?demo=1")
         self.get("/admin/login.php?demo=1")
 
-        # Tab 1: Request Customer Profile -> Should identify as Pooja JP
+        # Tab 1: Request Customer Profile -> Should identify as Athul
         code, url, text = self.get("/customer/profile.php")
         self.assertEqual(code, 200)
-        self.assertIn("Pooja JP", text)
+        self.assertIn("Athul", text)
         self.assertIn("Customer Scope", text)
-        print("[OK] Tab 1 retained Customer identity (Pooja JP)")
+        print("[OK] Tab 1 retained Customer identity (Athul)")
 
         # Tab 2: Switch to Kitchen KDS -> Should show Station Online and Chef identity
         code, url, text = self.get("/kitchen/index.php")
         self.assertEqual(code, 200)
-        self.assertIn("KITCHEN SESSION SCOPE", text)
-        self.assertIn("Sanjeev", text)
-        print("[OK] Tab 2 retained Kitchen Chef identity (Chef Sanjeev)")
+        self.assertIn("ATELIER KDS", text)
+        self.assertIn("Sajeev", text)
+        print("[OK] Tab 2 retained Kitchen Chef identity (Chef Sajeev)")
 
-        # Tab 3: Switch to Delivery Fleet -> Should show Rider Scope and Suresh Kumar
+        # Tab 3: Switch to Delivery Fleet -> Should show Rider Scope and Shaji
         code, url, text = self.get("/delivery/index.php")
         self.assertEqual(code, 200)
-        self.assertIn("Rider Scope", text)
-        self.assertIn("Suresh Kumar", text)
-        print("[OK] Tab 3 retained Rider identity (Suresh Kumar)")
+        self.assertIn("delivery-partner-app", text)
+        self.assertIn("Shaji", text)
+        print("[OK] Tab 3 retained Rider identity (Shaji)")
 
         # Tab 4: Switch to Admin Console -> Should show Admin Session and Admin Dashboard
         code, url, text = self.get("/admin/index.php")
         self.assertEqual(code, 200)
         self.assertIn("Admin Portal Session", text)
         self.assertIn("ADMIN OPERATIONS", text)
-        print("[OK] Tab 4 retained Admin identity (Pooja JP - Admin)")
+        print("[OK] Tab 4 retained Admin identity (Pooja - Admin)")
 
         # Switch back to Tab 1: Customer Order History -> Must still be Customer, NOT Admin!
         code, url, text = self.get("/customer/order-history.php")
         self.assertEqual(code, 200)
-        self.assertIn("Pooja JP", text)
+        self.assertIn("Athul", text)
         self.assertIn("Customer Scope", text)
         print("[OK] Switched back to Tab 1: Still authenticated as Customer (no session overwrite!)")
 
@@ -157,7 +157,7 @@ class TestMultiBrowserSessions(unittest.TestCase):
         # Kitchen tab must STILL be logged in!
         code, url, text = self.get("/kitchen/index.php")
         self.assertEqual(code, 200)
-        self.assertIn("KITCHEN SESSION SCOPE", text)
+        self.assertIn("ATELIER KDS", text)
         print("[OK] Kitchen portal is STILL logged in (session independence verified)")
 
 if __name__ == "__main__":

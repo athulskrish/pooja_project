@@ -59,7 +59,7 @@ class ZippyRBACTest(unittest.TestCase):
         csrf = self.extract_csrf(f"{BASE_URL}/customer/login.php")
         login_data = urllib.parse.urlencode({
             'csrf_token': csrf,
-            'email': 'pooja@example.com',
+            'email': 'athul@example.com',
             'password': 'password123'
         }).encode('utf-8')
         resp = self.opener.open(f"{BASE_URL}/customer/login.php", data=login_data)
@@ -187,7 +187,7 @@ class ZippyRBACTest(unittest.TestCase):
         m = re.search(r'name="csrf_token" value="([^"]+)"', users_html)
         users_csrf = m.group(1)
 
-        # Admin user ID is 1 (Pooja JP Admin). Attempt to demote to Customer (Role 2)
+        # Admin user ID is 1 (Pooja Admin). Attempt to demote to Customer (Role 2)
         post_data = urllib.parse.urlencode({
             'csrf_token': users_csrf,
             'action': 'update_role',

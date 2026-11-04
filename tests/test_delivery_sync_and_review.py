@@ -157,7 +157,7 @@ def test_full_flow():
     c_csrf = get_csrf(c_resp.read().decode('utf-8'))
     cust_opener.open(f"{BASE_URL}/customer/login.php", data=urllib.parse.urlencode({
         'csrf_token': c_csrf,
-        'email': 'pooja@example.com',
+        'email': 'athul@example.com',
         'password': 'password123'
     }).encode('utf-8'))
 

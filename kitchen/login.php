@@ -19,7 +19,7 @@ if (is_kitchen() || is_admin()) {
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
     $result = attempt_login('chef@zippy.com', 'password123');
     if ($result['success']) {
-        set_flash('success', 'Authenticated as Kitchen Chef (Chef Sanjeev) in dedicated Kitchen session.');
+        set_flash('success', 'Authenticated as Kitchen Chef (Chef Sajeev) in dedicated Kitchen session.');
         header("Location: " . KITCHEN_URL . "/index.php");
         exit;
     }
@@ -298,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           </div>
           <button type="button" class="btn btn-demo-quick w-100 shadow-sm" onclick="quickLoginChef()">
             <i class="fa-solid fa-hat-chef"></i>
-            <span>Sign In as Chef Sanjeev</span>
+            <span>Sign In as Chef Sajeev</span>
           </button>
         </div>
 

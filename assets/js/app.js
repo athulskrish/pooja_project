@@ -29,6 +29,13 @@ if (Array.isArray(cart)) {
 
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
+  // Prevent stale cache restore from browser bfcache
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      window.location.reload();
+    }
+  });
+
   updateCartBadge();
   renderCartDrawer();
   setupFilterPills();
@@ -37,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderDishQtyControls();
   initMobileBottomNav();
   initAdminMobileDrawer();
+  initCustomerCatalogLiveSync();
   
   // Refresh drawer and hide mobile bar whenever offcanvas is shown
   const drawer = document.getElementById('cartDrawer');
@@ -1383,4 +1391,70 @@ window.submitInlineDishReview = function(e) {
     if (formBox) formBox.style.display = 'none';
   });
 };
+
+/**
+ * Real-Time Customer Storefront Catalog Synchronizer
+ * Detects live menu additions, price updates, and category changes from Admin
+ */
+function initCustomerCatalogLiveSync() {
+  if (!window.POOJA_CATALOG_VER || !window.API_URL) return;
+
+  let lastKnownCatalogVer = window.POOJA_CATALOG_VER;
+
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${window.API_URL}/catalog-sync.php?portal=customer&version=${encodeURIComponent(lastKnownCatalogVer)}`, {
+        cache: 'no-store'
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && data.changed) {
+        lastKnownCatalogVer = data.version;
+        showCustomerMenuUpdateBanner(data.message || 'Menu updated with new dishes or category specials!');
+        
+        // Synchronize any items in localStorage cart with live catalog
+        if (Array.isArray(cart) && cart.length > 0 && data.latest_dish) {
+          let cartUpdated = false;
+          cart.forEach(item => {
+            if (item.id === data.latest_dish.item_id) {
+              const latestPrice = parseFloat(data.latest_dish.price);
+              if (item.price !== latestPrice) {
+                item.price = latestPrice;
+                cartUpdated = true;
+              }
+            }
+          });
+          if (cartUpdated) {
+            saveCart();
+            if (typeof showToast === 'function') {
+              showToast('Notice: Cart item prices synchronized with live menu.');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Silently catch background errors
+    }
+  }, 10000); // Check every 10 seconds
+}
+
+function showCustomerMenuUpdateBanner(msg) {
+  if (document.getElementById('customerMenuUpdateAlert')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'customerMenuUpdateAlert';
+  banner.className = 'position-fixed bottom-0 start-50 translate-middle-x mb-4 shadow-lg rounded-pill px-4 py-2 bg-dark text-white d-flex align-items-center gap-3';
+  banner.style.cssText = 'z-index: 1080; border: 2px solid #2E6F40; animation: bounceIn 0.4s ease; max-width: 90vw;';
+  
+  const safeMsg = (typeof msg === 'string') ? msg.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'Menu catalog was updated.';
+  banner.innerHTML = `
+    <span class="live-pulse-dot green flex-shrink-0"></span>
+    <span class="small fw-semibold text-white text-truncate">${safeMsg}</span>
+    <button type="button" class="btn btn-sm btn-success rounded-pill px-3 py-1 fw-bold text-white shadow-xs" onclick="window.location.reload();" style="background:#2E6F40; border:none; white-space:nowrap;">
+      <i class="bi bi-arrow-clockwise me-1"></i> Refresh Menu
+    </button>
+    <button type="button" class="btn-close btn-close-white btn-sm ms-1" onclick="this.parentElement.remove();"></button>
+  `;
+  document.body.appendChild(banner);
+}
 

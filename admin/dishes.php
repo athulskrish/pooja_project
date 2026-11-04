@@ -219,6 +219,15 @@ require_once __DIR__ . '/includes/header.php';
 // Fetch categories for filter and dropdowns
 $categories = db_fetch_all("SELECT * FROM `categories` ORDER BY `display_order` ASC");
 
+// Compute initial version fingerprints for live change detection & notifications
+$catFingerprintData = array_map(function($c) {
+    return [(int)$c['category_id'], $c['category_name'], (int)$c['display_order'], (int)$c['is_active']];
+}, $categories);
+$dishFingerprintData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id ASC");
+$initialCatVer = md5(json_encode($catFingerprintData));
+$initialDishVer = md5(json_encode($dishFingerprintData));
+$initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
+
 // Calculate KPI Summary Metrics
 $kpiTotalDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items`");
 $kpiAvailableDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 1 AND `stock_quantity` > 0");
@@ -377,6 +386,10 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
   </div>
 
   <div class="d-flex align-items-center gap-2 flex-wrap">
+    <span class="badge bg-light text-forest border px-3 py-2 rounded-pill font-monospace shadow-xs d-inline-flex align-items-center gap-1" id="dishesLiveSyncBadge">
+      <span class="live-pulse-dot green me-1"></span> Live Sync: <span id="dishesSyncTimer">5s</span>
+    </span>
+
     <a href="<?= ADMIN_URL ?>/dishes.php?export=csv" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-xs">
       <i class="bi bi-file-earmark-arrow-down me-1"></i> Export CSV
     </a>
@@ -387,6 +400,23 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
   </div>
 </div>
 
+<!-- Real-time Catalog Alert Banner -->
+<div id="dishesLiveAlert" class="alert alert-success border-2 shadow-sm rounded-4 d-none align-items-center justify-content-between p-3 mb-4" role="alert" style="background:#EDFBF2; border-color:#2E6F40;">
+  <div class="d-flex align-items-center gap-2">
+    <i class="fa-solid fa-bell text-forest fs-5"></i>
+    <div>
+      <strong class="text-forest" id="dishesLiveAlertTitle">Catalog Update Detected!</strong>
+      <div class="small text-dark" id="dishesLiveAlertMsg">Menu items or category classifications were updated.</div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-success rounded-pill px-3 fw-bold text-white shadow-xs" onclick="window.location.reload();" style="background:#2E6F40; border:none;">
+      <i class="bi bi-arrow-clockwise me-1"></i> Refresh Catalog
+    </button>
+    <button type="button" class="btn-close" onclick="document.getElementById('dishesLiveAlert').classList.add('d-none'); document.getElementById('dishesLiveAlert').classList.remove('d-flex');"></button>
+  </div>
+</div>
+
 <!-- Executive KPI Summary Cards -->
 <div class="row g-3 mb-4">
   <div class="col-12 col-sm-6 col-xl-3">
@@ -394,7 +424,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <span class="text-muted small fw-semibold">Total Catalog</span>
-          <h3 class="fw-bold font-outfit text-dark mb-0 mt-1"><?= $kpiTotalDishes ?></h3>
+          <h3 class="fw-bold font-outfit text-dark mb-0 mt-1" id="kpiTotalDishes"><?= $kpiTotalDishes ?></h3>
           <div class="small text-muted mt-1" style="font-size:0.75rem;">
             <span class="text-success fw-bold"><?= $kpiVegDishes ?> Veg</span> • <span class="text-danger fw-bold"><?= $kpiNonVegDishes ?> Non-Veg</span>
           </div>
@@ -445,7 +475,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <span class="text-muted small fw-semibold">86-List / Sold Out</span>
-          <h3 class="fw-bold font-outfit text-danger mb-0 mt-1"><?= $kpiSoldOutDishes ?></h3>
+          <h3 class="fw-bold font-outfit text-danger mb-0 mt-1" id="kpiSoldOutDishes"><?= $kpiSoldOutDishes ?></h3>
           <div class="small text-muted mt-1" style="font-size:0.75rem;">
             Disabled or 0 portions
           </div>
@@ -1414,6 +1444,83 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   };
+
+  // Real-Time Catalog Synchronization & Live Change Detection
+  let dishesSyncCountdown = 5;
+  let currentCatVer = <?= json_encode($initialCatVer ?? '') ?>;
+  let currentDishVer = <?= json_encode($initialDishVer ?? '') ?>;
+  let currentCombinedVer = <?= json_encode($initialCombinedVer ?? '') ?>;
+
+  setInterval(async () => {
+    dishesSyncCountdown--;
+    const timerSpan = document.getElementById('dishesSyncTimer');
+    if (timerSpan) timerSpan.textContent = dishesSyncCountdown + 's';
+
+    if (dishesSyncCountdown <= 0) {
+      dishesSyncCountdown = 5;
+      try {
+        const res = await fetch('../api/catalog-sync.php?portal=dishes&version=' + encodeURIComponent(currentCombinedVer) + '&cat_ver=' + encodeURIComponent(currentCatVer) + '&dish_ver=' + encodeURIComponent(currentDishVer), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.changed) {
+          currentCombinedVer = data.version;
+          currentCatVer = data.cat_ver;
+          currentDishVer = data.dish_ver;
+
+          // Surface Notification Alert Banner
+          const alertBox = document.getElementById('dishesLiveAlert');
+          const alertTitle = document.getElementById('dishesLiveAlertTitle');
+          const alertMsg = document.getElementById('dishesLiveAlertMsg');
+          if (alertBox && alertMsg) {
+            alertTitle.textContent = (data.change_type === 'category') ? '🔔 Category Update Detected!' : ((data.change_type === 'dish') ? '🔔 Dishes Inventory Update!' : '🔔 Menu Catalog Updated!');
+            alertMsg.textContent = data.message || 'Categories or menu offerings were updated. Dropdowns and metrics synced.';
+            alertBox.classList.remove('d-none');
+            alertBox.classList.add('d-flex');
+          }
+
+          // If categories changed, dynamically synchronize dropdowns
+          if (data.categories_list && Array.isArray(data.categories_list)) {
+            const filterSelect = document.querySelector('select[name="category"]');
+            const addSelect = document.querySelector('#addDishModal select[name="category_id"]');
+            const editSelect = document.getElementById('editDishCategory');
+
+            const syncSelectOptions = (sel, includeAll = false) => {
+              if (!sel) return;
+              const curVal = sel.value;
+              sel.innerHTML = '';
+              if (includeAll) {
+                const optAll = document.createElement('option');
+                optAll.value = '';
+                optAll.textContent = 'All Categories';
+                sel.appendChild(optAll);
+              }
+              data.categories_list.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.category_id;
+                opt.textContent = c.category_name;
+                if (String(c.category_id) === String(curVal)) opt.selected = true;
+                sel.appendChild(opt);
+              });
+            };
+
+            syncSelectOptions(filterSelect, true);
+            syncSelectOptions(addSelect, false);
+            syncSelectOptions(editSelect, false);
+          }
+
+          // Update KPI metrics
+          if (data.metrics) {
+            const kpiTotal = document.getElementById('kpiTotalDishes');
+            const kpiSoldOut = document.getElementById('kpiSoldOutDishes');
+            if (kpiTotal) kpiTotal.textContent = data.metrics.total_dishes;
+            if (kpiSoldOut) kpiSoldOut.textContent = data.metrics.sold_out_dishes;
+          }
+        }
+      } catch (err) {
+        // Silently catch background errors
+      }
+    }
+  }, 1000);
 
   function updateStockBadgeUI(badgeElem, qty) {
     const quantity = parseInt(qty, 10);

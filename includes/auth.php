@@ -17,13 +17,23 @@ require_once __DIR__ . '/functions.php';
 function attempt_login(string $email, string $password, ?string $requiredRole = null): array {
     $email = trim(strtolower($email));
     
+    // Support convenient email aliases
+    $lookupEmail = $email;
+    if ($lookupEmail === 'pooja@zippy.com') {
+        $lookupEmail = 'admin@zippy.com';
+    } elseif ($lookupEmail === 'sajeev@zippy.com') {
+        $lookupEmail = 'chef@zippy.com';
+    } elseif ($lookupEmail === 'rider@zippy.com') {
+        $lookupEmail = 'shaji@zippy.com';
+    }
+    
     $sql = "SELECT u.*, r.role_name 
             FROM `users` u 
             JOIN `roles` r ON u.role_id = r.role_id 
             WHERE LOWER(u.email) = :email 
             LIMIT 1";
     
-    $user = db_fetch_one($sql, [':email' => $email]);
+    $user = db_fetch_one($sql, [':email' => $lookupEmail]);
 
     if (!$user) {
         return ['success' => false, 'message' => 'No account found with this email address.', 'user' => null];

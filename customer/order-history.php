@@ -20,7 +20,7 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 $currentUser = current_user();
-$userId = $currentUser ? (int)$currentUser['id'] : 2; // Default to demo customer Pooja JP if guest
+$userId = $currentUser ? (int)$currentUser['id'] : 2; // Default to demo customer Athul if guest
 
 // -----------------------------------------------------------------------------
 // Handle Customer Order Cancellation (within 60s of placement)
@@ -326,7 +326,7 @@ require_once __DIR__ . '/includes/header.php';
         <h2 class="fw-bold mb-0 font-outfit text-dark d-flex align-items-center gap-2">
           <i class="bi bi-clock-history text-forest"></i> Customer Order History
         </h2>
-        <p class="text-muted small mb-0">Showing orders and receipts for <strong><?= e($currentUser ? $currentUser['name'] : 'Pooja JP') ?></strong></p>
+        <p class="text-muted small mb-0">Showing orders and receipts for <strong><?= e($currentUser ? $currentUser['name'] : 'Athul') ?></strong></p>
       </div>
       <div class="d-flex align-items-center gap-2">
         <a href="<?= CUSTOMER_URL ?>/index.php#dishes" class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center gap-2" style="background:#2E6F40; border-color:#2E6F40;">

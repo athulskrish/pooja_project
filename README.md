@@ -127,11 +127,14 @@ All demo accounts share the universal password: **`password123`**
 
 | Role | Name | Email | Password | Access Portal |
 |:---|:---|:---|:---:|:---|
-| **ADMIN** | Pooja JP (Admin) | `admin@zippy.com` | `password123` | [`admin/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/admin/index.php) |
-| **CUSTOMER** | Pooja JP (Customer) | `pooja@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
-| **CUSTOMER** | Rahul Sharma | `rahul@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
-| **KITCHEN** | Chef Sanjeev | `chef@zippy.com` | `password123` | [`kitchen/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/kitchen/index.php) |
-| **RIDER** | Suresh Kumar | `rider@zippy.com` | `password123` | [`delivery/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) |
+| **ADMIN** | Pooja (Admin) | `admin@zippy.com` | `password123` | [`admin/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/admin/index.php) |
+| **CUSTOMER** | Athul (Customer) | `athul@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
+| **CUSTOMER** | Amal (Customer) | `amal@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
+| **CUSTOMER** | Abhijith (Customer) | `abhijith@example.com` | `password123` | [`customer/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/customer/index.php) |
+| **KITCHEN** | Chef Sajeev (Head Cook) | `chef@zippy.com` | `password123` | [`kitchen/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/kitchen/index.php) |
+| **RIDER** | Shaji (Rider) | `shaji@zippy.com` | `password123` | [`delivery/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) |
+| **RIDER** | Kichu (Rider) | `kichu@zippy.com` | `password123` | [`delivery/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) |
+| **RIDER** | Abhi (Rider) | `abhi@zippy.com` | `password123` | [`delivery/index.php`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/delivery/index.php) |
 
 ---
 

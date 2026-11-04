@@ -15,7 +15,7 @@ ON DUPLICATE KEY UPDATE `description` = VALUES(`description`);
 -- 2. Insert Users (Password: 'password123' hashed with Argon2id / Bcrypt)
 -- Hash generated for 'password123': $2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC (compatible bcrypt fallback)
 INSERT INTO `users` (`user_id`, `role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) VALUES
-(1, 1, 'Pooja JP', 'pooja@zippy.test', '+91 9876543210', '$2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC', 1),
+(1, 1, 'Athul', 'athul@zippy.test', '+91 9876543210', '$2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC', 1),
 (2, 1, 'Rahul Sharma', 'rahul@zippy.test', '+91 9876543211', '$2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC', 1),
 (3, 2, 'Chef Vikram Rao', 'chef@zippy.test', '+91 9876543212', '$2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC', 1),
 (4, 3, 'Rajesh Kumar', 'rider@zippy.test', '+91 9876543213', '$2y$10$e8wScmK2q4K8wz1pC0XWLe43hW7hM4qT0nKq3f3R6bYgI3i0.x.tC', 1),

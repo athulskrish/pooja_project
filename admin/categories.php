@@ -205,7 +205,98 @@ foreach ($categories as $cat) {
 
 $maxOrder = !empty($categories) ? max(array_column($categories, 'display_order')) : 0;
 $suggestedNextOrder = $maxOrder + 1;
+
+// Compute initial version fingerprints for live change detection & notifications
+$catFingerprintData = array_map(function($c) {
+    return [(int)$c['category_id'], $c['category_name'], (int)$c['display_order'], (int)$c['is_active'], (int)$c['total_dishes']];
+}, $categories);
+$dishFingerprintData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id ASC");
+$initialCatVer = md5(json_encode($catFingerprintData));
+$initialDishVer = md5(json_encode($dishFingerprintData));
+$initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
 ?>
+
+<style>
+  /* Assigned Dishes Pill Badge Styling */
+  .assigned-dishes-badge {
+    background-color: #EDFBF2 !important;
+    color: #2E6F40 !important;
+    border: 1px solid rgba(46, 111, 64, 0.25) !important;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: all 0.2s ease;
+  }
+  .assigned-dishes-badge i.fa-bowl-food {
+    color: #2E6F40 !important;
+  }
+  .assigned-dishes-badge span {
+    color: #1C2B20 !important;
+  }
+  .assigned-dishes-badge i.bi-arrow-up-right {
+    color: #2E6F40 !important;
+    opacity: 0.75;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  .assigned-dishes-badge:hover {
+    background-color: #CEFFDC !important;
+    border-color: #2E6F40 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(46, 111, 64, 0.16) !important;
+  }
+  .assigned-dishes-badge:hover i.bi-arrow-up-right {
+    transform: translate(1px, -1px);
+    opacity: 1;
+  }
+
+  .empty-dishes-badge {
+    background-color: #FFF8E1 !important;
+    color: #6D4C00 !important;
+    border: 1px solid #FFE082 !important;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: all 0.2s ease;
+  }
+  .empty-dishes-badge i {
+    color: #E5A100 !important;
+  }
+  .empty-dishes-badge span {
+    color: #6D4C00 !important;
+  }
+  .empty-dishes-badge:hover {
+    background-color: #FFECB3 !important;
+    border-color: #FFB300 !important;
+    transform: translateY(-1px);
+  }
+
+  /* Storefront Status Toggle Pill Styling */
+  .status-btn-live {
+    background-color: #EDFBF2 !important;
+    color: #2E6F40 !important;
+    border: 1px solid rgba(46, 111, 64, 0.3) !important;
+    font-size: 0.82rem;
+    transition: all 0.2s ease;
+  }
+  .status-btn-live:hover {
+    background-color: #DCF6E6 !important;
+    border-color: #2E6F40 !important;
+    color: #243E2C !important;
+  }
+
+  .status-btn-hidden {
+    background-color: #F8F9FA !important;
+    color: #6C757D !important;
+    border: 1px solid #DEE2E6 !important;
+    font-size: 0.82rem;
+    transition: all 0.2s ease;
+  }
+  .status-btn-hidden:hover {
+    background-color: #E9ECEF !important;
+    border-color: #ADB5BD !important;
+    color: #495057 !important;
+  }
+</style>
 
 <!-- ===========================================================================
      TOP KPI METRIC CARDS
@@ -219,8 +310,8 @@ $suggestedNextOrder = $maxOrder + 1;
         </div>
         <div>
           <div class="text-muted small fw-semibold">Total Categories</div>
-          <div class="fs-4 fw-bold font-outfit text-dark"><?= $totalCategories ?></div>
-          <div class="text-muted" style="font-size: 0.72rem;"><?= $totalDishesMapped ?> dishes mapped</div>
+          <div class="fs-4 fw-bold font-outfit text-dark" id="kpiTotalCategories"><?= $totalCategories ?></div>
+          <div class="text-muted" id="kpiDishesMapped" style="font-size: 0.72rem;"><?= $totalDishesMapped ?> dishes mapped</div>
         </div>
       </div>
     </div>
@@ -234,7 +325,7 @@ $suggestedNextOrder = $maxOrder + 1;
         </div>
         <div>
           <div class="text-muted small fw-semibold">Live on Storefront</div>
-          <div class="fs-4 fw-bold font-outfit text-success"><?= $activeCount ?></div>
+          <div class="fs-4 fw-bold font-outfit text-success" id="kpiActiveCount"><?= $activeCount ?></div>
           <div class="text-muted" style="font-size: 0.72rem;">Customer navigable</div>
         </div>
       </div>
@@ -249,7 +340,7 @@ $suggestedNextOrder = $maxOrder + 1;
         </div>
         <div>
           <div class="text-muted small fw-semibold">Hidden / Offline</div>
-          <div class="fs-4 fw-bold font-outfit text-secondary"><?= $hiddenCount ?></div>
+          <div class="fs-4 fw-bold font-outfit text-secondary" id="kpiHiddenCount"><?= $hiddenCount ?></div>
           <div class="text-muted" style="font-size: 0.72rem;">Draft or seasonal</div>
         </div>
       </div>
@@ -264,7 +355,7 @@ $suggestedNextOrder = $maxOrder + 1;
         </div>
         <div>
           <div class="text-muted small fw-semibold">Empty Sections</div>
-          <div class="fs-4 fw-bold font-outfit text-warning"><?= $emptyCount ?></div>
+          <div class="fs-4 fw-bold font-outfit text-warning" id="kpiEmptyCount"><?= $emptyCount ?></div>
           <div class="text-muted" style="font-size: 0.72rem;">Needs menu dishes</div>
         </div>
       </div>
@@ -288,10 +379,33 @@ $suggestedNextOrder = $maxOrder + 1;
       </p>
     </div>
 
-    <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm d-inline-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addCategoryModal" style="background:#2E6F40; border-color:#2E6F40;">
-      <i class="bi bi-plus-lg"></i>
-      <span>Add New Category</span>
-    </button>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="badge bg-light text-forest border px-3 py-2 rounded-pill font-monospace shadow-xs d-inline-flex align-items-center gap-1" id="catLiveSyncBadge">
+        <span class="live-pulse-dot green me-1"></span> Live Sync: <span id="catSyncTimer">5s</span>
+      </span>
+
+      <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm d-inline-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addCategoryModal" style="background:#2E6F40; border-color:#2E6F40;">
+        <i class="bi bi-plus-lg"></i>
+        <span>Add New Category</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Real-time Catalog Alert Banner -->
+  <div id="catLiveAlert" class="alert alert-success border-2 shadow-sm rounded-4 d-none align-items-center justify-content-between p-3 mb-3" role="alert" style="background:#EDFBF2; border-color:#2E6F40;">
+    <div class="d-flex align-items-center gap-2">
+      <i class="fa-solid fa-bell text-forest fs-5"></i>
+      <div>
+        <strong class="text-forest" id="catLiveAlertTitle">Catalog Update Detected!</strong>
+        <div class="small text-dark" id="catLiveAlertMsg">Menu items or category classifications were updated.</div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-sm btn-success rounded-pill px-3 fw-bold text-white shadow-xs" onclick="window.location.reload();" style="background:#2E6F40; border:none;">
+        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Table
+      </button>
+      <button type="button" class="btn-close" onclick="document.getElementById('catLiveAlert').classList.add('d-none'); document.getElementById('catLiveAlert').classList.remove('d-flex');"></button>
+    </div>
   </div>
 
   <!-- Real-time Filter & Search Toolbar -->
@@ -353,6 +467,7 @@ $suggestedNextOrder = $maxOrder + 1;
         <?php else: ?>
           <?php foreach ($categories as $cat): ?>
             <tr class="category-row" 
+                id="catRow_<?= (int)$cat['category_id'] ?>"
                 data-id="<?= (int)$cat['category_id'] ?>"
                 data-name="<?= strtolower(e($cat['category_name'])) ?>"
                 data-slug="<?= strtolower(e($cat['category_slug'])) ?>"
@@ -420,22 +535,24 @@ $suggestedNextOrder = $maxOrder + 1;
 
               <!-- Assigned Dishes Count (Clickable Deep-Link to Dishes Page) -->
               <td>
-                <?php if ((int)$cat['total_dishes'] > 0): ?>
-                  <a href="<?= ADMIN_URL ?>/dishes.php?category=<?= (int)$cat['category_id'] ?>" 
-                     class="badge bg-light text-forest border border-success border-opacity-25 text-decoration-none px-3 py-2 rounded-pill d-inline-flex align-items-center gap-2 hover-shadow" 
-                     title="View and manage dishes under this category">
-                    <i class="fa-solid fa-bowl-food text-forest"></i>
-                    <span class="fw-bold"><?= (int)$cat['total_dishes'] ?> dishes</span>
-                    <i class="bi bi-arrow-up-right small text-muted"></i>
-                  </a>
-                <?php else: ?>
-                  <a href="<?= ADMIN_URL ?>/dishes.php" 
-                     class="badge bg-warning bg-opacity-20 text-dark border border-warning text-decoration-none px-2 py-1 rounded-pill d-inline-flex align-items-center gap-1" 
-                     title="Empty section! Click to assign dishes in Dish Catalog.">
-                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
-                    <span>0 dishes (Empty)</span>
-                  </a>
-                <?php endif; ?>
+                <div class="cat-dishes-cell" id="catDishesCell_<?= (int)$cat['category_id'] ?>" data-category-id="<?= (int)$cat['category_id'] ?>">
+                  <?php if ((int)$cat['total_dishes'] > 0): ?>
+                    <a href="<?= ADMIN_URL ?>/dishes.php?category=<?= (int)$cat['category_id'] ?>" 
+                       class="badge assigned-dishes-badge text-decoration-none px-3 py-2 rounded-pill d-inline-flex align-items-center gap-2" 
+                       title="View and manage dishes under this category">
+                      <i class="fa-solid fa-bowl-food"></i>
+                      <span class="fw-bold"><?= (int)$cat['total_dishes'] ?> <?= ((int)$cat['total_dishes'] === 1) ? 'dish' : 'dishes' ?></span>
+                      <i class="bi bi-arrow-up-right small"></i>
+                    </a>
+                  <?php else: ?>
+                    <a href="<?= ADMIN_URL ?>/dishes.php" 
+                       class="badge empty-dishes-badge text-decoration-none px-3 py-2 rounded-pill d-inline-flex align-items-center gap-1.5" 
+                       title="Empty section! Click to assign dishes in Dish Catalog.">
+                      <i class="bi bi-exclamation-triangle-fill"></i>
+                      <span class="fw-bold">0 dishes (Empty)</span>
+                    </a>
+                  <?php endif; ?>
+                </div>
               </td>
 
               <!-- 1-Click Status Toggle -->
@@ -447,13 +564,13 @@ $suggestedNextOrder = $maxOrder + 1;
                   
                   <?php if ($cat['is_active']): ?>
                     <button type="submit" 
-                            class="btn btn-sm btn-success bg-opacity-10 text-success border-success border-opacity-25 rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" 
+                            class="btn btn-sm rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-2 status-btn-live shadow-xs" 
                             title="Active on customer app. Click to hide.">
                       <span class="live-pulse-dot green"></span> Live
                     </button>
                   <?php else: ?>
                     <button type="submit" 
-                            class="btn btn-sm btn-secondary bg-opacity-10 text-secondary border-secondary border-opacity-25 rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" 
+                            class="btn btn-sm rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-1 status-btn-hidden shadow-xs" 
                             title="Hidden from storefront. Click to make live.">
                       <i class="bi bi-eye-slash-fill me-1"></i> Hidden
                     </button>
@@ -1072,6 +1189,96 @@ document.addEventListener('DOMContentLoaded', function() {
   tooltipTriggerList.map(function(el) {
     return new bootstrap.Tooltip(el);
   });
+
+  // ---------------------------------------------------------------------------
+  // 8. Real-Time Live Sync & Change Detection
+  // ---------------------------------------------------------------------------
+  let catSyncCountdown = 5;
+  let currentCatVer = <?= json_encode($initialCatVer ?? '') ?>;
+  let currentDishVer = <?= json_encode($initialDishVer ?? '') ?>;
+  let currentCombinedVer = <?= json_encode($initialCombinedVer ?? '') ?>;
+
+  setInterval(async () => {
+    catSyncCountdown--;
+    const timerEl = document.getElementById('catSyncTimer');
+    if (timerEl) timerEl.textContent = catSyncCountdown + 's';
+
+    if (catSyncCountdown <= 0) {
+      catSyncCountdown = 5;
+      try {
+        const res = await fetch('../api/catalog-sync.php?portal=categories&version=' + encodeURIComponent(currentCombinedVer) + '&cat_ver=' + encodeURIComponent(currentCatVer) + '&dish_ver=' + encodeURIComponent(currentDishVer), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.changed) {
+          currentCombinedVer = data.version;
+          currentCatVer = data.cat_ver;
+          currentDishVer = data.dish_ver;
+
+          // Show Alert Banner
+          const alertBox = document.getElementById('catLiveAlert');
+          const alertMsg = document.getElementById('catLiveAlertMsg');
+          const alertTitle = document.getElementById('catLiveAlertTitle');
+          if (alertBox && alertMsg) {
+            alertTitle.textContent = data.change_type === 'dish' ? '🔔 New Dish / Inventory Update!' : (data.change_type === 'category' ? '🔔 Category Update Detected!' : '🔔 Menu Catalog Updated!');
+            alertMsg.textContent = data.message || 'Assigned dish counts and catalog metrics have been synchronized.';
+            alertBox.classList.remove('d-none');
+            alertBox.classList.add('d-flex');
+          }
+
+          // Real-time update KPI cards
+          if (data.metrics) {
+            const elTotalCats = document.getElementById('kpiTotalCategories');
+            const elDishesMapped = document.getElementById('kpiDishesMapped');
+            const elActive = document.getElementById('kpiActiveCount');
+            const elHidden = document.getElementById('kpiHiddenCount');
+            const elEmpty = document.getElementById('kpiEmptyCount');
+
+            if (elTotalCats) elTotalCats.textContent = data.metrics.total_categories;
+            if (elDishesMapped) elDishesMapped.textContent = data.metrics.total_dishes_mapped + ' dishes mapped';
+            if (elActive) elActive.textContent = data.metrics.active_categories;
+            if (elHidden) elHidden.textContent = (data.metrics.total_categories - data.metrics.active_categories);
+            if (elEmpty) elEmpty.textContent = data.metrics.empty_categories;
+          }
+
+          // Real-time update Assigned Dishes pill badges across table rows
+          if (data.category_dish_counts) {
+            for (const [cid, cData] of Object.entries(data.category_dish_counts)) {
+              const cell = document.getElementById('catDishesCell_' + cid);
+              if (cell) {
+                const count = cData.total_dishes;
+                if (count > 0) {
+                  cell.innerHTML = `
+                    <a href="<?= ADMIN_URL ?>/dishes.php?category=${cid}" 
+                       class="badge assigned-dishes-badge text-decoration-none px-3 py-2 rounded-pill d-inline-flex align-items-center gap-2" 
+                       title="View and manage dishes under this category">
+                      <i class="fa-solid fa-bowl-food"></i>
+                      <span class="fw-bold">${count} ${count === 1 ? 'dish' : 'dishes'}</span>
+                      <i class="bi bi-arrow-up-right small"></i>
+                    </a>
+                  `;
+                } else {
+                  cell.innerHTML = `
+                    <a href="<?= ADMIN_URL ?>/dishes.php" 
+                       class="badge empty-dishes-badge text-decoration-none px-3 py-2 rounded-pill d-inline-flex align-items-center gap-1.5" 
+                       title="Empty section! Click to assign dishes in Dish Catalog.">
+                      <i class="bi bi-exclamation-triangle-fill"></i>
+                      <span class="fw-bold">0 dishes (Empty)</span>
+                    </a>
+                  `;
+                }
+                const row = document.getElementById('catRow_' + cid);
+                if (row) {
+                  row.dataset.empty = (count === 0) ? 'empty' : 'has-dishes';
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Silently catch background errors
+      }
+    }
+  }, 1000);
 
   function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

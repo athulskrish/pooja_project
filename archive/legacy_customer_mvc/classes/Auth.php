@@ -23,8 +23,8 @@ class Auth {
         }
         return [
             'id' => $_SESSION['user_id'],
-            'name' => $_SESSION['user_name'] ?? 'Pooja JP',
-            'email' => $_SESSION['user_email'] ?? 'pooja@zippy.test',
+            'name' => $_SESSION['user_name'] ?? 'Athul',
+            'email' => $_SESSION['user_email'] ?? 'athul@zippy.test',
             'phone' => $_SESSION['user_phone'] ?? '+91 9876543210',
             'role_id' => $_SESSION['user_role_id'] ?? 1,
             'role_name' => $_SESSION['user_role_name'] ?? 'CUSTOMER'
@@ -84,8 +84,8 @@ class Auth {
 
         // Demo fallback accounts for viva defense and evaluation
         $demoAccounts = [
-            'pooja@zippy.test' => ['id' => 1, 'name' => 'Pooja JP', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
-            'customer@zippy.test' => ['id' => 1, 'name' => 'Pooja JP', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
+            'athul@zippy.test' => ['id' => 1, 'name' => 'Athul', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
+            'customer@zippy.test' => ['id' => 1, 'name' => 'Athul', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
             'rahul@zippy.test' => ['id' => 2, 'name' => 'Rahul Sharma', 'phone' => '+91 9876543211', 'role' => 'CUSTOMER']
         ];
 

@@ -71,12 +71,12 @@ require_once __DIR__ . '/includes/header.php';
             <div class="row g-3 mb-3">
               <div class="col-12">
                 <label class="form-label small fw-bold">Full Name *</label>
-                <input type="text" name="full_name" class="form-control rounded-3" placeholder="Pooja JP" required>
+                <input type="text" name="full_name" class="form-control rounded-3" placeholder="Athul" required>
               </div>
 
               <div class="col-md-6">
                 <label class="form-label small fw-bold">Email Address *</label>
-                <input type="email" name="email" class="form-control rounded-3" placeholder="pooja@example.com" required>
+                <input type="email" name="email" class="form-control rounded-3" placeholder="athul@example.com" required>
               </div>
 
               <div class="col-md-6">

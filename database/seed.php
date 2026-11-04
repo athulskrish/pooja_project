@@ -43,17 +43,39 @@ try {
     // Split statements by semicolon
     $statements = array_filter(array_map('trim', explode(';', $cleanSql)));
 
+    // Disable foreign key checks for clean tear down and recreation
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0;");
+
     foreach ($statements as $stmt) {
         if (!empty($stmt)) {
             $pdo->exec($stmt);
         }
     }
-    $messages[] = "All 13 Relational Tables (3NF) & Seed records imported successfully.";
+
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
+    $messages[] = "All 17 Relational Tables (3NF), Staff Profiles & Seed records imported successfully.";
 
     // Update demo user passwords with fresh system bcrypt hash
     $updateStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash");
     $updateStmt->execute([':hash' => $hashedPassword]);
     $messages[] = "Standardized demo accounts with active password hash: '{$demoPassword}'";
+
+    // Ensure core identities: Admin = Pooja, Customers = Athul, Amal, Abhijith, Chef = Sajeev, Drivers = Shaji, Kichu, Abhi
+    $userConfigs = [
+        1 => ['name' => 'Pooja (Admin)', 'email' => 'admin@zippy.com', 'role' => 1],
+        2 => ['name' => 'Athul (Customer)', 'email' => 'athul@example.com', 'role' => 2],
+        3 => ['name' => 'Amal (Customer)', 'email' => 'amal@example.com', 'role' => 2],
+        4 => ['name' => 'Abhijith (Customer)', 'email' => 'abhijith@example.com', 'role' => 2],
+        5 => ['name' => 'Chef Sajeev (Head Cook)', 'email' => 'chef@zippy.com', 'role' => 3],
+        6 => ['name' => 'Shaji (Rider)', 'email' => 'shaji@zippy.com', 'role' => 4],
+        7 => ['name' => 'Kichu (Rider)', 'email' => 'kichu@zippy.com', 'role' => 4],
+        8 => ['name' => 'Abhi (Rider)', 'email' => 'abhi@zippy.com', 'role' => 4],
+    ];
+    $cfgStmt = $pdo->prepare("UPDATE `users` SET `full_name` = :name, `email` = :email, `role_id` = :role WHERE `user_id` = :id");
+    foreach ($userConfigs as $uid => $cfg) {
+        $cfgStmt->execute([':name' => $cfg['name'], ':email' => $cfg['email'], ':role' => $cfg['role'], ':id' => $uid]);
+    }
+    $messages[] = "Configured active demo identities: Admin (Pooja), Customers (Athul, Amal, Abhijith), Chef (Sajeev), Drivers (Shaji, Kichu, Abhi)";
 
     // Attempt to register triggers
     try {
@@ -210,7 +232,7 @@ try {
                     `order_id`, `delivery_partner_name`, `delivery_partner_phone`,
                     `delivery_otp`, `assigned_at`, `delivery_status`
                 ) VALUES (
-                    v_order_id, 'Suresh Kumar (Zippy Express)', '+91 96320 98765',
+                    v_order_id, 'Shaji (Zippy Express)', '+91 96320 98765',
                     v_otp, NOW(), 'ASSIGNED'
                 );
 
@@ -331,6 +353,7 @@ if ($isCli) {
         <thead class="table-light">
           <tr>
             <th>Role</th>
+            <th>Name</th>
             <th>Email</th>
             <th>Password</th>
             <th>Portal Link</th>
@@ -339,25 +362,57 @@ if ($isCli) {
         <tbody>
           <tr>
             <td><span class="badge bg-danger">ADMIN</span></td>
+            <td class="fw-bold">Pooja (Admin)</td>
             <td class="fw-bold">admin@zippy.com</td>
             <td><code>password123</code></td>
-            <td><a href="<?= ADMIN_URL ?>/index.php" class="btn btn-sm btn-outline-success">Admin Console</a></td>
+            <td><a href="<?= ADMIN_URL ?>/index.php" class="btn btn-sm btn-outline-danger">Admin Console</a></td>
           </tr>
           <tr>
             <td><span class="badge bg-success">CUSTOMER</span></td>
-            <td class="fw-bold">pooja@example.com</td>
+            <td class="fw-bold">Athul (Customer)</td>
+            <td class="fw-bold">athul@example.com</td>
             <td><code>password123</code></td>
             <td><a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-sm btn-success">Customer App</a></td>
           </tr>
           <tr>
+            <td><span class="badge bg-success">CUSTOMER</span></td>
+            <td class="fw-bold">Amal (Customer)</td>
+            <td class="fw-bold">amal@example.com</td>
+            <td><code>password123</code></td>
+            <td><a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-sm btn-outline-success">Customer App</a></td>
+          </tr>
+          <tr>
+            <td><span class="badge bg-success">CUSTOMER</span></td>
+            <td class="fw-bold">Abhijith (Customer)</td>
+            <td class="fw-bold">abhijith@example.com</td>
+            <td><code>password123</code></td>
+            <td><a href="<?= CUSTOMER_URL ?>/index.php" class="btn btn-sm btn-outline-success">Customer App</a></td>
+          </tr>
+          <tr>
             <td><span class="badge bg-warning text-dark">KITCHEN</span></td>
+            <td class="fw-bold">Chef Sajeev (Head Cook)</td>
             <td class="fw-bold">chef@zippy.com</td>
             <td><code>password123</code></td>
             <td><a href="<?= KITCHEN_URL ?>/index.php" class="btn btn-sm btn-outline-warning">Kitchen Station</a></td>
           </tr>
           <tr>
             <td><span class="badge bg-primary">RIDER</span></td>
-            <td class="fw-bold">rider@zippy.com</td>
+            <td class="fw-bold">Shaji (Rider)</td>
+            <td class="fw-bold">shaji@zippy.com</td>
+            <td><code>password123</code></td>
+            <td><a href="<?= DELIVERY_URL ?>/index.php" class="btn btn-sm btn-outline-primary">Delivery Fleet</a></td>
+          </tr>
+          <tr>
+            <td><span class="badge bg-primary">RIDER</span></td>
+            <td class="fw-bold">Kichu (Rider)</td>
+            <td class="fw-bold">kichu@zippy.com</td>
+            <td><code>password123</code></td>
+            <td><a href="<?= DELIVERY_URL ?>/index.php" class="btn btn-sm btn-outline-primary">Delivery Fleet</a></td>
+          </tr>
+          <tr>
+            <td><span class="badge bg-primary">RIDER</span></td>
+            <td class="fw-bold">Abhi (Rider)</td>
+            <td class="fw-bold">abhi@zippy.com</td>
             <td><code>password123</code></td>
             <td><a href="<?= DELIVERY_URL ?>/index.php" class="btn btn-sm btn-outline-primary">Delivery Fleet</a></td>
           </tr>

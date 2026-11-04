@@ -90,7 +90,7 @@ class StreamlinedLifecycleE2ETest(unittest.TestCase):
         email_input = d.find_element(By.ID, "loginEmail")
         pwd_input = d.find_element(By.ID, "loginPassword")
         email_input.clear()
-        email_input.send_keys("pooja@example.com")
+        email_input.send_keys("athul@example.com")
         pwd_input.clear()
         pwd_input.send_keys("password123")
         submit_btn = d.find_element(By.CSS_SELECTOR, "button[type='submit']")
@@ -284,7 +284,7 @@ class StreamlinedLifecycleE2ETest(unittest.TestCase):
 
         # Open OTP modal and submit customer OTP
         d.execute_script(f"""
-            openOtpModal({order_id}, '{otp}', 'Pooja JP', 'UPI', '₹439.00');
+            openOtpModal({order_id}, '{otp}', 'Athul', 'UPI', '₹439.00');
             document.getElementById('inputOtp').value = '{otp}';
         """)
         time.sleep(1.0)

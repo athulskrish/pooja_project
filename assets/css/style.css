@@ -3894,6 +3894,111 @@ body.modal-open .mobile-bottom-nav,
   transform: scale(0.95);
 }
 
+/* ==========================================================================
+   LUSH FOREST BRAND UTILITIES & BADGE FIXES
+   ========================================================================== */
+.text-forest { color: #2E6F40 !important; }
+.text-pine { color: #243E2C !important; }
+.text-sage { color: #68BA7F !important; }
+.text-mint { color: #CEFFDC !important; }
+
+.bg-forest { background-color: #2E6F40 !important; color: #FFFFFF !important; }
+.bg-forest-subtle { background-color: #EDFBF2 !important; color: #2E6F40 !important; }
+.bg-mint-soft { background-color: #EDFBF2 !important; color: #243E2C !important; }
+.bg-mint { background-color: #CEFFDC !important; color: #243E2C !important; }
+.bg-pine { background-color: #243E2C !important; color: #FFFFFF !important; }
+.bg-sage { background-color: #68BA7F !important; color: #FFFFFF !important; }
+
+.border-forest { border-color: #2E6F40 !important; }
+.border-pine { border-color: #243E2C !important; }
+.border-sage { border-color: #68BA7F !important; }
+.border-mint { border-color: #CEFFDC !important; }
+
+.btn-forest {
+  background-color: #2E6F40;
+  border-color: #2E6F40;
+  color: #FFFFFF !important;
+}
+.btn-forest:hover {
+  background-color: #235933;
+  border-color: #235933;
+  color: #FFFFFF !important;
+}
+
+.btn-outline-forest {
+  border-color: #2E6F40;
+  color: #2E6F40 !important;
+  background-color: transparent;
+}
+.btn-outline-forest:hover {
+  background-color: #2E6F40;
+  border-color: #2E6F40;
+  color: #FFFFFF !important;
+}
+
+/* Badge Text Contrast Fix for Bootstrap 5 */
+.badge.text-forest {
+  --bs-badge-color: #2E6F40;
+  color: #2E6F40 !important;
+}
+.badge.text-dark {
+  --bs-badge-color: #212529;
+  color: #212529 !important;
+}
+.badge.text-pine {
+  --bs-badge-color: #243E2C;
+  color: #243E2C !important;
+}
+
+.hover-shadow {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hover-shadow:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(46, 111, 64, 0.15) !important;
+}
+
+/* Category Table Badges & Status */
+.assigned-dishes-badge {
+  background-color: #EDFBF2 !important;
+  color: #2E6F40 !important;
+  border: 1px solid rgba(46, 111, 64, 0.25) !important;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.assigned-dishes-badge i {
+  color: #2E6F40 !important;
+}
+.assigned-dishes-badge span {
+  color: #1C2B20 !important;
+}
+.assigned-dishes-badge:hover {
+  background-color: #CEFFDC !important;
+  border-color: #2E6F40 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(46, 111, 64, 0.18) !important;
+}
+.assigned-dishes-badge:hover i,
+.assigned-dishes-badge:hover span {
+  color: #243E2C !important;
+}
+
+.empty-dishes-badge {
+  background-color: #FFF8E1 !important;
+  color: #795548 !important;
+  border: 1px solid #FFE082 !important;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.empty-dishes-badge:hover {
+  background-color: #FFECB3 !important;
+  border-color: #FFB300 !important;
+  transform: translateY(-1px);
+}
+
+
 
 
 

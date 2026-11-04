@@ -48,8 +48,8 @@ class User {
         }
         return [
             'user_id' => $userId,
-            'full_name' => $_SESSION['user_name'] ?? 'Pooja JP',
-            'email' => $_SESSION['user_email'] ?? 'pooja@zippy.test',
+            'full_name' => $_SESSION['user_name'] ?? 'Athul',
+            'email' => $_SESSION['user_email'] ?? 'athul@zippy.test',
             'phone_number' => $_SESSION['user_phone'] ?? '+91 9876543210',
             'role_name' => 'CUSTOMER',
             'created_at' => date('Y-m-d H:i:s', strtotime('-30 days'))

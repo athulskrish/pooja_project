@@ -76,7 +76,7 @@ csrf = csrf_match.group(1) if csrf_match else ''
 
 login_data = urllib.parse.urlencode({
     'csrf_token': csrf,
-    'email': 'pooja@example.com',
+    'email': 'athul@example.com',
     'password': 'password123'
 }).encode('utf-8')
 opener.open(f'{BASE_URL}/customer/login.php', data=login_data)

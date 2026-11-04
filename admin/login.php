@@ -20,7 +20,7 @@ if (is_admin()) {
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
     $authResult = attempt_login('admin@zippy.com', 'password123');
     if ($authResult['success']) {
-        set_flash('success', 'Authenticated as Admin (Pooja JP) in dedicated Admin session.');
+        set_flash('success', 'Authenticated as Admin (Pooja) in dedicated Admin session.');
         header("Location: " . ADMIN_URL . "/index.php");
         exit;
     }

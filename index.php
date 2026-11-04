@@ -171,9 +171,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
                   <?php endif; ?>
                 </div>
                 <div class="fw-bold text-dark small text-truncate">
-                  <?= !empty($portalActors['customer']) ? e($portalActors['customer']['name']) : 'Pooja JP (Customer)' ?>
+                  <?= !empty($portalActors['customer']) ? e($portalActors['customer']['name']) : 'Athul (Customer)' ?>
                 </div>
-                <div class="text-muted small" style="font-size:0.75rem;">pooja@example.com</div>
+                <div class="text-muted small" style="font-size:0.75rem;">athul@example.com</div>
               </div>
               <div class="mt-3">
                 <a href="<?= CUSTOMER_URL ?>/<?= !empty($portalActors['customer']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-success w-100 rounded-pill fw-semibold" target="_blank" style="background:#2E6F40; border-color:#2E6F40;">
@@ -196,7 +196,7 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
                   <?php endif; ?>
                 </div>
                 <div class="fw-bold text-dark small text-truncate">
-                  <?= !empty($portalActors['kitchen']) ? e($portalActors['kitchen']['name']) : 'Chef Sanjeev' ?>
+                  <?= !empty($portalActors['kitchen']) ? e($portalActors['kitchen']['name']) : 'Chef Sajeev' ?>
                 </div>
                 <div class="text-muted small" style="font-size:0.75rem;">chef@zippy.com</div>
               </div>
@@ -221,9 +221,9 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
                   <?php endif; ?>
                 </div>
                 <div class="fw-bold text-dark small text-truncate">
-                  <?= !empty($portalActors['delivery']) ? e($portalActors['delivery']['name']) : 'Suresh Kumar (Rider)' ?>
+                  <?= !empty($portalActors['delivery']) ? e($portalActors['delivery']['name']) : 'Shaji (Rider)' ?>
                 </div>
-                <div class="text-muted small" style="font-size:0.75rem;">rider@zippy.com</div>
+                <div class="text-muted small" style="font-size:0.75rem;">shaji@zippy.com</div>
               </div>
               <div class="mt-3">
                 <a href="<?= DELIVERY_URL ?>/<?= !empty($portalActors['delivery']) ? 'index.php' : 'login.php?demo=1' ?>" class="btn btn-sm btn-info text-dark w-100 rounded-pill fw-semibold" target="_blank">
@@ -246,7 +246,7 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
                   <?php endif; ?>
                 </div>
                 <div class="fw-bold text-dark small text-truncate">
-                  <?= !empty($portalActors['admin']) ? e($portalActors['admin']['name']) : 'Pooja JP (Admin)' ?>
+                  <?= !empty($portalActors['admin']) ? e($portalActors['admin']['name']) : 'Pooja (Admin)' ?>
                 </div>
                 <div class="text-muted small" style="font-size:0.75rem;">admin@zippy.com</div>
               </div>
@@ -395,31 +395,59 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
             <tbody>
               <tr>
                 <td><span class="badge bg-danger">ADMIN</span></td>
-                <td class="fw-bold">Pooja JP (Admin)</td>
+                <td class="fw-bold">Pooja (Admin)</td>
                 <td><code>admin@zippy.com</code></td>
                 <td><code class="text-dark">password123</code></td>
-                <td><a href="<?= ADMIN_URL ?>/index.php" class="text-success fw-bold">Admin Console</a></td>
+                <td><a href="<?= ADMIN_URL ?>/index.php" class="text-danger fw-bold">Admin Console</a></td>
               </tr>
               <tr>
                 <td><span class="badge bg-success">CUSTOMER</span></td>
-                <td class="fw-bold">Pooja JP (Customer)</td>
-                <td><code>pooja@example.com</code></td>
+                <td class="fw-bold">Athul (Customer)</td>
+                <td><code>athul@example.com</code></td>
+                <td><code class="text-dark">password123</code></td>
+                <td><a href="<?= CUSTOMER_URL ?>/index.php" class="text-success fw-bold">Customer Storefront</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge bg-success">CUSTOMER</span></td>
+                <td class="fw-bold">Amal (Customer)</td>
+                <td><code>amal@example.com</code></td>
+                <td><code class="text-dark">password123</code></td>
+                <td><a href="<?= CUSTOMER_URL ?>/index.php" class="text-success fw-bold">Customer Storefront</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge bg-success">CUSTOMER</span></td>
+                <td class="fw-bold">Abhijith (Customer)</td>
+                <td><code>abhijith@example.com</code></td>
                 <td><code class="text-dark">password123</code></td>
                 <td><a href="<?= CUSTOMER_URL ?>/index.php" class="text-success fw-bold">Customer Storefront</a></td>
               </tr>
               <tr>
                 <td><span class="badge bg-warning text-dark">KITCHEN</span></td>
-                <td class="fw-bold">Chef Sanjeev (Head Cook)</td>
+                <td class="fw-bold">Chef Sajeev (Head Cook)</td>
                 <td><code>chef@zippy.com</code></td>
                 <td><code class="text-dark">password123</code></td>
                 <td><a href="<?= KITCHEN_URL ?>/index.php" class="text-warning text-dark fw-bold">Kitchen Station KDS</a></td>
               </tr>
               <tr>
                 <td><span class="badge bg-info text-dark">RIDER</span></td>
-                <td class="fw-bold">Suresh Kumar (Rider)</td>
-                <td><code>rider@zippy.com</code></td>
+                <td class="fw-bold">Shaji (Rider)</td>
+                <td><code>shaji@zippy.com</code></td>
                 <td><code class="text-dark">password123</code></td>
-                <td><a href="<?= DELIVERY_URL ?>/index.php" class="text-success fw-bold">Delivery Partner Fleet App</a></td>
+                <td><a href="<?= DELIVERY_URL ?>/index.php" class="text-info text-dark fw-bold">Delivery Fleet App</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge bg-info text-dark">RIDER</span></td>
+                <td class="fw-bold">Kichu (Rider)</td>
+                <td><code>kichu@zippy.com</code></td>
+                <td><code class="text-dark">password123</code></td>
+                <td><a href="<?= DELIVERY_URL ?>/index.php" class="text-info text-dark fw-bold">Delivery Fleet App</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge bg-info text-dark">RIDER</span></td>
+                <td class="fw-bold">Abhi (Rider)</td>
+                <td><code>abhi@zippy.com</code></td>
+                <td><code class="text-dark">password123</code></td>
+                <td><a href="<?= DELIVERY_URL ?>/index.php" class="text-info text-dark fw-bold">Delivery Fleet App</a></td>
               </tr>
             </tbody>
           </table>

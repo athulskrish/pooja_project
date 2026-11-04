@@ -396,11 +396,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               <div class="row g-3">
                 <div class="col-md-4">
                   <label class="form-label small fw-bold">Full Name *</label>
-                  <input type="text" name="guest_name" class="form-control rounded-3" placeholder="Pooja JP" required>
+                  <input type="text" name="guest_name" class="form-control rounded-3" placeholder="Athul" required>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label small fw-bold">Email Address *</label>
-                  <input type="email" name="guest_email" class="form-control rounded-3" placeholder="pooja@example.com" required>
+                  <input type="email" name="guest_email" class="form-control rounded-3" placeholder="athul@example.com" required>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label small fw-bold">Phone Number *</label>
@@ -659,9 +659,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       <div class="px-4 py-2 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2" style="background:#f8fafc;">
         <div class="small text-muted d-flex align-items-center gap-2">
           <i class="bi bi-person-circle text-primary"></i>
-          <span class="fw-semibold text-dark" id="rzpCustomerSummary"><?= e($currentUser['name'] ?? 'Pooja JP') ?></span>
+          <span class="fw-semibold text-dark" id="rzpCustomerSummary"><?= e($currentUser['name'] ?? 'Athul') ?></span>
           <span class="text-muted">•</span>
-          <span class="text-muted" id="rzpCustomerContact"><?= e($currentUser['email'] ?? 'pooja@example.com') ?></span>
+          <span class="text-muted" id="rzpCustomerContact"><?= e($currentUser['email'] ?? 'athul@example.com') ?></span>
         </div>
 
         <!-- 1-Click Simulation Buttons for Viva / Evaluation -->
@@ -836,19 +836,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <label class="form-label small fw-bold text-dark">Quick Select UPI Provider</label>
                     <div class="row g-2 mb-3">
                       <div class="col-6">
-                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('pooja@okhdfcbank')">
+                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('athul@okhdfcbank')">
                           <span class="badge rounded-circle p-1" style="background:#EA4335; color:#fff;"><i class="bi bi-google"></i></span>
                           <span class="small fw-semibold text-dark">Google Pay</span>
                         </button>
                       </div>
                       <div class="col-6">
-                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('pooja@ybl')">
+                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('athul@ybl')">
                           <span class="badge rounded-circle p-1" style="background:#5f259f; color:#fff;"><i class="bi bi-phone"></i></span>
                           <span class="small fw-semibold text-dark">PhonePe</span>
                         </button>
                       </div>
                       <div class="col-6">
-                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('pooja@paytm')">
+                        <button type="button" class="btn btn-outline-secondary w-100 rounded-3 p-2 text-start d-flex align-items-center gap-2 rzp-app-btn" onclick="selectUpiPreset('athul@paytm')">
                           <span class="badge rounded-circle p-1" style="background:#00b9f5; color:#fff;"><i class="bi bi-wallet"></i></span>
                           <span class="small fw-semibold text-dark">Paytm UPI</span>
                         </button>
@@ -912,7 +912,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                   <div class="mb-3">
                     <label class="form-label small text-muted mb-1">Cardholder Name</label>
-                    <input type="text" class="form-control" id="rzpCardHolder" placeholder="Pooja JP" value="<?= e($currentUser['name'] ?? 'Pooja JP') ?>">
+                    <input type="text" class="form-control" id="rzpCardHolder" placeholder="Athul" value="<?= e($currentUser['name'] ?? 'Athul') ?>">
                   </div>
 
                   <div class="form-check mb-3">
@@ -1414,8 +1414,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const guestEmailInput = document.querySelector('input[name="guest_email"]');
     const guestPhoneInput = document.querySelector('input[name="guest_phone"]');
 
-    const customerName = guestNameInput ? guestNameInput.value.trim() : '<?= addslashes($currentUser['name'] ?? 'Pooja JP') ?>';
-    const customerEmail = guestEmailInput ? guestEmailInput.value.trim() : '<?= addslashes($currentUser['email'] ?? 'pooja@example.com') ?>';
+    const customerName = guestNameInput ? guestNameInput.value.trim() : '<?= addslashes($currentUser['name'] ?? 'Athul') ?>';
+    const customerEmail = guestEmailInput ? guestEmailInput.value.trim() : '<?= addslashes($currentUser['email'] ?? 'athul@example.com') ?>';
     const customerPhone = guestPhoneInput ? guestPhoneInput.value.trim() : '<?= addslashes($currentUser['phone'] ?? $_SESSION['user_phone'] ?? '9876543210') ?>';
 
     document.getElementById('rzpCustomerSummary').textContent = customerName;

@@ -15,9 +15,9 @@ if (is_logged_in()) {
 
 // 1-Click Presentation Access Mode (?demo=1)
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $authResult = attempt_login('pooja@example.com', 'password123');
+    $authResult = attempt_login('athul@example.com', 'password123');
     if ($authResult['success']) {
-        set_flash('success', 'Authenticated as Customer (Pooja JP) in dedicated Storefront session.');
+        set_flash('success', 'Authenticated as Customer (Athul) in dedicated Storefront session.');
         header("Location: " . CUSTOMER_URL . "/index.php");
         exit;
     }
@@ -77,12 +77,20 @@ require_once __DIR__ . '/includes/header.php';
             </div>
           <?php endif; ?>
 
-          <!-- 1-Click Demo Customer Account Button -->
+          <!-- 1-Click Demo Customer Account Buttons (Athul, Amal, Abhijith) -->
           <div class="p-3 rounded-3 mb-4 text-center" style="background: #EDFBF2; border: 1px dashed #2E6F40;">
-            <div class="small fw-bold text-forest mb-1">Quick Demo Access (Customer)</div>
-            <button type="button" class="btn btn-sm btn-success rounded-pill px-3 py-1 fw-bold" onclick="document.getElementById('loginEmail').value='pooja@example.com'; document.getElementById('loginPassword').value='password123';" style="background:#2E6F40; border-color:#2E6F40;">
-              Fill Customer: pooja@example.com
-            </button>
+            <div class="small fw-bold text-forest mb-2">Quick Demo Access (3 Customers):</div>
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+              <button type="button" class="btn btn-sm btn-success rounded-pill px-3 py-1 fw-bold" onclick="document.getElementById('loginEmail').value='athul@example.com'; document.getElementById('loginPassword').value='password123';" style="background:#2E6F40; border-color:#2E6F40;">
+                Athul
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold" onclick="document.getElementById('loginEmail').value='amal@example.com'; document.getElementById('loginPassword').value='password123';">
+                Amal
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold" onclick="document.getElementById('loginEmail').value='abhijith@example.com'; document.getElementById('loginPassword').value='password123';">
+                Abhijith
+              </button>
+            </div>
           </div>
 
           <form method="POST" action="<?= CUSTOMER_URL ?>/login.php<?= !empty($redirectTarget) ? '?redirect=' . urlencode($redirectTarget) : '' ?>">
@@ -92,7 +100,7 @@ require_once __DIR__ . '/includes/header.php';
               <label class="form-label small fw-bold">Email Address</label>
               <div class="input-group">
                 <span class="input-group-text bg-white text-muted"><i class="bi bi-envelope"></i></span>
-                <input type="email" name="email" id="loginEmail" class="form-control rounded-end-3 py-2" placeholder="pooja@example.com" required>
+                <input type="email" name="email" id="loginEmail" class="form-control rounded-end-3 py-2" placeholder="athul@example.com" required>
               </div>
             </div>
 

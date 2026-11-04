@@ -311,8 +311,8 @@ class Order {
         foreach ($orders as $o) {
             if ($o['order_id'] == $orderId) {
                 return array_merge($o, [
-                    'customer_name' => $_SESSION['user_name'] ?? 'Pooja JP',
-                    'customer_email' => $_SESSION['user_email'] ?? 'pooja@zippy.test',
+                    'customer_name' => $_SESSION['user_name'] ?? 'Athul',
+                    'customer_email' => $_SESSION['user_email'] ?? 'athul@zippy.test',
                     'customer_phone' => $_SESSION['user_phone'] ?? '+91 9876543210',
                     'transaction_reference' => $o['transaction_reference'] ?? 'TXN-' . $orderId,
                     'landmark' => 'Near Sobha Silicon Oasis',

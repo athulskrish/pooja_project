@@ -1,38 +1,56 @@
 <?php
 /**
- * Rate Order & Delivery Rider with Interactive Stars
+ * Rate Order & Delivery Rider
  * Zippy - Online Food Ordering Platform
+ * Simplified & streamlined dual-rating experience (Food & Delivery)
  */
 
-$pageTitle = 'Rate Your Food & Delivery';
+$pageTitle = 'Rate Your Order';
 $activePage = 'orders';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
+
 $currentUser = current_user();
 
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1001;
+// Resolve target Order ID
+$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+if (!$orderId && $currentUser) {
+    $recentOrder = db_fetch_one("SELECT order_id FROM `orders` WHERE user_id = :uid ORDER BY order_id DESC LIMIT 1", [':uid' => $currentUser['id']]);
+    if ($recentOrder) {
+        $orderId = (int)$recentOrder['order_id'];
+    }
+}
+if (!$orderId) {
+    $recentOrder = db_fetch_one("SELECT order_id FROM `orders` ORDER BY order_id DESC LIMIT 1");
+    if ($recentOrder) {
+        $orderId = (int)$recentOrder['order_id'];
+    }
+}
 
-$order = db_fetch_one("
+// Fetch Order and Delivery details
+$order = $orderId ? db_fetch_one("
     SELECT o.*, d.delivery_partner_name, d.delivery_partner_phone 
     FROM `orders` o 
     LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id 
     WHERE o.order_id = :id
-", [':id' => $orderId]);
+", [':id' => $orderId]) : null;
 
 // Fetch items ordered in this order
-$orderItems = db_fetch_all("
+$orderItems = $orderId ? db_fetch_all("
     SELECT oi.*, m.item_name, m.image_url, m.is_veg, m.price, m.rating 
     FROM `order_items` oi
     JOIN `menu_items` m ON oi.item_id = m.item_id
     WHERE oi.order_id = :oid
-", [':oid' => $orderId]);
+", [':oid' => $orderId]) : [];
 
 // Check if review already exists
-$existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]);
+$existingReview = $orderId ? db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]) : null;
 
 $submitted = false;
+
+// Handle Review Submission
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_rating') {
     $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
               || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
@@ -44,8 +62,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
             exit;
         }
         set_flash('danger', 'Invalid session token.');
+    } elseif (!$order) {
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Order not found.']);
+            exit;
+        }
+        set_flash('danger', 'Order not found.');
     } else {
-        // RBAC Access Check: Customer can only rate their own orders
+        // RBAC Access Check: Customer can only rate their own orders (unless admin)
         if ($currentUser && (int)($order['user_id'] ?? 0) !== (int)$currentUser['id'] && !is_admin()) {
             if ($isAjax) {
                 header('Content-Type: application/json');
@@ -59,9 +84,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
 
         $foodRating = max(1, min(5, (int)($_POST['food_rating'] ?? 5)));
         $riderRating = max(1, min(5, (int)($_POST['rider_rating'] ?? 5)));
-        $tip = max(0.00, (float)($_POST['tip'] ?? 0));
+        $tip = max(0.00, (float)($_POST['tip'] ?? ($existingReview['rider_tip'] ?? 0)));
         $comments = clean_input($_POST['comments'] ?? '');
-        $foodTags = clean_input($_POST['food_tags'] ?? '');
         $userId = $order['user_id'] ?? ($currentUser['id'] ?? 2);
 
         $pdo = getDBConnection();
@@ -85,7 +109,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                     ':comm' => $comments
                 ]);
 
-                // Save individual dish ratings if present
+                // Cascade food rating to ordered items in dish_reviews
                 if (!empty($orderItems)) {
                     foreach ($orderItems as $item) {
                         $itemId = (int)$item['item_id'];
@@ -100,7 +124,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                             ':uid' => $userId,
                             ':r' => $itemRating,
                             ':t' => $comments,
-                            ':tags' => $foodTags
+                            ':tags' => ''
                         ]);
 
                         // Recalculate average rating & total reviews
@@ -125,15 +149,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                 }
 
                 $submitted = true;
-                set_flash('success', 'Thank you for your rating! Your food review has been permanently recorded with 5-star precision. ⭐');
-                // Refresh existing review state
+                set_flash('success', 'Thank you! Your rating has been recorded successfully. ⭐');
+                // Refresh review record
                 $existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]);
 
                 if ($isAjax) {
                     header('Content-Type: application/json');
                     echo json_encode([
                         'success' => true,
-                        'message' => 'Thank you for your rating! Your food review has been permanently recorded with 5-star precision. ⭐',
+                        'message' => 'Thank you! Your rating has been recorded successfully. ⭐',
                         'order_id' => $orderId,
                         'food_rating' => $foodRating,
                         'rider_rating' => $riderRating
@@ -144,476 +168,363 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                 $submitted = true;
                 if ($isAjax) {
                     header('Content-Type: application/json');
-                    echo json_encode(['success' => true, 'message' => 'Thank you for your rating! Your feedback helps us maintain top culinary standards.']);
+                    echo json_encode(['success' => true, 'message' => 'Thank you for your rating!']);
                     exit;
                 }
-                set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
+                set_flash('success', 'Thank you for your rating!');
             }
-        } else {
-            $submitted = true;
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true, 'message' => 'Thank you for your rating! Your feedback helps us maintain top culinary standards.']);
-                exit;
-            }
-            set_flash('success', 'Thank you for your rating! Your feedback helps us maintain top culinary standards.');
         }
     }
 }
 
 $curFood = (int)($existingReview['food_rating'] ?? 5);
 $curRider = (int)($existingReview['rider_rating'] ?? 5);
-$curTip = (float)($existingReview['rider_tip'] ?? 0);
 $curComments = $existingReview['comments'] ?? '';
+$curTip = (float)($existingReview['rider_tip'] ?? 0);
 $isEdit = !empty($_GET['edit']);
+
+// Rider name formatted cleanly
+$riderName = !empty($order['delivery_partner_name']) 
+    ? trim(str_replace('(Rider)', '', $order['delivery_partner_name'])) 
+    : 'Delivery Partner';
+
+// Item names summary
+$itemNames = [];
+if (!empty($orderItems)) {
+    foreach ($orderItems as $it) {
+        $itemNames[] = e($it['item_name']) . ($it['quantity'] > 1 ? ' (' . $it['quantity'] . ')' : '');
+    }
+}
+$itemsSummary = !empty($itemNames) ? implode(', ', $itemNames) : 'Food Order';
+$orderThumbnail = !empty($orderItems[0]['image_url']) ? get_dish_image_url($orderItems[0]['image_url']) : '';
+
+// Rating Labels
+$foodLabels = [
+    1 => 'Poor 😞',
+    2 => 'Fair 😐',
+    3 => 'Good 👍',
+    4 => 'Very Good 😊',
+    5 => 'Excellent! 🌟'
+];
+
+$riderLabels = [
+    1 => 'Poor 😞',
+    2 => 'Fair 😐',
+    3 => 'Good 👍',
+    4 => 'Very Good 😊',
+    5 => 'Fast & Polite! 🌟'
+];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<main class="py-5" style="background: #F7FAF8; min-height: 80vh;">
-  <div class="container-xl" style="max-width: 760px;">
+<style>
+.star-rating-bar .star-icon {
+  font-size: 2.3rem;
+  cursor: pointer;
+  color: #D1D5DB;
+  transition: transform 0.15s ease, color 0.15s ease, filter 0.15s ease;
+  padding: 0 4px;
+  user-select: none;
+}
+.star-rating-bar .star-icon.active {
+  color: #FFB800;
+  transform: scale(1.08);
+  filter: drop-shadow(0 2px 4px rgba(255, 184, 0, 0.4));
+}
+.star-rating-bar .star-icon:hover {
+  transform: scale(1.25);
+}
+@media (max-width: 576px) {
+  .star-rating-bar .star-icon {
+    font-size: 1.95rem;
+    padding: 0 2px;
+  }
+}
+</style>
+
+<main class="py-5" style="background: #F7FAF8; min-height: 85vh;">
+  <div class="container-xl" style="max-width: 640px;">
     
-    <!-- Top Breadcrumb / Navigation -->
+    <!-- Top Breadcrumb -->
     <div class="d-flex align-items-center justify-content-between mb-4">
       <a href="<?= CUSTOMER_URL ?>/order-history.php" class="btn btn-sm btn-light rounded-pill border px-3 text-muted">
         <i class="bi bi-arrow-left me-1"></i> Back to Orders
       </a>
       <span class="badge rounded-pill px-3 py-1 fw-bold" style="background:#CEFFDC; color:#243E2C;">
-        ⭐ FOOD REVIEW & RATINGS
+        <i class="bi bi-star-fill text-warning me-1"></i> Rate Order
       </span>
     </div>
 
-    <!-- Order Summary Card -->
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-        <div class="d-flex align-items-center gap-3">
-          <img src="https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=150&q=80" 
-               class="rounded-3 shadow-sm object-fit-cover" 
-               style="width: 68px; height: 68px;" 
-               alt="Meghana Foods">
-          <div>
-            <h5 class="fw-bold text-dark font-outfit mb-0">Meghana Foods (Indiranagar)</h5>
-            <div class="small text-muted mb-1">Order #ZIP-<?= $orderId ?> &bull; <?= !empty($order['placed_at']) ? date('d M Y, h:i A', strtotime($order['placed_at'])) : 'Recent Order' ?></div>
-            <div class="small fw-semibold text-forest">
-              <i class="bi bi-shield-check text-success me-1"></i> Verified Customer Purchase
-            </div>
-          </div>
+    <?php if (!$order): ?>
+      <!-- Order Not Found -->
+      <div class="card border-0 rounded-4 shadow-sm p-5 bg-white text-center">
+        <div class="rounded-circle d-inline-flex align-items-center justify-content-center mx-auto mb-3" style="width: 70px; height: 70px; background: #F3F4F6; color: #6B7280;">
+          <i class="bi bi-receipt fs-1"></i>
         </div>
-        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 fw-bold px-3 py-2 rounded-pill">
-          <i class="bi bi-check-circle-fill me-1"></i> <?= e($order['order_status'] ?? 'DELIVERED') ?>
-        </span>
-      </div>
-    </div>
-
-    <?php if ($submitted || ($existingReview && !$isEdit)): ?>
-      <!-- Display Confirmed / Existing Review with Glowing Stars -->
-      <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white text-center mb-4">
-        <div class="rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mx-auto mb-3" style="width: 80px; height: 80px; background: #CEFFDC; color: #2E6F40;">
-          <i class="bi bi-star-fill fs-1 text-warning" style="filter: drop-shadow(0 2px 8px rgba(245, 158, 11, 0.5));"></i>
-        </div>
-
-        <h3 class="fw-bold font-outfit text-dark mb-1">
-          <?= $submitted ? 'Thank You For Your Review! ⭐' : 'Your Recorded Review & Rating' ?>
-        </h3>
-        <p class="text-muted small mb-4" style="max-width: 500px; margin: 0 auto;">
-          Your feedback on food quality, taste, and delivery courier service helps fellow foodies discover culinary excellence.
-        </p>
-
-        <!-- Rating Details Card -->
-        <div class="p-4 rounded-4 mb-4 text-start" style="background: #F7FAF8; border: 1px solid #E2ECE5;">
-          <div class="row g-3 align-items-center">
-            
-            <div class="col-sm-6 border-end-sm">
-              <div class="small fw-bold text-muted text-uppercase mb-1">Food Taste & Quality:</div>
-              <div class="d-flex align-items-center gap-2">
-                <span class="fs-4 text-warning">
-                  <?= str_repeat('★', $curFood) . str_repeat('☆', 5 - $curFood) ?>
-                </span>
-                <span class="fw-bold text-dark fs-5"><?= $curFood ?>/5 Stars</span>
-              </div>
-            </div>
-
-            <div class="col-sm-6 ps-sm-3">
-              <div class="small fw-bold text-muted text-uppercase mb-1">Delivery Partner:</div>
-              <div class="d-flex align-items-center gap-2">
-                <span class="fs-4 text-warning">
-                  <?= str_repeat('★', $curRider) . str_repeat('☆', 5 - $curRider) ?>
-                </span>
-                <span class="fw-bold text-dark fs-5"><?= $curRider ?>/5 Stars</span>
-              </div>
-              <?php if ($curTip > 0): ?>
-                <div class="small text-success mt-1"><i class="bi bi-heart-fill me-1"></i> ₹<?= number_format($curTip, 0) ?> Tip Given</div>
-              <?php endif; ?>
-            </div>
-
-            <?php if (!empty($curComments)): ?>
-              <div class="col-12 pt-3 border-top">
-                <div class="small fw-bold text-muted text-uppercase mb-1">Customer Review:</div>
-                <blockquote class="fst-italic text-dark mb-0 bg-white p-3 rounded-3 border">
-                  "<?= e($curComments) ?>"
-                </blockquote>
-              </div>
-            <?php endif; ?>
-
-          </div>
-        </div>
-
-        <div class="d-flex flex-wrap justify-content-center gap-3">
-          <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>&edit=1" class="btn btn-outline-success rounded-pill px-4 fw-bold">
-            <i class="bi bi-pencil me-1"></i> Edit Review
-          </a>
+        <h5 class="fw-bold text-dark font-outfit">Order Not Found</h5>
+        <p class="text-muted small mb-4">We couldn't locate the specified order to review.</p>
+        <div>
           <a href="<?= CUSTOMER_URL ?>/order-history.php" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
-            <i class="bi bi-receipt me-1"></i> View Order History
+            View Order History
           </a>
         </div>
       </div>
 
     <?php else: ?>
 
-      <!-- =======================================================================
-           INTERACTIVE STAR RATING FORM
-           ======================================================================= -->
-      <form method="POST" action="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>" id="orderRatingForm">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="submit_rating">
-        <input type="hidden" name="food_rating" id="foodRatingInput" value="<?= $curFood ?>">
-        <input type="hidden" name="rider_rating" id="riderRatingInput" value="<?= $curRider ?>">
-        <input type="hidden" name="food_tags" id="foodTagsInput" value="">
-        <input type="hidden" name="tip" id="riderTipInput" value="<?= (int)$curTip ?>">
-
-        <!-- Section 1: Food Quality & Taste Star Rating -->
-        <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white mb-4 text-center">
-          <div class="d-inline-flex align-items-center gap-1 justify-content-center mb-2">
-            <span class="badge rounded-pill px-3 py-1 fw-bold" style="background: #2E6F40; color: #CEFFDC;">
-              STEP 1: FOOD QUALITY
-            </span>
-          </div>
-
-          <h3 class="fw-bold font-outfit text-dark mb-1">How was the food from Meghana Foods?</h3>
-          <p class="text-muted small mb-4">Rate taste, freshness, authentic spices, and temperature</p>
-
-          <!-- Interactive 5-Star Food Rating Box -->
-          <div class="star-rating-box py-4 px-3 rounded-4 mb-3" style="background: #F7FAF8; border: 1.5px dashed #CDE6D4;">
-            <div class="interactive-star-group d-inline-flex align-items-center gap-2" id="foodStars" data-target="foodRatingInput" data-label="foodStarLabel">
-              <?php for ($i = 1; $i <= 5; $i++): ?>
-                <i class="bi bi-star-fill star-item <?= $i <= $curFood ? 'active' : '' ?>" 
-                   data-value="<?= $i ?>" 
-                   style="font-size: 2.6rem; cursor: pointer; transition: transform 0.15s ease, color 0.15s ease; color: <?= $i <= $curFood ? '#FFB800' : '#D1D5DB' ?>;"
-                   title="<?= $i ?> Star<?= $i > 1 ? 's' : '' ?>"></i>
-              <?php endfor; ?>
-            </div>
-            
-            <div class="fw-bold font-outfit fs-5 mt-2 text-forest" id="foodStarLabel">
-              <?php 
-                $labels = [
-                  1 => '⭐ Terrible / Poor 😞',
-                  2 => '⭐⭐ Needs Improvement 😐',
-                  3 => '⭐⭐⭐ Good Taste 👍',
-                  4 => '⭐⭐⭐⭐ Very Good & Flavorful! 😊',
-                  5 => '⭐⭐⭐⭐⭐ Outstanding & Delicious! 🌟'
-                ];
-                echo $labels[$curFood] ?? 'Outstanding! 🌟';
-              ?>
-            </div>
-            <div class="small text-muted">Tap on any star to adjust your score</div>
-          </div>
-
-          <!-- Food Compliment Chips -->
-          <div class="text-start mt-3">
-            <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="letter-spacing: 0.5px;">
-              What did you like the most? (Tap to select)
-            </label>
-            <div class="d-flex flex-wrap gap-2 mb-3" id="foodChipsContainer">
-              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill feedback-chip" data-tag="Piping Hot & Fresh">
-                ♨️ Piping Hot & Fresh
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill feedback-chip" data-tag="Authentic Andhra Spice">
-                🌶️ Authentic Andhra Spice
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill feedback-chip" data-tag="Spill-Proof Packaging">
-                📦 Spill-Proof Packaging
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill feedback-chip" data-tag="Tender & Juicy Cuts">
-                🍗 Tender & Juicy Cuts
-              </button>
-              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill feedback-chip" data-tag="Generous Portion Size">
-                🍲 Generous Portion Size
-              </button>
-            </div>
-          </div>
-
-          <!-- Individual Ordered Dish Ratings -->
-          <?php if (!empty($orderItems)): ?>
-            <div class="text-start pt-3 border-top mt-3">
-              <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="letter-spacing: 0.5px;">
-                Rate Individual Dishes from this Order:
-              </label>
-              
-              <div class="d-flex flex-column gap-3">
-                <?php foreach ($orderItems as $item): ?>
-                  <div class="card border rounded-3 p-3 bg-white d-flex flex-row justify-content-between align-items-center flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-3">
-                      <img src="<?= e($item['image_url'] ?: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120') ?>" 
-                           alt="<?= e($item['item_name']) ?>" 
-                           class="rounded-3 object-fit-cover shadow-sm" 
-                           style="width: 52px; height: 52px;">
-                      <div>
-                        <div class="fw-bold text-dark small mb-0"><?= e($item['item_name']) ?></div>
-                        <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-2 py-0" style="font-size:0.6rem;">
-                          <?= $item['is_veg'] ? 'VEG' : 'NON-VEG' ?>
-                        </span>
-                        <span class="small text-muted ms-1"><?= format_inr($item['price']) ?></span>
-                      </div>
-                    </div>
-
-                    <!-- Mini Dish Star Widget -->
-                    <div class="mini-dish-stars d-flex align-items-center gap-1" data-dish-id="<?= (int)$item['item_id'] ?>">
-                      <input type="hidden" name="dish_rating_<?= (int)$item['item_id'] ?>" id="dishRating_<?= (int)$item['item_id'] ?>" value="5">
-                      <?php for ($s = 1; $s <= 5; $s++): ?>
-                        <i class="bi bi-star-fill text-warning mini-star" 
-                           data-dish="<?= (int)$item['item_id'] ?>" 
-                           data-val="<?= $s ?>" 
-                           style="font-size: 1.25rem; cursor: pointer;"
-                           title="<?= $s ?> Stars"></i>
-                      <?php endfor; ?>
-                    </div>
-                  </div>
-                <?php endforeach; ?>
+      <!-- Order Summary Card -->
+      <div class="card border-0 rounded-4 shadow-sm p-3 p-sm-4 bg-white mb-4">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-3">
+            <?php if ($orderThumbnail): ?>
+              <img src="<?= e($orderThumbnail) ?>" class="rounded-3 object-fit-cover shadow-sm" style="width: 56px; height: 56px;" alt="Order Item">
+            <?php else: ?>
+              <div class="rounded-3 d-flex align-items-center justify-content-center shadow-sm" style="width: 56px; height: 56px; background: #EBF7ED; color: #2E6F40; font-size: 1.5rem;">
+                <i class="bi bi-bag-check-fill"></i>
+              </div>
+            <?php endif; ?>
+            <div>
+              <div class="fw-bold text-dark font-outfit fs-6 mb-0">
+                Order #ZIP-<?= $orderId ?>
+              </div>
+              <div class="small text-muted text-truncate" style="max-width: 320px;" title="<?= e($itemsSummary) ?>">
+                <?= e($itemsSummary) ?>
+              </div>
+              <div class="small text-muted" style="font-size: 0.78rem;">
+                <?= !empty($order['placed_at']) ? date('d M Y, h:i A', strtotime($order['placed_at'])) : 'Recent Order' ?> &bull; <?= format_inr($order['total_amount'] ?? 0) ?>
               </div>
             </div>
-          <?php endif; ?>
-
-          <!-- Written Comments -->
-          <div class="text-start mt-4 pt-3 border-top">
-            <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="letter-spacing: 0.5px;">
-              Write a Review (Optional)
-            </label>
-            <textarea name="comments" class="form-control rounded-3 p-3" rows="3" placeholder="Share your experience on taste, texture, aroma, or packaging to guide other foodies..."><?= e($curComments) ?></textarea>
           </div>
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 fw-bold px-3 py-1 rounded-pill small">
+            <i class="bi bi-check-circle-fill me-1"></i> <?= e($order['order_status'] ?? 'DELIVERED') ?>
+          </span>
         </div>
+      </div>
 
-        <!-- Section 2: Delivery Courier Experience & Star Rating -->
-        <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white mb-4 text-center">
-          <div class="d-inline-flex align-items-center gap-1 justify-content-center mb-2">
-            <span class="badge rounded-pill px-3 py-1 fw-bold" style="background: #2E6F40; color: #CEFFDC;">
-              STEP 2: DELIVERY SERVICE
-            </span>
+      <?php if ($submitted || ($existingReview && !$isEdit)): ?>
+        <!-- Display Saved Review -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 p-sm-5 bg-white text-center mb-4">
+          <div class="rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mx-auto mb-3" style="width: 72px; height: 72px; background: #CEFFDC; color: #2E6F40;">
+            <i class="bi bi-check-circle-fill fs-1 text-success"></i>
           </div>
 
           <h4 class="fw-bold font-outfit text-dark mb-1">
-            How was your delivery with <?= e($order['delivery_partner_name'] ?? 'Suresh Kumar') ?>?
+            <?= $submitted ? 'Thank You For Your Review! ⭐' : 'Your Order Review' ?>
           </h4>
-          <p class="text-muted small mb-3">Rate courier speed, politeness, and contactless doorstep delivery</p>
+          <p class="text-muted small mb-4" style="max-width: 480px; margin: 0 auto;">
+            Your feedback helps our kitchen chefs and riders maintain high standards.
+          </p>
 
-          <div class="d-flex align-items-center justify-content-center gap-3 p-3 rounded-4 mb-3" style="background: #F7FAF8; border: 1px solid #E2ECE5; max-width: 450px; margin: 0 auto;">
-            <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold fs-4 shadow-sm" style="width: 50px; height: 50px; background: #2E6F40;">
-              <?= strtoupper(substr($order['delivery_partner_name'] ?? 'Suresh Kumar', 0, 1)) ?>
-            </div>
-            <div class="text-start">
-              <h6 class="fw-bold text-dark mb-0"><?= e($order['delivery_partner_name'] ?? 'Suresh Kumar') ?></h6>
-              <div class="small text-muted"><i class="bi bi-star-fill text-warning me-1"></i> 4.9 Rating &bull; Zippy Express Rider</div>
+          <!-- Rating Details Grid -->
+          <div class="p-3 p-sm-4 rounded-4 mb-4 text-start" style="background: #F7FAF8; border: 1px solid #E2ECE5;">
+            <div class="row g-3">
+              
+              <div class="col-sm-6 border-end-sm">
+                <div class="small fw-bold text-muted text-uppercase mb-1" style="font-size:0.75rem; letter-spacing: 0.5px;">Food Taste &amp; Quality</div>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="fs-4 text-warning">
+                    <?= str_repeat('★', $curFood) . str_repeat('☆', 5 - $curFood) ?>
+                  </span>
+                  <span class="fw-bold text-dark fs-6"><?= $curFood ?>/5</span>
+                </div>
+              </div>
+
+              <div class="col-sm-6 ps-sm-3">
+                <div class="small fw-bold text-muted text-uppercase mb-1" style="font-size:0.75rem; letter-spacing: 0.5px;">Delivery by <?= e($riderName) ?></div>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="fs-4 text-warning">
+                    <?= str_repeat('★', $curRider) . str_repeat('☆', 5 - $curRider) ?>
+                  </span>
+                  <span class="fw-bold text-dark fs-6"><?= $curRider ?>/5</span>
+                </div>
+                <?php if ($curTip > 0): ?>
+                  <div class="small text-success mt-1"><i class="bi bi-heart-fill me-1"></i> ₹<?= number_format($curTip, 0) ?> Tip Given</div>
+                <?php endif; ?>
+              </div>
+
+              <?php if (!empty($curComments)): ?>
+                <div class="col-12 pt-3 border-top">
+                  <div class="small fw-bold text-muted text-uppercase mb-1" style="font-size:0.75rem; letter-spacing: 0.5px;">Your Feedback</div>
+                  <div class="fst-italic text-dark bg-white p-3 rounded-3 border small">
+                    "<?= e($curComments) ?>"
+                  </div>
+                </div>
+              <?php endif; ?>
+
             </div>
           </div>
 
-          <!-- Interactive 5-Star Rider Rating Box -->
-          <div class="star-rating-box py-3 px-3 rounded-4 mb-3" style="background: #F7FAF8; border: 1.5px dashed #CDE6D4;">
-            <div class="interactive-star-group d-inline-flex align-items-center gap-2" id="riderStars" data-target="riderRatingInput" data-label="riderStarLabel">
-              <?php for ($i = 1; $i <= 5; $i++): ?>
-                <i class="bi bi-star-fill star-item <?= $i <= $curRider ? 'active' : '' ?>" 
-                   data-value="<?= $i ?>" 
-                   style="font-size: 2.2rem; cursor: pointer; transition: transform 0.15s ease, color 0.15s ease; color: <?= $i <= $curRider ? '#FFB800' : '#D1D5DB' ?>;"
-                   title="<?= $i ?> Star<?= $i > 1 ? 's' : '' ?>"></i>
-              <?php endfor; ?>
-            </div>
-            
-            <div class="fw-bold font-outfit mt-1 text-forest" id="riderStarLabel">
-              <?= $curRider === 5 ? '⚡ Lightning Fast & Courteous! 🌟' : ($curRider . ' Stars') ?>
-            </div>
+          <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>&edit=1" class="btn btn-outline-success rounded-pill px-4 fw-semibold">
+              <i class="bi bi-pencil me-1"></i> Edit Review
+            </a>
+            <a href="<?= CUSTOMER_URL ?>/order-history.php" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+              <i class="bi bi-receipt me-1"></i> Back to Orders
+            </a>
           </div>
-
-          <!-- Courier Tip Selector -->
-          <div class="text-start mt-3 pt-3 border-top">
-            <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="letter-spacing: 0.5px;">
-              Add a Tip for <?= e($order['delivery_partner_name'] ?? 'Suresh') ?>? (100% credited to rider)
-            </label>
-            <div class="d-flex flex-wrap gap-2" id="tipSelector">
-              <button type="button" class="btn btn-outline-secondary rounded-pill px-3 fw-bold tip-btn <?= $curTip == 0 ? 'active' : '' ?>" data-tip="0">
-                None
-              </button>
-              <button type="button" class="btn btn-outline-success rounded-pill px-3 fw-bold tip-btn <?= $curTip == 20 ? 'active' : '' ?>" data-tip="20">
-                ₹20
-              </button>
-              <button type="button" class="btn btn-outline-success rounded-pill px-3 fw-bold tip-btn <?= $curTip == 30 ? 'active' : '' ?>" data-tip="30">
-                ₹30 (Popular ⭐)
-              </button>
-              <button type="button" class="btn btn-outline-success rounded-pill px-3 fw-bold tip-btn <?= $curTip == 50 ? 'active' : '' ?>" data-tip="50">
-                ₹50
-              </button>
-            </div>
-          </div>
-
         </div>
 
-        <!-- Submit Button -->
-        <button type="submit" class="btn btn-success w-100 rounded-pill py-3 fw-bold shadow-lg fs-5" style="background:#2E6F40; border-color:#2E6F40;">
-          <i class="bi bi-star-fill text-warning me-2"></i> Submit Food Review & Star Rating ⭐
-        </button>
+      <?php else: ?>
 
-      </form>
+        <!-- Simplified Rating Form for Both Food and Delivery -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 p-sm-5 bg-white mb-4">
+          <div class="text-center mb-4">
+            <h4 class="fw-bold text-dark font-outfit mb-1"><?= $isEdit ? 'Edit Your Review' : 'How was your experience?' ?></h4>
+            <p class="text-muted small mb-0">Rate your food and delivery with a single tap</p>
+          </div>
+
+          <form method="POST" action="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>" id="orderRatingForm">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="submit_rating">
+            <input type="hidden" name="food_rating" id="foodRatingInput" value="<?= $curFood ?>">
+            <input type="hidden" name="rider_rating" id="riderRatingInput" value="<?= $curRider ?>">
+
+            <!-- 1. Food Rating Section -->
+            <div class="p-3 p-sm-4 rounded-4 mb-3" style="background: #F7FAF8; border: 1px solid #E2ECE5;">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 36px; height: 36px; background: #CEFFDC; color: #2E6F40;">
+                    <i class="bi bi-egg-fried fs-5"></i>
+                  </span>
+                  <div>
+                    <div class="fw-bold text-dark font-outfit">Food Quality &amp; Taste</div>
+                    <div class="small text-muted" style="font-size: 0.8rem;">Taste, freshness, and packaging</div>
+                  </div>
+                </div>
+                <span class="badge rounded-pill px-3 py-1 fw-bold fs-6" id="foodStarLabel" style="background: #FFF3CD; color: #856404;">
+                  <?= $foodLabels[$curFood] ?? '5 Stars' ?>
+                </span>
+              </div>
+
+              <!-- Star Rating Bar for Food -->
+              <div class="d-flex justify-content-center py-2">
+                <div class="star-rating-bar d-inline-flex align-items-center gap-2" id="foodStars" data-target="foodRatingInput" data-label="foodStarLabel" data-type="food">
+                  <?php for ($i = 1; $i <= 5; $i++): ?>
+                    <i class="bi bi-star-fill star-icon <?= $i <= $curFood ? 'active' : '' ?>" 
+                       data-value="<?= $i ?>" 
+                       title="<?= $i ?> Star<?= $i > 1 ? 's' : '' ?>"></i>
+                  <?php endfor; ?>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Delivery Partner Rating Section -->
+            <div class="p-3 p-sm-4 rounded-4 mb-4" style="background: #F7FAF8; border: 1px solid #E2ECE5;">
+              <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 36px; height: 36px; background: #CEFFDC; color: #2E6F40;">
+                    <i class="bi bi-bicycle fs-5"></i>
+                  </span>
+                  <div>
+                    <div class="fw-bold text-dark font-outfit">Delivery by <?= e($riderName) ?></div>
+                    <div class="small text-muted" style="font-size: 0.8rem;">Delivery speed and politeness</div>
+                  </div>
+                </div>
+                <span class="badge rounded-pill px-3 py-1 fw-bold fs-6" id="riderStarLabel" style="background: #FFF3CD; color: #856404;">
+                  <?= $riderLabels[$curRider] ?? '5 Stars' ?>
+                </span>
+              </div>
+
+              <!-- Star Rating Bar for Rider -->
+              <div class="d-flex justify-content-center py-2">
+                <div class="star-rating-bar d-inline-flex align-items-center gap-2" id="riderStars" data-target="riderRatingInput" data-label="riderStarLabel" data-type="rider">
+                  <?php for ($i = 1; $i <= 5; $i++): ?>
+                    <i class="bi bi-star-fill star-icon <?= $i <= $curRider ? 'active' : '' ?>" 
+                       data-value="<?= $i ?>" 
+                       title="<?= $i ?> Star<?= $i > 1 ? 's' : '' ?>"></i>
+                  <?php endfor; ?>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Comments (Optional) -->
+            <div class="mb-4">
+              <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="letter-spacing: 0.5px;">
+                Comments or Feedback (Optional)
+              </label>
+              <textarea name="comments" class="form-control rounded-3 p-3" rows="3" placeholder="Share your experience or notes on food or delivery..."><?= e($curComments) ?></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="btn btn-success w-100 rounded-pill py-3 fw-bold shadow fs-6" style="background:#2E6F40; border-color:#2E6F40;">
+              <i class="bi bi-check2-circle me-1"></i> <?= $isEdit ? 'Save Changes' : 'Submit Review' ?>
+            </button>
+          </form>
+        </div>
+
+      <?php endif; ?>
+
     <?php endif; ?>
 
   </div>
 </main>
 
-<!-- Interactive Star Rating Client Script -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  
-  const ratingLabels = {
-    1: '⭐ Terrible / Poor 😞',
-    2: '⭐⭐ Needs Improvement 😐',
-    3: '⭐⭐⭐ Good Taste 👍',
-    4: '⭐⭐⭐⭐ Very Good & Flavorful! 😊',
-    5: '⭐⭐⭐⭐⭐ Outstanding & Delicious! 🌟'
+  const foodLabels = {
+    1: 'Poor 😞',
+    2: 'Fair 😐',
+    3: 'Good 👍',
+    4: 'Very Good 😊',
+    5: 'Excellent! 🌟'
   };
 
   const riderLabels = {
-    1: '⭐ Very Slow / Unprofessional 😞',
-    2: '⭐⭐ Below Average 😐',
-    3: '⭐⭐⭐ On Time & Okay 👍',
-    4: '⭐⭐⭐⭐ Quick Delivery 😊',
-    5: '⭐⭐⭐⭐⭐ Lightning Fast & Courteous! 🌟'
+    1: 'Poor 😞',
+    2: 'Fair 😐',
+    3: 'Good 👍',
+    4: 'Very Good 😊',
+    5: 'Fast & Polite! 🌟'
   };
 
-  // Helper to update star visual
-  function updateStars(container, rating, activeColor = '#FFB800', inactiveColor = '#D1D5DB') {
-    const stars = container.querySelectorAll('.star-item');
+  function updateStars(container, rating) {
+    const stars = container.querySelectorAll('.star-icon');
     stars.forEach(star => {
       const val = parseInt(star.getAttribute('data-value'), 10);
       if (val <= rating) {
-        star.style.color = activeColor;
-        star.style.transform = 'scale(1.12)';
-        star.style.filter = 'drop-shadow(0 2px 4px rgba(245, 158, 11, 0.4))';
         star.classList.add('active');
       } else {
-        star.style.color = inactiveColor;
-        star.style.transform = 'scale(1)';
-        star.style.filter = 'none';
         star.classList.remove('active');
       }
     });
   }
 
-  // Setup interactive star groups (Food and Rider)
-  document.querySelectorAll('.interactive-star-group').forEach(group => {
+  // Setup interactive star rating groups
+  document.querySelectorAll('.star-rating-bar').forEach(group => {
     const targetInputId = group.getAttribute('data-target');
     const labelId = group.getAttribute('data-label');
+    const type = group.getAttribute('data-type');
     const input = document.getElementById(targetInputId);
     const label = document.getElementById(labelId);
-    const isRider = targetInputId.includes('rider');
-    const labelMap = isRider ? riderLabels : ratingLabels;
+    const labelMap = (type === 'rider') ? riderLabels : foodLabels;
 
-    let currentVal = parseInt(input ? input.value : '5', 10);
-    updateStars(group, currentVal);
+    let selectedVal = parseInt(input ? input.value : '5', 10);
+    updateStars(group, selectedVal);
 
-    group.querySelectorAll('.star-item').forEach(star => {
+    group.querySelectorAll('.star-icon').forEach(star => {
       const val = parseInt(star.getAttribute('data-value'), 10);
 
-      // Hover preview
+      // Hover / Touch interaction
       star.addEventListener('mouseenter', () => {
-        updateStars(group, val, '#F59E0B');
+        updateStars(group, val);
         if (label) label.textContent = labelMap[val] || `${val} Stars`;
       });
 
-      // Click select
+      // Click to choose
       star.addEventListener('click', () => {
-        currentVal = val;
+        selectedVal = val;
         if (input) input.value = val;
-        updateStars(group, currentVal);
+        updateStars(group, selectedVal);
         if (label) label.textContent = labelMap[val] || `${val} Stars`;
-        
-        // Quick visual pulse
-        star.style.transform = 'scale(1.35)';
-        setTimeout(() => { star.style.transform = 'scale(1.12)'; }, 150);
       });
     });
 
     group.addEventListener('mouseleave', () => {
-      updateStars(group, currentVal);
-      if (label) label.textContent = labelMap[currentVal] || `${currentVal} Stars`;
+      updateStars(group, selectedVal);
+      if (label) label.textContent = labelMap[selectedVal] || `${selectedVal} Stars`;
     });
   });
-
-  // Food Compliment Chips Selection
-  const chips = document.querySelectorAll('#foodChipsContainer .feedback-chip');
-  const tagsInput = document.getElementById('foodTagsInput');
-  const selectedTags = new Set();
-
-  chips.forEach(chip => {
-    chip.addEventListener('click', function() {
-      const tag = this.getAttribute('data-tag');
-      if (selectedTags.has(tag)) {
-        selectedTags.delete(tag);
-        this.classList.remove('btn-success', 'text-white');
-        this.classList.add('btn-outline-secondary');
-      } else {
-        selectedTags.add(tag);
-        this.classList.remove('btn-outline-secondary');
-        this.classList.add('btn-success', 'text-white');
-      }
-      if (tagsInput) {
-        tagsInput.value = Array.from(selectedTags).join(',');
-      }
-    });
-  });
-
-  // Mini Dish Star Widgets
-  document.querySelectorAll('.mini-dish-stars').forEach(widget => {
-    const dishId = widget.getAttribute('data-dish-id');
-    const hiddenInput = document.getElementById('dishRating_' + dishId);
-    const stars = widget.querySelectorAll('.mini-star');
-
-    function updateMiniStars(rating) {
-      stars.forEach(s => {
-        const val = parseInt(s.getAttribute('data-val'), 10);
-        if (val <= rating) {
-          s.classList.remove('bi-star');
-          s.classList.add('bi-star-fill', 'text-warning');
-          s.style.color = '#FFB800';
-        } else {
-          s.classList.remove('bi-star-fill', 'text-warning');
-          s.classList.add('bi-star');
-          s.style.color = '#D1D5DB';
-        }
-      });
-    }
-
-    stars.forEach(s => {
-      s.addEventListener('click', function() {
-        const val = parseInt(this.getAttribute('data-val'), 10);
-        if (hiddenInput) hiddenInput.value = val;
-        updateMiniStars(val);
-      });
-    });
-  });
-
-  // Rider Tip Selector
-  const tipBtns = document.querySelectorAll('#tipSelector .tip-btn');
-  const tipInput = document.getElementById('riderTipInput');
-
-  tipBtns.forEach(btn => {
-    btn.addEventListener('click', function() {
-      tipBtns.forEach(b => {
-        b.classList.remove('active', 'btn-success', 'text-white');
-        b.classList.add('btn-outline-success');
-      });
-      this.classList.remove('btn-outline-success', 'btn-outline-secondary');
-      this.classList.add('active', 'btn-success', 'text-white');
-      const val = this.getAttribute('data-tip');
-      if (tipInput) tipInput.value = val;
-    });
-  });
-
 });
 </script>
 

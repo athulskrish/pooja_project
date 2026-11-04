@@ -64,7 +64,7 @@ cust_csrf = re.search(r'name="csrf_token" value="([^"]+)"', cust_login_html).gro
 
 cust_post = urllib.parse.urlencode({
     'csrf_token': cust_csrf,
-    'email': 'pooja@example.com',
+    'email': 'athul@example.com',
     'password': 'password123'
 }).encode('utf-8')
 cust_opener.open('http://127.0.0.1:8080/customer/login.php', data=cust_post)

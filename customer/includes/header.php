@@ -5,6 +5,12 @@
  * Design: Figma "Lush Forest" Palette (#Combination-4)
  */
 
+// Send strict anti-caching HTTP headers to ensure fresh catalog data
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+header("Expires: 0");
+
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
@@ -20,6 +26,12 @@ $dbStatus = checkDBStatus();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Anti-Cache Meta Directives for Stale Prevention -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
   <title><?= e($pageTitle) ?> | Pooja Project</title>
   
   <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
@@ -34,8 +46,8 @@ $dbStatus = checkDBStatus();
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   
-  <!-- Custom Figma Lush Forest Palette Stylesheet -->
-  <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css">
+  <!-- Custom Figma Lush Forest Palette Stylesheet with cache-busting -->
+  <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css?v=<?= filemtime(__DIR__ . '/../../assets/css/style.css') ?>">
 
   <script>
     <?php
@@ -43,6 +55,21 @@ $dbStatus = checkDBStatus();
     $dishImageMap = [];
     if (!empty($catalogRows)) {
         foreach ($catalogRows as $cr) {
+            if (!empty($cr['image_url'])) {
+                $dishImageMap[$cr['item_id']] = $cr['image_url'];
+            }
+        }
+    }
+
+    // Compute active catalog version for customer side real-time change detection
+    $catVerData = db_fetch_all("SELECT category_id, category_name, display_order, is_active FROM `categories` ORDER BY category_id");
+    $dishVerData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id");
+    $initialCatalogVer = md5(md5(json_encode($catVerData)) . '_' . md5(json_encode($dishVerData)));
+    ?>
+    window.POOJA_DISH_IMAGES = <?= json_encode($dishImageMap) ?>;
+    window.POOJA_CATALOG_VER = <?= json_encode($initialCatalogVer) ?>;
+    window.API_URL = <?= json_encode(BASE_URL . '/api') ?>;
+  </script>
             $dishImageMap[$cr['item_id']] = get_dish_image_url($cr['image_url'] ?? '');
         }
     }

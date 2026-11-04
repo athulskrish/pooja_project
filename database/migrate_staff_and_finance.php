@@ -1,7 +1,8 @@
 <?php
 /**
- * Migration & Seeder: Staff Profiles, Attendance, Salaries, and Money Transactions
+ * Migration & Seeder: Staff Profiles, Salaries, and Money Transactions
  * Zippy - Online Food Ordering Platform
+ * Exactly 1 Chef (Sajeev) and 3 Drivers (Shaji, Kichu, Abhi)
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -76,104 +77,88 @@ $pdo->exec("
 ");
 echo "   -> `money_transactions` table ready.\n";
 
-echo "4. Seeding Additional Kitchen & Delivery Users...\n";
-$newStaffUsers = [
-    // Kitchen (Role 3)
+echo "4. Removing legacy extra staff (Vikram, Priya, Ramesh, Rajesh) if present...\n";
+$pdo->exec("DELETE FROM `users` WHERE `email` IN ('vikram@zippy.com', 'priya.kitchen@zippy.com', 'ramesh.rider@zippy.com', 'rajesh.rider@zippy.com')");
+
+echo "5. Seeding Exact Staff Roster (1 Chef: Sajeev, 3 Drivers: Shaji, Kichu, Abhi)...\n";
+$staffList = [
+    // Chef Sajeev (User ID 5)
     [
-        'role_id' => 3,
-        'full_name' => 'Chef Vikram Rathore',
-        'email' => 'vikram@zippy.com',
-        'phone_number' => '+91 97410 88990',
+        'email' => 'chef@zippy.com',
         'dept' => 'KITCHEN',
-        'designation' => 'Sous Chef & Tandoor Master',
-        'spec' => 'North Indian, Tandoori Kebabs & Dum Biryani',
+        'desig' => 'Executive Head Chef',
+        'spec' => 'Master Culinary Operations & WSJF Queue Management',
         'status' => 'ON_DUTY',
-        'shift' => '11:00 AM - 08:00 PM',
-        'salary' => 28000.00,
-        'rate' => 35.00,
-        'joined' => '2025-08-15',
-        'orders' => 412,
+        'shift' => '08:00 AM - 05:00 PM',
+        'veh' => null,
+        'dl' => null,
+        'sal' => 35000.00,
+        'rate' => 40.00,
+        'joined' => '2025-01-01',
+        'cod' => 0.00,
+        'orders' => 940,
+        'rating' => 4.95
+    ],
+    // Driver 1: Shaji (User ID 6)
+    [
+        'email' => 'shaji@zippy.com',
+        'dept' => 'DELIVERY',
+        'desig' => 'Senior Delivery Captain',
+        'spec' => 'Bellandur & Outer Ring Road Express Hub',
+        'status' => 'ON_DUTY',
+        'shift' => '09:00 AM - 06:00 PM',
+        'veh' => 'Hero Electric Optima (KA-03-EM-4921)',
+        'dl' => 'DL-0120170048192',
+        'sal' => 20000.00,
+        'rate' => 45.00,
+        'joined' => '2025-03-15',
+        'cod' => 0.00,
+        'orders' => 810,
         'rating' => 4.90
     ],
+    // Driver 2: Kichu (User ID 7)
     [
-        'role_id' => 3,
-        'full_name' => 'Priya Sharma (Prep Cook)',
-        'email' => 'priya.kitchen@zippy.com',
-        'phone_number' => '+91 97410 77665',
-        'dept' => 'KITCHEN',
-        'designation' => 'Line Cook & Cold Bar Specialist',
-        'spec' => 'Healthy Salads, Quinoa Bowls & Dosa Griddle',
-        'status' => 'ON_BREAK',
-        'shift' => '08:00 AM - 04:00 PM',
-        'salary' => 22000.00,
-        'rate' => 30.00,
-        'joined' => '2026-01-10',
-        'orders' => 285,
-        'rating' => 4.75
-    ],
-    // Delivery (Role 4)
-    [
-        'role_id' => 4,
-        'full_name' => 'Ramesh Rao (Rider)',
-        'email' => 'ramesh.rider@zippy.com',
-        'phone_number' => '+91 96320 11223',
+        'email' => 'kichu@zippy.com',
         'dept' => 'DELIVERY',
-        'designation' => 'Delivery Fleet Specialist',
-        'spec' => 'Koramangala & HSR Zone Rapid Dispatch',
+        'desig' => 'Rapid Fleet Partner',
+        'spec' => 'Indiranagar & Domlur Rapid Dispatch',
         'status' => 'ON_DUTY',
-        'shift' => '10:00 AM - 06:00 PM',
-        'vehicle' => 'Hero Electric Optima (KA-05-EJ-8120)',
+        'shift' => '10:00 AM - 07:00 PM',
+        'veh' => 'Honda Activa 6G (KA-05-EJ-8120)',
         'dl' => 'DL-0420180091823',
-        'salary' => 18000.00,
+        'sal' => 19000.00,
         'rate' => 45.00,
-        'joined' => '2025-11-01',
-        'orders' => 520,
-        'rating' => 4.85,
-        'cod' => 850.00
-    ],
-    [
-        'role_id' => 4,
-        'full_name' => 'Rajesh Varma (Rider)',
-        'email' => 'rajesh.rider@zippy.com',
-        'phone_number' => '+91 96320 33445',
-        'dept' => 'DELIVERY',
-        'designation' => 'Senior Delivery Partner',
-        'spec' => 'Indiranagar Central & Domlur Quick Delivery',
-        'status' => 'ON_DUTY',
-        'shift' => '04:00 PM - 12:00 AM',
-        'vehicle' => 'Honda Activa 6G (KA-03-HF-4491)',
-        'dl' => 'DL-0320190019204',
-        'salary' => 19500.00,
-        'rate' => 50.00,
         'joined' => '2025-06-20',
-        'orders' => 680,
-        'rating' => 4.92,
-        'cod' => 420.00
-    ]
+        'cod' => 0.00,
+        'orders' => 520,
+        'rating' => 4.85
+    ],
+    // Driver 3: Abhi (User ID 8)
+    [
+        'email' => 'abhi@zippy.com',
+        'dept' => 'DELIVERY',
+        'desig' => 'Rapid Fleet Partner',
+        'spec' => 'Whitefield & ITPL Rapid Delivery',
+        'status' => 'ON_DUTY',
+        'shift' => '11:00 AM - 08:00 PM',
+        'veh' => 'TVS NTORQ (KA-04-HF-4491)',
+        'dl' => 'DL-0320190019204',
+        'sal' => 18500.00,
+        'rate' => 40.00,
+        'joined' => '2025-11-01',
+        'cod' => 0.00,
+        'orders' => 480,
+        'rating' => 4.88
+    ],
 ];
 
-$pwdHash = password_hash('password123', PASSWORD_BCRYPT);
-
-foreach ($newStaffUsers as $staff) {
-    $existing = db_fetch_one("SELECT user_id FROM `users` WHERE `email` = :em", [':em' => $staff['email']]);
-    if (!$existing) {
-        $stmt = $pdo->prepare("
-            INSERT INTO `users` (`role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) 
-            VALUES (:rid, :fn, :em, :ph, :pw, 1)
-        ");
-        $stmt->execute([
-            ':rid' => $staff['role_id'],
-            ':fn'  => $staff['full_name'],
-            ':em'  => $staff['email'],
-            ':ph'  => $staff['phone_number'],
-            ':pw'  => $pwdHash
-        ]);
-        $uid = (int)$pdo->lastInsertId();
-    } else {
-        $uid = (int)$existing['user_id'];
+foreach ($staffList as $staff) {
+    $user = db_fetch_one("SELECT user_id FROM `users` WHERE `email` = :em", [':em' => $staff['email']]);
+    if (!$user) {
+        continue;
     }
+    $uid = (int)$user['user_id'];
 
-    // Upsert Staff Profile
     db_query("
         INSERT INTO `staff_profiles` 
         (`user_id`, `department`, `designation`, `specialization`, `duty_status`, `shift_timings`, `vehicle_details`, `driving_license`, `base_salary`, `hourly_or_order_rate`, `joined_date`, `cod_balance`, `total_orders_handled`, `rating`) 
@@ -185,51 +170,38 @@ foreach ($newStaffUsers as $staff) {
             `duty_status` = VALUES(`duty_status`),
             `shift_timings` = VALUES(`shift_timings`),
             `vehicle_details` = VALUES(`vehicle_details`),
+            `driving_license` = VALUES(`driving_license`),
             `base_salary` = VALUES(`base_salary`),
-            `cod_balance` = VALUES(`cod_balance`)
+            `hourly_or_order_rate` = VALUES(`hourly_or_order_rate`),
+            `cod_balance` = VALUES(`cod_balance`),
+            `total_orders_handled` = VALUES(`total_orders_handled`),
+            `rating` = VALUES(`rating`)
     ", [
         ':uid' => $uid,
         ':dept' => $staff['dept'],
-        ':desig' => $staff['designation'],
-        ':spec' => $staff['spec'] ?? null,
+        ':desig' => $staff['desig'],
+        ':spec' => $staff['spec'],
         ':duty' => $staff['status'],
         ':shift' => $staff['shift'],
-        ':veh' => $staff['vehicle'] ?? null,
-        ':dl' => $staff['dl'] ?? null,
-        ':sal' => $staff['salary'],
+        ':veh' => $staff['veh'],
+        ':dl' => $staff['dl'],
+        ':sal' => $staff['sal'],
         ':rate' => $staff['rate'],
         ':joined' => $staff['joined'],
-        ':cod' => $staff['cod'] ?? 0.00,
+        ':cod' => $staff['cod'],
         ':ord' => $staff['orders'],
         ':rat' => $staff['rating']
     ]);
 }
-
-// 5. Seed Primary Staff (Chef Sanjeev & Suresh Kumar)
-$chefId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'chef@zippy.com'") ?: 4);
-if ($chefId > 0) {
-    db_query("
-        INSERT INTO `staff_profiles` 
-        (`user_id`, `department`, `designation`, `specialization`, `duty_status`, `shift_timings`, `base_salary`, `hourly_or_order_rate`, `joined_date`, `total_orders_handled`, `rating`) 
-        VALUES (:uid, 'KITCHEN', 'Executive Head Chef', 'Master Culinary Operations & WSJF Queue Management', 'ON_DUTY', '08:00 AM - 05:00 PM', 35000.00, 40.00, '2025-01-01', 940, 4.95)
-        ON DUPLICATE KEY UPDATE `duty_status` = 'ON_DUTY', `base_salary` = 35000.00
-    ", [':uid' => $chefId]);
-}
-
-$riderId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'rider@zippy.com'") ?: 5);
-if ($riderId > 0) {
-    db_query("
-        INSERT INTO `staff_profiles` 
-        (`user_id`, `department`, `designation`, `specialization`, `duty_status`, `shift_timings`, `vehicle_details`, `driving_license`, `base_salary`, `hourly_or_order_rate`, `joined_date`, `cod_balance`, `total_orders_handled`, `rating`) 
-        VALUES (:uid, 'DELIVERY', 'Senior Fleet Delivery Captain', 'Indiranagar & Koramangala Hub Specialist', 'ON_DUTY', '09:00 AM - 06:00 PM', 'Ather 450X (KA-03-EM-4921)', 'DL-0120170048192', 20000.00, 45.00, '2025-03-15', 794.85, 810, 4.88)
-        ON DUPLICATE KEY UPDATE `duty_status` = 'ON_DUTY', `base_salary` = 20000.00
-    ", [':uid' => $riderId]);
-}
-echo "   -> Staff profiles upserted successfully.\n";
+echo "   -> Staff profiles upserted for Chef Sajeev, Shaji, Kichu, Abhi.\n";
 
 echo "6. Seeding Historical Salary Payouts...\n";
+$chefId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'chef@zippy.com'") ?: 5);
+$shajiId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'shaji@zippy.com'") ?: 6);
+$kichuId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'kichu@zippy.com'") ?: 7);
+$abhiId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'abhi@zippy.com'") ?: 8);
+
 $salarySeedData = [
-    // Chef Sanjeev
     [
         'user_id' => $chefId,
         'month_year' => 'October 2026',
@@ -256,32 +228,57 @@ $salarySeedData = [
         'paid_at' => '2026-09-30 18:00:00',
         'notes' => 'Monthly executive culinary salary'
     ],
-    // Rider Suresh Kumar
     [
-        'user_id' => $riderId,
+        'user_id' => $shajiId,
         'month_year' => 'October 2026',
         'base' => 20000.00,
         'incentive' => 4350.00,
         'deduction' => 0.00,
         'net' => 24350.00,
         'mode' => 'UPI',
-        'ref' => 'UPI-PAYOUT-RIDER-202610-5512',
+        'ref' => 'UPI-PAYOUT-SHAJI-202610-5512',
         'status' => 'PAID',
         'paid_at' => '2026-10-31 19:15:00',
         'notes' => 'Base stipend + 97 fulfilled doorstep deliveries'
     ],
     [
-        'user_id' => $riderId,
+        'user_id' => $shajiId,
         'month_year' => 'September 2026',
         'base' => 20000.00,
         'incentive' => 3900.00,
         'deduction' => 0.00,
         'net' => 23900.00,
         'mode' => 'UPI',
-        'ref' => 'UPI-PAYOUT-RIDER-202609-4419',
+        'ref' => 'UPI-PAYOUT-SHAJI-202609-4419',
         'status' => 'PAID',
         'paid_at' => '2026-09-30 19:00:00',
         'notes' => 'Base stipend + 87 fulfilled doorstep deliveries'
+    ],
+    [
+        'user_id' => $kichuId,
+        'month_year' => 'October 2026',
+        'base' => 19000.00,
+        'incentive' => 3200.00,
+        'deduction' => 0.00,
+        'net' => 22200.00,
+        'mode' => 'UPI',
+        'ref' => 'UPI-PAYOUT-KICHU-202610-1192',
+        'status' => 'PAID',
+        'paid_at' => '2026-10-31 19:30:00',
+        'notes' => 'Base stipend + 72 fulfilled deliveries'
+    ],
+    [
+        'user_id' => $abhiId,
+        'month_year' => 'October 2026',
+        'base' => 18500.00,
+        'incentive' => 2800.00,
+        'deduction' => 0.00,
+        'net' => 21300.00,
+        'mode' => 'UPI',
+        'ref' => 'UPI-PAYOUT-ABHI-202610-7731',
+        'status' => 'PAID',
+        'paid_at' => '2026-10-31 19:45:00',
+        'notes' => 'Base stipend + 64 fulfilled deliveries'
     ]
 ];
 
@@ -328,7 +325,7 @@ foreach ($orders as $ord) {
     $amount = (float)$ord['total_amount'];
     $status = $ord['payment_status'] ?: 'PENDING';
     $ref = $ord['transaction_reference'] ?: ('TXN-ORD-' . $orderId);
-    $rider = $ord['delivery_partner_name'] ?: 'Zippy Express Rider';
+    $rider = $ord['delivery_partner_name'] ?: 'Shaji (Rider)';
     $time = $ord['placed_at'];
 
     // Check if txn already exists
@@ -373,25 +370,6 @@ foreach ($orders as $ord) {
             ':notes' => $notes,
             ':created' => $time
         ]);
-    }
-
-    // If cancelled, record refund
-    if ($ord['order_status'] === 'CANCELLED') {
-        $refundTxn = db_fetch_val("SELECT txn_id FROM `money_transactions` WHERE `order_id` = :oid AND `txn_category` = 'CUSTOMER_REFUND'", [':oid' => $orderId]);
-        if (!$refundTxn) {
-            $refNum = 'REF-' . date('Ym', strtotime($time)) . '-' . str_pad((string)$orderId, 5, '0', STR_PAD_LEFT);
-            db_query("
-                INSERT INTO `money_transactions` 
-                (`txn_number`, `order_id`, `user_id`, `txn_category`, `flow_direction`, `payment_method`, `amount`, `status`, `reference_id`, `handled_by`, `notes`, `created_at`) 
-                VALUES (:tnum, :oid, :uid, 'CUSTOMER_REFUND', 'OUTWARD', 'UPI', :amt, 'REFUNDED', :ref, 'Automated Refund Engine', 'Order cancelled - full refund reversed to source account', NOW())
-            ", [
-                ':tnum' => $refNum,
-                ':oid' => $orderId,
-                ':uid' => $ord['user_id'],
-                ':amt' => $amount,
-                ':ref' => 'REF-' . $ref
-            ]);
-        }
     }
 }
 echo "   -> Money transactions backfilled for all orders.\n";

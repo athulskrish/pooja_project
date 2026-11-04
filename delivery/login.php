@@ -21,10 +21,10 @@ if (is_rider() || is_admin()) {
 
 // 1-Click Presentation Access Mode (?demo=1)
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $result = attempt_login('rider@zippy.com', 'password123');
+    $result = attempt_login('shaji@zippy.com', 'password123');
     if ($result['success']) {
         $_SESSION['rider_on_duty'] = true;
-        set_flash('success', 'Authenticated as Delivery Rider (Suresh Kumar) in dedicated Fleet session.');
+        set_flash('success', 'Authenticated as Delivery Rider (Shaji) in dedicated Fleet session.');
         header("Location: " . DELIVERY_URL . "/index.php");
         exit;
     }
@@ -170,12 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- 1-Click Quick Demo Login -->
         <div class="p-3 bg-light rounded-3 border text-center mb-3">
-          <div class="small fw-bold text-dark mb-1">
-            <i class="bi bi-lightning-charge-fill text-warning me-1"></i> Quick 1-Click Demo Login:
+          <div class="small fw-bold text-dark mb-2">
+            <i class="bi bi-lightning-charge-fill text-warning me-1"></i> Quick 1-Click Demo Login (3 Fleet Drivers):
           </div>
-          <button type="button" class="btn btn-sm btn-white border rounded-pill w-100 fw-bold shadow-xs py-2 text-dark bg-white" onclick="quickFillAndSubmit()">
-            <i class="fa-solid fa-id-badge text-success me-1"></i> Login as Suresh Kumar (Rider)
-          </button>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-sm btn-white border rounded-pill w-100 fw-bold shadow-xs py-2 text-dark bg-white" onclick="quickFillAndSubmit('shaji@zippy.com')">
+              <i class="fa-solid fa-motorcycle text-success me-1"></i> Shaji (Rider) &bull; <span class="text-muted small">shaji@zippy.com</span>
+            </button>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-white border rounded-pill flex-fill fw-semibold shadow-xs py-1 text-dark bg-white" onclick="quickFillAndSubmit('kichu@zippy.com')">
+                <i class="fa-solid fa-id-badge text-info me-1"></i> Kichu
+              </button>
+              <button type="button" class="btn btn-sm btn-white border rounded-pill flex-fill fw-semibold shadow-xs py-1 text-dark bg-white" onclick="quickFillAndSubmit('abhi@zippy.com')">
+                <i class="fa-solid fa-id-badge text-primary me-1"></i> Abhi
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center small text-muted pt-2 border-top">
@@ -191,8 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 
   <script>
-    function quickFillAndSubmit() {
-      document.getElementById('inputEmail').value = 'rider@zippy.com';
+    function quickFillAndSubmit(email) {
+      document.getElementById('inputEmail').value = email || 'shaji@zippy.com';
       document.getElementById('inputPassword').value = 'password123';
       document.forms[0].submit();
     }

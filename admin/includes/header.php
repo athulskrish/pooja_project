@@ -5,6 +5,12 @@
  * Design: Figma "Lush Forest" Palette (#Combination-4)
  */
 
+// Send strict anti-caching HTTP headers for real-time admin sync
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+header("Expires: 0");
+
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
@@ -26,6 +32,12 @@ $liveOrdersCount = $orderKpis['live'];
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Anti-Cache Meta Directives -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
   <title><?= e($pageTitle) ?> | Zippy Admin</title>
   
   <!-- Online Google Fonts: Plus Jakarta Sans & Outfit -->
@@ -41,7 +53,7 @@ $liveOrdersCount = $orderKpis['live'];
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   
   <!-- Custom Figma Lush Forest Palette Stylesheet -->
-  <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css">
+  <link rel="stylesheet" href="<?= ASSETS_URL ?>/css/style.css?v=<?= filemtime(__DIR__ . '/../../assets/css/style.css') ?>">
 
   <!-- Chart.js CDN for Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>

@@ -556,7 +556,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- =======================================================================
      PERIOD FILTER SEGMENTED BAR & CUSTOM DATE PICKER
      ======================================================================= -->
-<div class="card border rounded-4 shadow-xs p-3 bg-white mb-4 report-filter-bar" style="border-color:#E2ECE5 !important;">
+<div class="card border rounded-4 shadow-xs p-3 bg-white mb-4 report-filter-bar" id="reportPeriod" style="border-color:#E2ECE5 !important;">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
     <!-- Quick Preset Buttons -->
     <div class="d-flex flex-wrap align-items-center gap-2">

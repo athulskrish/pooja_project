@@ -77,10 +77,14 @@ The password for every account is `password123`
 
 | Who | Email |
 |---|---|
-| Admin | admin@zippy.com |
-| Customer | pooja@example.com |
-| Chef | chef@zippy.com |
-| Delivery rider | rider@zippy.com |
+| Admin | admin@zippy.com (Pooja) |
+| Customer 1 | athul@example.com (Athul) |
+| Customer 2 | amal@example.com (Amal) |
+| Customer 3 | abhijith@example.com (Abhijith) |
+| Chef | chef@zippy.com (Chef Sajeev) |
+| Driver 1 | shaji@zippy.com (Shaji) |
+| Driver 2 | kichu@zippy.com (Kichu) |
+| Driver 3 | abhi@zippy.com (Abhi) |
 
 Each login page also has a **1-click demo login** button.
 

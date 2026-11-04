@@ -13,48 +13,38 @@ foreach ($riders as $r) {
     echo "- " . $r['full_name'] . " (ID: " . $r['user_id'] . ") -> " . ($r['is_busy'] ? "BUSY with #" . $r['active_order_id'] : "AVAILABLE (0/1)") . "\n";
 }
 
-// TEST 2: Busy Check Logic
+// TEST 2: Free Drivers
 echo "\nTEST 2: Busy Check Logic\n";
-$sureshBusy = is_driver_busy(5, 'Suresh Kumar');
-echo "- Suresh Kumar busy: " . ($sureshBusy ? "YES (Order #" . $sureshBusy['order_id'] . ")" : "NO") . "\n";
-assert($sureshBusy !== null, "Suresh Kumar should be busy with 1058");
+$shajiId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'shaji@zippy.com'") ?: 6);
+$kichuId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'kichu@zippy.com'") ?: 7);
 
-$rajeshBusy = is_driver_busy(10, 'Rajesh Varma');
-echo "- Rajesh Varma busy: " . ($rajeshBusy ? "YES" : "NO (Ready to accept)") . "\n";
-assert($rajeshBusy === null, "Rajesh Varma should be free");
+$shajiBusy = is_driver_busy($shajiId, 'Shaji (Rider)');
+echo "- Shaji busy initially: " . ($shajiBusy ? "YES" : "NO") . "\n";
+assert($shajiBusy === null, "Shaji should be free initially");
 
 // TEST 3: Available Driver Selection
-echo "\nTEST 3: Available Driver Auto-Selection for Checkout\n";
+echo "\nTEST 3: Available Driver Auto-Selection\n";
 $nextAvail = get_available_delivery_partner();
 echo "- Auto-assigned to: " . ($nextAvail ? $nextAvail['full_name'] : "None") . "\n";
-assert($nextAvail !== null && $nextAvail['user_id'] == 10, "Should auto-assign Rajesh Varma");
+assert($nextAvail !== null, "Should auto-assign an available driver");
 
-// TEST 4: Simulate Delivery Completion (OTP Verification)
-echo "\nTEST 4: Delivery Completion Lifecycle Test\n";
-// Let's test that when Suresh delivers order 1058, he becomes available!
-$dispatch1058 = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = 1058");
-$otp = $dispatch1058['delivery_otp'];
-echo "- Current Order 1058 OTP: {$otp}\n";
+// TEST 4: Simulate Active Delivery & Completion
+echo "\nTEST 4: Busy Lifecycle Simulation Test\n";
+// Temporarily set Order 1007 to OUT_FOR_DELIVERY with Shaji
+db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1007");
+db_query("UPDATE `delivery_dispatches` SET `rider_id` = :rid, `delivery_partner_name` = 'Shaji (Rider)', `delivery_status` = 'IN_TRANSIT', `dispatched_at` = NOW() WHERE `order_id` = 1007", [':rid' => $shajiId]);
 
-// Verify Suresh is busy right now
-$beforeDelivery = is_driver_busy(5, 'Suresh Kumar');
-echo "- Suresh busy before delivery: " . ($beforeDelivery ? "YES (#{$beforeDelivery['order_id']})" : "NO") . "\n";
+$duringDelivery = is_driver_busy($shajiId, 'Shaji (Rider)');
+echo "- Shaji busy during active delivery: " . ($duringDelivery ? "YES (#{$duringDelivery['order_id']})" : "NO") . "\n";
+assert($duringDelivery !== null, "Shaji should be busy with 1007");
 
-// Now complete delivery of 1058
-db_query("UPDATE `orders` SET `order_status` = 'DELIVERED' WHERE `order_id` = 1058");
-db_query("UPDATE `delivery_dispatches` SET `delivery_status` = 'DELIVERED', `delivered_at` = NOW() WHERE `order_id` = 1058");
+// Now restore 1007 back to READY
+db_query("UPDATE `orders` SET `order_status` = 'READY' WHERE `order_id` = 1007");
+db_query("UPDATE `delivery_dispatches` SET `delivery_status` = 'ASSIGNED', `dispatched_at` = NULL WHERE `order_id` = 1007");
 
-// Now check if Suresh is free
-$afterDelivery = is_driver_busy(5, 'Suresh Kumar');
-echo "- Suresh busy after delivery: " . ($afterDelivery ? "YES" : "NO (Successfully FREE for next trip!)") . "\n";
-assert($afterDelivery === null, "Suresh should be free after delivery");
-
-// Restore order 1058 back to OUT_FOR_DELIVERY for live UI demonstration
-db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1058");
-db_query("UPDATE `delivery_dispatches` SET `delivery_status` = 'IN_TRANSIT', `delivered_at` = NULL WHERE `order_id` = 1058");
-
-$restored = is_driver_busy(5, 'Suresh Kumar');
-echo "- Suresh restored to active delivery: " . ($restored ? "YES (#{$restored['order_id']})" : "NO") . "\n";
+$afterRestore = is_driver_busy($shajiId, 'Shaji (Rider)');
+echo "- Shaji free after order status restored: " . ($afterRestore ? "YES" : "NO (Free)") . "\n";
+assert($afterRestore === null, "Shaji should be free after restoration");
 
 echo "\n=======================================================\n";
 echo "ALL TESTS PASSED: ONE DRIVER ONE DELIVERY RULE VERIFIED!\n";

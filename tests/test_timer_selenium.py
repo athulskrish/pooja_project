@@ -1,7 +1,7 @@
 """
 Automated Selenium Test Suite for Zippy Food Ordering Platform
 Tests:
-  1. Customer Authentication (pooja@example.com)
+  1. Customer Authentication (athul@example.com)
   2. Cart Population & Catalog Item Verification (Item #13 with 19-min prep time -> 34-min ETA)
   3. ACID Checkout Submission & Order Confirmation (order-success.php)
   4. Live Order Status (order-status.php) & 34-Minute Countdown Timer Verification
@@ -85,7 +85,7 @@ class ZippyTimerSeleniumTest(unittest.TestCase):
         return path
 
     def test_01_customer_login(self):
-        """Test customer login with pooja@example.com"""
+        """Test customer login with athul@example.com"""
         print("\n--- TEST 1: Customer Login ---")
         self.driver.get(f"{BASE_URL}/customer/login.php")
         self.assertIn("Customer Sign In", self.driver.title)
@@ -93,7 +93,7 @@ class ZippyTimerSeleniumTest(unittest.TestCase):
         email_input = self.driver.find_element(By.ID, "loginEmail")
         pwd_input = self.driver.find_element(By.ID, "loginPassword")
         email_input.clear()
-        email_input.send_keys("pooja@example.com")
+        email_input.send_keys("athul@example.com")
         pwd_input.clear()
         pwd_input.send_keys("password123")
 
@@ -104,7 +104,7 @@ class ZippyTimerSeleniumTest(unittest.TestCase):
             lambda d: "index.php" in d.current_url or "customer" in d.current_url
         )
         self.snap("01_customer_logged_in.png")
-        print("  [PASS] Logged in successfully as Pooja JP (Customer)")
+        print("  [PASS] Logged in successfully as Athul (Customer)")
 
     def test_02_add_item_to_cart_and_checkout(self):
         """Configure dish with 19-min prep time to generate 34-min ETA (19 prep + 15 travel = 34 min) and submit order"""
