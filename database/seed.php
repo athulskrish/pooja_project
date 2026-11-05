@@ -23,9 +23,10 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
     ]);
 
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+    $pdo->exec("DROP DATABASE IF EXISTS `" . DB_NAME . "`;");
+    $pdo->exec("CREATE DATABASE `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
     $pdo->exec("USE `" . DB_NAME . "`;");
-    $messages[] = "Database `" . DB_NAME . "` created / verified successfully.";
+    $messages[] = "Database `" . DB_NAME . "` dropped, recreated & verified successfully.";
 
     // Read schema.sql
     $sqlFile = __DIR__ . '/schema.sql';

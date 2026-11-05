@@ -25,6 +25,12 @@ function attempt_login(string $email, string $password, ?string $requiredRole = 
         $lookupEmail = 'chef@zippy.com';
     } elseif ($lookupEmail === 'rider@zippy.com') {
         $lookupEmail = 'shaji@zippy.com';
+    } elseif ($lookupEmail === 'customer@zippy.com' || $lookupEmail === 'athul@zippy.com') {
+        $lookupEmail = 'athul@example.com';
+    } elseif ($lookupEmail === 'amal@zippy.com') {
+        $lookupEmail = 'amal@example.com';
+    } elseif ($lookupEmail === 'abhijith@zippy.com') {
+        $lookupEmail = 'abhijith@example.com';
     }
     
     $sql = "SELECT u.*, r.role_name 

@@ -47,21 +47,23 @@ Write down the path from `htdocs` to the folder with `index.php`. For example, `
 
 Both should turn green. If Apache won't start, another program is using the port. Close Skype or similar apps and try again.
 
-## Part 4: Create the database
+## Part 4: Create / Reset the database
 
-**10.** In your browser, go to `http://localhost/phpmyadmin`
-
-**11.** Click **New** on the left side.
-
-**12.** Database name: `zippy_db`. Collation: `utf8mb4_unicode_ci`. Click **Create**.
+**10.** If resetting the database, you can either:
+- Drop `zippy_db` in `http://localhost/phpmyadmin` and create it again with collation `utf8mb4_unicode_ci`, OR
+- Simply run Step 13 below (`database/seed.php`), which automatically drops, recreates, and seeds the entire database fresh!
 
 ## Part 5: Fill the database with data
 
-**13.** Open this link (replace YOUR-FOLDER with the name from step 6):
+**13.** Open this link in your browser (replace `YOUR-FOLDER` with the name from step 6):
 ```
 http://localhost/YOUR-FOLDER/database/seed.php
 ```
-Wait for it to finish. This creates all tables and demo data.
+Or run in terminal / CMD from the project folder:
+```
+php database/seed.php
+```
+Wait for it to finish. This automatically recreates the database, all 17 tables, and the 10 demo orders across 3 customers and 3 drivers.
 
 ## Part 6: Open the website
 
@@ -69,24 +71,30 @@ Wait for it to finish. This creates all tables and demo data.
 ```
 http://localhost/YOUR-FOLDER/
 ```
-This main page has links to the Customer, Kitchen, Delivery and Admin portals.
+This main page has direct links to the Customer, Kitchen, Delivery, and Admin portals.
 
 ## Part 7: Log in
 
-The password for every account is `password123`
+The password for every account is **`password123`**
 
-| Who | Email |
-|---|---|
-| Admin | admin@zippy.com (Pooja) |
-| Customer 1 | athul@example.com (Athul) |
-| Customer 2 | amal@example.com (Amal) |
-| Customer 3 | abhijith@example.com (Abhijith) |
-| Chef | chef@zippy.com (Chef Sajeev) |
-| Driver 1 | shaji@zippy.com (Shaji) |
-| Driver 2 | kichu@zippy.com (Kichu) |
-| Driver 3 | abhi@zippy.com (Abhi) |
+| Portal | Name | Login Email (or Alias) | Role |
+|---|---|---|---|
+| **Admin** | **Pooja** | `admin@zippy.com` (or `pooja@zippy.com`) | Administrator |
+| **Customer 1** | **Athul** | `athul@example.com` (or `athul@zippy.com`) | Customer (3 active, 1 delivered order) |
+| **Customer 2** | **Amal** | `amal@example.com` (or `amal@zippy.com`) | Customer (2 active, 1 delivered order) |
+| **Customer 3** | **Abhijith** | `abhijith@example.com` (or `abhijith@zippy.com`) | Customer (2 active, 1 delivered order) |
+| **Kitchen** | **Chef Sajeev** | `chef@zippy.com` (or `sajeev@zippy.com`) | Head Chef |
+| **Delivery 1** | **Shaji** | `shaji@zippy.com` (or `rider@zippy.com`) | Delivery Captain |
+| **Delivery 2** | **Kichu** | `kichu@zippy.com` | Delivery Partner |
+| **Delivery 3** | **Abhi** | `abhi@zippy.com` | Delivery Partner |
 
-Each login page also has a **1-click demo login** button.
+Each login page also has **1-click quick-fill buttons** for instant demo login.
+
+### Demo Orders Breakdown (10 Orders Total):
+- **2 Reached Kitchen KDS (`CONFIRMED`)**: Orders `#1001` (Athul) and `#1002` (Amal)
+- **3 In Kitchen Cooking (`COOKING`)**: Orders `#1003` (Abhijith), `#1004` (Athul), `#1005` (Amal)
+- **2 Ready for Dispatch (`READY`)**: Orders `#1006` (Abhijith) and `#1007` (Athul)
+- **3 Completed Doorstep Deliveries (`DELIVERED`)**: Orders `#1008` (Amal), `#1009` (Abhijith), `#1010` (Athul) with full audit trails & reviews.
 
 ## Next time you want to run it
 
