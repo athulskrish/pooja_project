@@ -171,6 +171,7 @@ class FCFSQueue {
                 JOIN `order_items` oi ON o.order_id = oi.order_id
                 JOIN `menu_items` m ON oi.item_id = m.item_id
                 WHERE o.order_status = 'COOKING'
+                  AND (o.is_scheduled = 0 OR o.scheduled_for <= NOW())
                 GROUP BY o.order_id, u.full_name
             ) sub
             WHERE elapsed > max_prep
@@ -196,6 +197,7 @@ class FCFSQueue {
             FROM `orders` o
             JOIN `users` u ON o.user_id = u.user_id
             WHERE o.order_status IN ('PLACED', 'CONFIRMED')
+              AND (o.is_scheduled = 0 OR o.scheduled_for <= NOW())
               AND TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) >= 5
             ORDER BY elapsed DESC
             LIMIT 4

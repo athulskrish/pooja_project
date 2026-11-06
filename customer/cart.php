@@ -10,6 +10,10 @@ $activePage = 'cart';
 require_once __DIR__ . '/includes/header.php';
 
 $coupons = get_available_coupons();
+$previousMeal = null;
+if ($currentUser && !empty($currentUser['id'])) {
+    $previousMeal = get_customer_previous_meal((int)$currentUser['id']);
+}
 ?>
 
 <main class="py-4">
@@ -18,7 +22,7 @@ $coupons = get_available_coupons();
     <div class="d-flex align-items-center justify-content-between mb-4">
       <div>
         <h2 class="fw-bold mb-0 font-outfit text-dark"><i class="bi bi-bag-check-fill text-success me-2"></i>Review Your Cart</h2>
-        <p class="text-muted small mb-0">Delivery to Indiranagar, Bangalore (25-30 mins)</p>
+        <p class="text-muted small mb-0">Delivery to Indiranagar, Bangalore &bull; Express (25-30m) or 📅 Schedule in Advance</p>
       </div>
       <a href="<?= CUSTOMER_URL ?>/index.php#dishes" class="btn btn-outline-success btn-sm rounded-pill px-3">
         <i class="bi bi-plus-circle me-1"></i> Add More Dishes
@@ -37,6 +41,32 @@ $coupons = get_available_coupons();
           Explore Menu Now
         </a>
       </div>
+
+      <?php if (!empty($previousMeal) && !empty($previousMeal['items'])): 
+        $cartPmOrder = $previousMeal['order'];
+        $cartPmPayloadJson = htmlspecialchars($previousMeal['reorder_json'], ENT_QUOTES, 'UTF-8');
+      ?>
+        <div class="mt-4 p-3 rounded-4 mx-auto text-start border shadow-xs" style="max-width: 520px; background: #F2FAF5; border-color: #C8EBD4 !important;">
+          <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+            <span class="badge rounded-pill px-2 py-1 fw-bold" style="background: #243E2C; color: #CEFFDC; font-size: 0.7rem;">
+              <i class="fa-solid fa-bolt text-mint me-1"></i>1-TAP REORDER
+            </span>
+            <span class="small text-muted">Previous Meal (#ZIP-<?= (int)$cartPmOrder['order_id'] ?>)</span>
+          </div>
+          <div class="small fw-semibold text-dark mb-2">
+            <?= implode(' &bull; ', array_map(fn($i) => e($i['item_name']) . ' &times;' . (int)$i['quantity'], $previousMeal['items'])) ?>
+          </div>
+          <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+            <div>
+              <span class="small text-muted d-block" style="font-size: 0.72rem;">Previous Bill</span>
+              <span class="fw-bold text-forest fs-6"><?= format_inr($cartPmOrder['total_amount']) ?></span>
+            </div>
+            <button type="button" class="btn btn-success btn-sm rounded-pill px-3 py-2 fw-bold shadow-sm d-flex align-items-center gap-1" style="background:#2E6F40; border-color:#2E6F40;" onclick="oneTapReorderMeal(<?= $cartPmPayloadJson ?>, <?= (int)$cartPmOrder['order_id'] ?>, false, this)">
+              <i class="fa-solid fa-rotate-right me-1"></i>1-Tap Reorder Previous Meal
+            </button>
+          </div>
+        </div>
+      <?php endif; ?>
     </div>
 
     <!-- Active Cart Layout -->
@@ -227,6 +257,7 @@ function renderDedicatedCart() {
 
         <div>
           <h6 class="fw-bold mb-1 text-dark" style="font-size: 0.98rem;">${item.name}</h6>
+          ${item.customizationText ? `<div class="small text-muted fst-italic mb-1" style="font-size:0.75rem;"><i class="bi bi-sliders text-success me-1"></i>${item.customizationText}</div>` : ''}
           <span class="small text-muted fw-semibold">₹${Number(item.price).toFixed(2)} each</span>
         </div>
       </div>
@@ -234,11 +265,11 @@ function renderDedicatedCart() {
       <div class="d-flex align-items-center gap-3">
         <!-- Material 3 Stepper Quantity Controls -->
         <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
-          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem(${item.id}); renderDedicatedCart();" aria-label="Decrease quantity">
+          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${item.cartItemId || item.id}'); renderDedicatedCart();" aria-label="Decrease quantity">
             <i class="bi bi-dash"></i>
           </button>
           <span class="m3-stepper-qty">${item.qty}</span>
-          <button type="button" class="m3-stepper-btn" onclick="addToCart(${item.id}, '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}'); renderDedicatedCart();" aria-label="Increase quantity">
+          <button type="button" class="m3-stepper-btn" onclick="incrementCartItem('${item.cartItemId || item.id}'); renderDedicatedCart();" aria-label="Increase quantity">
             <i class="bi bi-plus"></i>
           </button>
         </div>

@@ -859,49 +859,73 @@
           // Render Ready Orders Container
           const readyContainer = document.getElementById('readyOrdersCardsContainer');
           if (readyContainer) {
-            if (readyCount === 0) {
+            if (riderHasActive) {
+              readyContainer.innerHTML = `
+                <div class="card border-0 rounded-4 p-3 text-center bg-white shadow-xs text-muted small">
+                  <i class="bi bi-lock-fill text-warning fs-3 mb-1"></i>
+                  <div>Complete your active delivery #ZIP-${activeOrder ? activeOrder.order_id : ''} to receive your next FCFS parcel allocation.</div>
+                </div>
+              `;
+            } else if (data.allocated_order) {
+              const alloc = data.allocated_order;
+              const otherReady = readyOrders.filter(ro => parseInt(ro.order_id) !== parseInt(alloc.order_id));
+              let html = `
+                <div class="card border-2 rounded-4 p-4 shadow-sm bg-white mb-3" style="border-color: #2E6F40 !important;" id="allocatedOrderCard">
+                  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <span class="badge rounded-pill px-3 py-1 fw-bold" style="background:#CEFFDC; color:#243E2C; font-size:0.75rem;">
+                      <i class="bi bi-cpu-fill me-1"></i> SYSTEM ALLOCATED (FCFS #1 PREPARED)
+                    </span>
+                    <span class="fw-bold font-monospace text-dark fs-6">#ZIP-${alloc.order_id}</span>
+                  </div>
+                  <div class="small text-muted mb-2">
+                    <i class="bi bi-clock-history me-1 text-success"></i> Prepared at <strong>${escapeHtml(alloc.ready_at ? alloc.ready_at.substring(11, 16) : 'Recently')}</strong> • Allocated to you on First-Come, First-Served basis
+                  </div>
+                  <h5 class="fw-bold text-dark mb-1">Customer: ${escapeHtml(alloc.customer_name)}</h5>
+                  <p class="small text-muted mb-2">
+                    <i class="bi bi-geo-alt me-1 text-danger"></i> ${escapeHtml(alloc.address_display || alloc.address_line || 'Indiranagar')}
+                  </p>
+                  <div class="small fw-semibold text-success mb-3">
+                    <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
+                  </div>
+                  <button type="button" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" onclick="takeReadyFood(${alloc.order_id})" id="btnClaimOrder${alloc.order_id}" style="background:#2E6F40; border-color:#2E6F40;">
+                    <i class="bi bi-handbag me-1"></i> Accept &amp; Pick Up Allocated Order &rarr;
+                  </button>
+                </div>
+              `;
+              if (otherReady.length > 0) {
+                html += `
+                  <div class="mt-3">
+                    <div class="small fw-bold text-muted text-uppercase mb-2">
+                      <i class="bi bi-list-ol me-1"></i> Upcoming Parcels in Kitchen FCFS Queue (${otherReady.length})
+                    </div>
+                    <div class="row g-2">
+                `;
+                let qRank = 2;
+                otherReady.forEach(oro => {
+                  html += `
+                    <div class="col-md-6">
+                      <div class="card border rounded-3 p-2 bg-light small">
+                        <div class="d-flex justify-content-between align-items-center">
+                          <span class="badge bg-secondary rounded-pill">Queue #${qRank++}</span>
+                          <span class="font-mono fw-bold">#ZIP-${oro.order_id}</span>
+                        </div>
+                        <div class="text-truncate text-muted mt-1">Customer: ${escapeHtml(oro.customer_name)}</div>
+                        <div class="text-muted" style="font-size:0.7rem;">Prepared: ${escapeHtml(oro.ready_at ? oro.ready_at.substring(11, 16) : 'Recently')}</div>
+                      </div>
+                    </div>
+                  `;
+                });
+                html += `</div></div>`;
+              }
+              readyContainer.innerHTML = html;
+            } else if (readyCount === 0) {
               readyContainer.innerHTML = `
                 <div class="card border-0 rounded-4 p-4 text-center bg-white shadow-xs" id="noReadyOrdersCard">
                   <i class="bi bi-check2-circle fs-2 text-success mb-2"></i>
                   <h6 class="fw-bold text-dark mb-1">No Orders Waiting for Pickup</h6>
-                  <p class="small text-muted mb-0">Kitchen orders will automatically pop up here as soon as cooks mark them "Ready".</p>
+                  <p class="small text-muted mb-0">Kitchen orders will be automatically allocated to you in First-Come, First-Served order as soon as cooks mark them "Ready for Delivery".</p>
                 </div>
               `;
-            } else {
-              let gridHtml = '<div class="row g-3" id="readyOrdersGrid">';
-              readyOrders.forEach(ro => {
-                gridHtml += `
-                  <div class="col-md-6 ready-order-col" id="readyCardCol${ro.order_id}">
-                    <div class="card border rounded-4 p-3 shadow-sm bg-white h-100 d-flex flex-column justify-content-between">
-                      <div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                          <span class="badge bg-warning text-dark fw-bold">READY IN KITCHEN</span>
-                          <span class="fw-bold font-monospace text-dark">#ZIP-${ro.order_id}</span>
-                        </div>
-                        <h6 class="fw-bold text-dark mb-1">Customer: ${escapeHtml(ro.customer_name)}</h6>
-                        <p class="small text-muted mb-2">
-                          <i class="bi bi-geo-alt me-1 text-danger"></i> ${escapeHtml(ro.address_display || ro.address_line || 'Indiranagar')}
-                        </p>
-                        <div class="small fw-semibold text-success mb-3">
-                          <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
-                        </div>
-                      </div>
-
-                      ${riderHasActive ? `
-                        <button type="button" class="btn btn-light text-muted border w-100 rounded-pill fw-bold py-2 shadow-xs btn-claim-locked" disabled title="Complete your active delivery first">
-                          <i class="bi bi-lock-fill me-1"></i> Locked (Delivering #ZIP-${activeOrder ? activeOrder.order_id : ''})
-                        </button>
-                      ` : `
-                        <button type="button" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" onclick="takeReadyFood(${ro.order_id})" id="btnClaimOrder${ro.order_id}" style="background:#2E6F40; border-color:#2E6F40;">
-                          <i class="bi bi-handbag me-1"></i> Accept &amp; Pick Up Order
-                        </button>
-                      `}
-                    </div>
-                  </div>
-                `;
-              });
-              gridHtml += '</div>';
-              readyContainer.innerHTML = gridHtml;
             }
           }
         }

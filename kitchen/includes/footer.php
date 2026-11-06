@@ -224,9 +224,10 @@
       }
     }
 
-    // 5. Live Polling for New Orders
+    // 5. Live Polling for New Orders & Real-time State Synchronization
     let lastKnownIncomingId = <?= !empty($laneNew) ? max(array_column($laneNew, 'order_id')) : 0 ?>;
     let lastKnownReadyCount = <?= (int)($countReady ?? 0) ?>;
+    let lastKnownStateHash = '<?= $kdsInitialStateHash ?? '' ?>';
 
     async function pollKitchenOrders() {
       try {
@@ -261,16 +262,32 @@
           const tabCountReady = document.getElementById('tabCountReady');
           if (tabCountReady) tabCountReady.innerText = data.counts.ready;
 
+          // Check if system state changed (e.g. driver delivered dish, order claimed, or new order marked ready)
+          if (data.state_hash && lastKnownStateHash && data.state_hash !== lastKnownStateHash) {
+            console.log('KDS state changed! Syncing atelier view...');
+            lastKnownStateHash = data.state_hash;
+            if (data.latest_incoming_id > lastKnownIncomingId) {
+              lastKnownIncomingId = data.latest_incoming_id;
+              playKitchenChime();
+              showOrderBanner(data.latest_incoming_id);
+            }
+            setTimeout(() => { window.location.reload(); }, 600);
+            return;
+          }
+          if (!lastKnownStateHash && data.state_hash) {
+            lastKnownStateHash = data.state_hash;
+          }
+
           // Check if brand new unaccepted order arrived
           if (data.latest_incoming_id > lastKnownIncomingId) {
             lastKnownIncomingId = data.latest_incoming_id;
             playKitchenChime();
             showOrderBanner(data.latest_incoming_id);
-            setTimeout(() => { window.location.reload(); }, 2000);
+            setTimeout(() => { window.location.reload(); }, 1500);
           } else if (lastKnownReadyCount !== -1 && data.counts.ready !== lastKnownReadyCount) {
             // Courier took ready food or kitchen marked food ready: sync swimlanes
             lastKnownReadyCount = data.counts.ready;
-            setTimeout(() => { window.location.reload(); }, 1200);
+            setTimeout(() => { window.location.reload(); }, 1000);
           }
           lastKnownReadyCount = data.counts.ready;
         }

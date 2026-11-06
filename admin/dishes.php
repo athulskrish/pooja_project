@@ -19,7 +19,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=zippy_dishes_catalog_' . date('Ymd_His') . '.csv');
     $output = fopen('php://output', 'w');
-    fputcsv($output, ['Dish ID', 'Dish Name', 'Category', 'Kitchen Station', 'Diet Type', 'Healthy', 'Price (INR)', 'Stock Quantity', 'Prep Time (Mins)', 'Availability', 'Rating', 'Total Reviews', 'Created At']);
+    fputcsv($output, ['Dish ID', 'Dish Name', 'Category', 'Kitchen Station', 'Diet Type', 'Healthy', 'Mood', 'Price (INR)', 'Stock Quantity', 'Prep Time (Mins)', 'Availability', 'Rating', 'Total Reviews', 'Created At']);
 
     $exportDishes = db_fetch_all("
         SELECT m.*, c.category_name 
@@ -36,6 +36,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
             $d['kitchen_station'] ?? 'Main Kitchen',
             $d['is_veg'] ? 'Vegetarian' : 'Non-Vegetarian',
             !empty($d['is_healthy']) ? 'Yes' : 'No',
+            $d['mood'] ?? 'comfort',
             $d['price'],
             $d['stock_quantity'],
             $d['prep_time_minutes'],
@@ -73,6 +74,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         $prep = (int)$_POST['prep_time_minutes'];
         $isVeg = !empty($_POST['is_veg']) ? 1 : 0;
         $isHealthy = !empty($_POST['is_healthy']) ? 1 : 0;
+        $mood = clean_input($_POST['mood'] ?? 'comfort');
         $image = clean_input($_POST['image_url'] ?? '');
         $desc = clean_input($_POST['description']);
 
@@ -98,8 +100,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
 
         if (!empty($name) && $price > 0) {
             db_query("
-                INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `prep_time_minutes`, `kitchen_station`, `image_url`) 
-                VALUES (:cid, :name, :desc, :price, :stock, 1, :veg, :healthy, :prep, :station, :img)
+                INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `image_url`) 
+                VALUES (:cid, :name, :desc, :price, :stock, 1, :veg, :healthy, :mood, :prep, :station, :img)
             ", [
                 ':cid' => $catId,
                 ':name' => $name,
@@ -108,6 +110,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 ':stock' => $stock,
                 ':veg' => $isVeg,
                 ':healthy' => $isHealthy,
+                ':mood' => $mood,
                 ':prep' => $prep,
                 ':station' => $station,
                 ':img' => $image
@@ -128,6 +131,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
         $prep = (int)$_POST['prep_time_minutes'];
         $isVeg = !empty($_POST['is_veg']) ? 1 : 0;
         $isHealthy = !empty($_POST['is_healthy']) ? 1 : 0;
+        $mood = clean_input($_POST['mood'] ?? 'comfort');
         $isAvailable = !empty($_POST['is_available']) ? 1 : 0;
         $image = clean_input($_POST['image_url'] ?? '');
         $desc = clean_input($_POST['description']);
@@ -160,7 +164,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             UPDATE `menu_items` 
             SET `category_id` = :cid, `item_name` = :name, `description` = :desc, 
                 `price` = :price, `stock_quantity` = :stock, `is_available` = :avail, 
-                `is_veg` = :veg, `is_healthy` = :healthy, `prep_time_minutes` = :prep, 
+                `is_veg` = :veg, `is_healthy` = :healthy, `mood` = :mood, `prep_time_minutes` = :prep, 
                 `kitchen_station` = :station, `image_url` = :img 
             WHERE `item_id` = :id
         ", [
@@ -172,6 +176,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
             ':avail' => $isAvailable,
             ':veg' => $isVeg,
             ':healthy' => $isHealthy,
+            ':mood' => $mood,
             ':prep' => $prep,
             ':station' => $station,
             ':img' => $image,
@@ -242,8 +247,10 @@ $searchQuery = clean_input($_GET['search'] ?? '');
 $filterCat = clean_input($_GET['category'] ?? '');
 $filterStation = clean_input($_GET['station'] ?? '');
 $filterDiet = clean_input($_GET['diet'] ?? '');
+$filterMood = clean_input($_GET['mood'] ?? '');
 $filterStock = clean_input($_GET['stock_status'] ?? '');
 $sortBy = clean_input($_GET['sort'] ?? 'category');
+$foodMoods = get_food_moods();
 
 $where = "1=1";
 $params = [];
@@ -269,6 +276,12 @@ if ($filterDiet === 'veg') {
     $where .= " AND m.is_veg = 0";
 } elseif ($filterDiet === 'healthy') {
     $where .= " AND m.is_healthy = 1";
+}
+
+if (!empty($filterMood) && $filterMood !== 'all') {
+    $where .= " AND (FIND_IN_SET(:mood, m.mood) > 0 OR m.mood LIKE :mood_like)";
+    $params[':mood'] = $filterMood;
+    $params[':mood_like'] = '%' . $filterMood . '%';
 }
 
 if ($filterStock === 'in_stock') {
@@ -308,14 +321,20 @@ switch ($sortBy) {
 }
 
 $dishes = db_fetch_all("
-    SELECT m.*, c.category_name 
+    SELECT m.*, c.category_name,
+           (SELECT ROUND(AVG(dr.appearance_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_appearance,
+           (SELECT ROUND(AVG(dr.taste_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_taste,
+           (SELECT ROUND(AVG(dr.portion_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_portion,
+           (SELECT ROUND(AVG(dr.value_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_value
     FROM `menu_items` m
     JOIN `categories` c ON m.category_id = c.category_id
     WHERE $where
     ORDER BY $orderBy
 ", $params);
 
-$hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filterStation) || !empty($filterDiet) || !empty($filterStock) || ($sortBy !== 'category');
+$customSummaryMap = get_all_dishes_customization_counts();
+
+$hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filterStation) || !empty($filterDiet) || !empty($filterMood) || !empty($filterStock) || ($sortBy !== 'category');
 ?>
 
 <style>
@@ -530,12 +549,24 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
     </div>
 
     <!-- Diet Filter -->
-    <div class="col-6 col-md-2">
+    <div class="col-6 col-md-1">
       <select name="diet" class="form-select form-select-sm">
         <option value="">Diet: All</option>
-        <option value="veg" <?= ($filterDiet === 'veg') ? 'selected' : '' ?>>Vegetarian Only</option>
-        <option value="non_veg" <?= ($filterDiet === 'non_veg') ? 'selected' : '' ?>>Non-Vegetarian</option>
-        <option value="healthy" <?= ($filterDiet === 'healthy') ? 'selected' : '' ?>>🌿 Healthy Only</option>
+        <option value="veg" <?= ($filterDiet === 'veg') ? 'selected' : '' ?>>Veg Only</option>
+        <option value="non_veg" <?= ($filterDiet === 'non_veg') ? 'selected' : '' ?>>Non-Veg</option>
+        <option value="healthy" <?= ($filterDiet === 'healthy') ? 'selected' : '' ?>>🌿 Healthy</option>
+      </select>
+    </div>
+
+    <!-- Mood Filter -->
+    <div class="col-6 col-md-2">
+      <select name="mood" class="form-select form-select-sm">
+        <option value="">Mood: All</option>
+        <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+          <option value="<?= e($mKey) ?>" <?= ($filterMood === $mKey) ? 'selected' : '' ?>>
+            <?= $mInfo['emoji'] ?> <?= e($mInfo['short_name']) ?>
+          </option>
+        <?php endforeach; ?>
       </select>
     </div>
 
@@ -663,6 +694,14 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                         <span class="text-muted" style="font-size:0.75rem;">(<?= (int)($dish['total_reviews'] ?? 0) ?>)</span>
                       </a>
                     </div>
+                    <?php if (!empty($dish['avg_taste'])): ?>
+                      <div class="d-flex align-items-center gap-1 mb-1 flex-wrap" style="font-size:0.65rem;">
+                        <span class="badge bg-light text-primary border py-0 px-1" title="Appearance Score">🎨 <?= $dish['avg_appearance'] ?>★</span>
+                        <span class="badge bg-light text-danger border py-0 px-1" title="Taste Score">🍲 <?= $dish['avg_taste'] ?>★</span>
+                        <span class="badge bg-light text-warning text-dark border py-0 px-1" title="Portion Size Score">🥣 <?= $dish['avg_portion'] ?>★</span>
+                        <span class="badge bg-light text-success border py-0 px-1" title="Value Score">🏷️ <?= $dish['avg_value'] ?>★</span>
+                      </div>
+                    <?php endif; ?>
                     <div class="small text-muted text-truncate" style="max-width: 250px;" title="<?= e($dish['description']) ?>">
                       <?= e($dish['description']) ?>
                     </div>
@@ -697,6 +736,16 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                   <?php if (!empty($dish['is_healthy'])): ?>
                     <span class="badge rounded-pill border px-2 py-1" style="background:#CEFFDC; color:#243E2C; font-size:0.65rem; border-color:#68BA7F !important;">
                       <i class="fa-solid fa-leaf me-1"></i>HEALTHY
+                    </span>
+                  <?php endif; ?>
+
+                  <?php 
+                    $dishMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
+                    if ($dishMood):
+                  ?>
+                    <span class="badge rounded-pill border px-2 py-1 d-inline-flex align-items-center gap-1" style="background:<?= $dishMood['badge_bg'] ?>; color:<?= $dishMood['badge_color'] ?>; font-size:0.65rem; border-color:<?= $dishMood['border_color'] ?> !important;" title="Mood: <?= e($dish['mood'] ?? '') ?>">
+                      <img src="<?= e(get_mood_image_url($dishMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
+                      <?= $dishMood['emoji'] ?> <?= e($dishMood['short_name']) ?>
                     </span>
                   <?php endif; ?>
                 </div>
@@ -771,6 +820,17 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
               <!-- Actions -->
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2">
+                  <a href="dish-customizations.php?item_id=<?= (int)$dish['item_id'] ?>" 
+                     class="btn btn-sm btn-outline-success rounded-pill px-2 d-inline-flex align-items-center" 
+                     title="Manage Customisations (Spice, Toppings, Cheese)">
+                    <i class="bi bi-sliders2 me-1"></i>
+                    <span>Customise</span>
+                    <?php $gCount = (int)($customSummaryMap[$dish['item_id']]['group_count'] ?? 0); ?>
+                    <?php if ($gCount > 0): ?>
+                      <span class="badge bg-success text-white rounded-pill ms-1" style="font-size:0.65rem;"><?= $gCount ?></span>
+                    <?php endif; ?>
+                  </a>
+
                   <button type="button" 
                           class="btn btn-sm btn-outline-primary rounded-pill px-3 btn-edit-dish" 
                           data-bs-toggle="modal" 
@@ -784,6 +844,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                           data-prep="<?= (int)$dish['prep_time_minutes'] ?>"
                           data-veg="<?= (int)$dish['is_veg'] ?>"
                           data-healthy="<?= (int)($dish['is_healthy'] ?? 0) ?>"
+                          data-mood="<?= e($dish['mood'] ?? 'comfort') ?>"
                           data-available="<?= (int)$dish['is_available'] ?>"
                           data-image="<?= e($dish['image_url'] ?? '') ?>"
                           data-display-image="<?= e(get_dish_image_url($dish['image_url'])) ?>"
@@ -969,25 +1030,39 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
             <textarea name="description" id="editDishDesc" class="form-control rounded-3" rows="2"></textarea>
           </div>
 
-          <div class="row g-3">
-            <div class="col-4">
+          <div class="row g-3 mb-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-bold">🎭 Curated Food Mood</label>
+              <select name="mood" id="editDishMood" class="form-select form-select-sm rounded-3">
+                <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+                  <option value="<?= e($mKey) ?>"><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-12 col-md-6 d-flex align-items-center gap-3 pt-md-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_veg" value="1" id="editDishVeg">
                 <label class="form-check-label small" for="editDishVeg">Pure Veg</label>
               </div>
-            </div>
-            <div class="col-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_healthy" value="1" id="editDishHealthy">
                 <label class="form-check-label small" for="editDishHealthy">🌿 Healthy</label>
               </div>
-            </div>
-            <div class="col-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_available" value="1" id="editDishAvail">
-                <label class="form-check-label small" for="editDishAvail">In Stock (Active)</label>
+                <label class="form-check-label small" for="editDishAvail">In Stock</label>
               </div>
             </div>
+          </div>
+
+          <div class="p-3 bg-light rounded-3 d-flex align-items-center justify-content-between mt-3 border">
+            <div>
+              <div class="fw-bold small text-dark"><i class="bi bi-sliders2 text-success me-1"></i>Dish Customisations</div>
+              <div class="small text-muted" style="font-size:0.75rem;">Manage spice levels, extra cheese, toppings & add-ons for this dish.</div>
+            </div>
+            <a href="#" id="editDishCustomLink" class="btn btn-sm btn-outline-success rounded-pill px-3">
+              Configure Customisations <i class="bi bi-arrow-right ms-1"></i>
+            </a>
           </div>
         </div>
 
@@ -1137,17 +1212,23 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
             <textarea name="description" class="form-control rounded-3" rows="2" placeholder="Culinary flavor profile, key ingredients..."></textarea>
           </div>
 
-          <div class="row g-3">
-            <div class="col-6">
+          <div class="row g-3 mb-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-bold">🎭 Curated Food Mood</label>
+              <select name="mood" class="form-select form-select-sm rounded-3">
+                <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+                  <option value="<?= e($mKey) ?>"><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-12 col-md-6 d-flex align-items-center gap-3 pt-md-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_veg" value="1" id="vegAdd" checked>
                 <label class="form-check-label small" for="vegAdd">Vegetarian Dish</label>
               </div>
-            </div>
-            <div class="col-6">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_healthy" value="1" id="healthyAdd">
-                <label class="form-check-label small" for="healthyAdd">🌿 Healthy / Fitness Option</label>
+                <label class="form-check-label small" for="healthyAdd">🌿 Healthy</label>
               </div>
             </div>
           </div>
@@ -1219,6 +1300,13 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editDishVeg').checked = (d.veg === '1');
       document.getElementById('editDishHealthy').checked = (d.healthy === '1');
       document.getElementById('editDishAvail').checked = (d.available === '1');
+      if (document.getElementById('editDishMood')) {
+        document.getElementById('editDishMood').value = d.mood ? d.mood.split(',')[0].trim() : 'comfort';
+      }
+      const customLink = document.getElementById('editDishCustomLink');
+      if (customLink) {
+        customLink.href = 'dish-customizations.php?item_id=' + d.id;
+      }
       const photoName = document.getElementById('editDishPhotoName');
       if (photoName) photoName.textContent = 'No file chosen';
       const fileInput = document.getElementById('editDishPhotoInput');

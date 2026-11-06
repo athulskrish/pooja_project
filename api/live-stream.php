@@ -31,6 +31,7 @@ if (!$pdo) {
 // -----------------------------------------------------------------------------
 if ($portal === 'kitchen') {
     require_once __DIR__ . '/../includes/WSJFQueue.php';
+    auto_allocate_ready_orders_fcfs();
     $prioritizedOrders = WSJFQueue::getPrioritizedOrders();
 
     $laneNew = [];
@@ -53,15 +54,48 @@ if ($portal === 'kitchen') {
         }
     }
 
+    // Sort ready orders strictly in FCFS order by food preparation time
+    usort($laneReady, function($a, $b) {
+        $timeA = !empty($a['ready_at']) ? strtotime($a['ready_at']) : strtotime($a['placed_at']);
+        $timeB = !empty($b['ready_at']) ? strtotime($b['ready_at']) : strtotime($b['placed_at']);
+        if ($timeA === $timeB) {
+            return (int)$a['order_id'] <=> (int)$b['order_id'];
+        }
+        return $timeA <=> $timeB;
+    });
+
+    $countNew = count($laneNew);
+    $countCooking = count($laneCooking);
+    $countReady = count($laneReady);
+    $countHandedOver = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` IN ('OUT_FOR_DELIVERY', 'DELIVERED') AND DATE(`placed_at`) = CURDATE()");
+    $countDeliveredToday = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED' AND DATE(`placed_at`) = CURDATE()");
+
+    $latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
+    $latestDispatch = db_fetch_one("SELECT MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
+
+    $stateHash = md5(json_encode([
+        'new' => $countNew,
+        'cooking' => $countCooking,
+        'ready' => $countReady,
+        'handed_over' => $countHandedOver,
+        'delivered' => $countDeliveredToday,
+        'max_audit' => $latestAudit['max_audit'] ?? 0,
+        'audit_time' => $latestAudit['max_time'] ?? '',
+        'disp_assigned' => $latestDispatch['max_assigned'] ?? '',
+        'disp_dispatched' => $latestDispatch['max_dispatched'] ?? '',
+        'disp_delivered' => $latestDispatch['max_delivered'] ?? ''
+    ]));
+
     echo json_encode([
         'success' => true,
         'portal' => 'kitchen',
         'timestamp' => date('Y-m-d H:i:s'),
+        'state_hash' => $stateHash,
         'counts' => [
-            'new' => count($laneNew),
-            'cooking' => count($laneCooking),
-            'ready' => count($laneReady),
-            'total_active' => count($laneNew) + count($laneCooking) + count($laneReady)
+            'new' => $countNew,
+            'cooking' => $countCooking,
+            'ready' => $countReady,
+            'total_active' => $countNew + $countCooking + $countReady
         ],
         'lanes' => [
             'new' => array_slice($laneNew, 0, 15),
@@ -76,19 +110,22 @@ if ($portal === 'kitchen') {
 // 2. DELIVERY FLEET STREAM
 // -----------------------------------------------------------------------------
 if ($portal === 'delivery') {
-    // Orders ready for pickup
+    // 1. Run automatic FCFS parcel allocation
+    auto_allocate_ready_orders_fcfs();
+
+    // 2. Orders ready for pickup, sorted strictly in FCFS order by food preparation time
     $readyOrders = db_fetch_all("
-        SELECT o.order_id, o.order_number, o.total_amount, o.placed_at,
+        SELECT o.order_id, o.order_number, o.total_amount, o.ready_at, o.placed_at,
                u.full_name AS customer_name, u.phone_number AS customer_phone,
                a.address_line, a.landmark, a.pincode,
-               p.payment_mode, d.delivery_otp
+               p.payment_mode, d.delivery_otp, d.rider_id, d.delivery_status
         FROM `orders` o
         JOIN `users` u ON o.user_id = u.user_id
         LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
         LEFT JOIN `payments` p ON o.order_id = p.order_id
         LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
         WHERE o.order_status = 'READY'
-        ORDER BY o.placed_at ASC
+        ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
     ");
 
     // Orders currently in transit
@@ -118,6 +155,8 @@ if ($portal === 'delivery') {
     $riderIdParam = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
     $riderHasActive = false;
     $activeDelivery = null;
+    $allocatedOrder = null;
+
     if ($riderIdParam > 0) {
         $activeDelivery = get_driver_active_delivery($riderIdParam);
         $riderHasActive = !empty($activeDelivery);
@@ -130,6 +169,13 @@ if ($portal === 'delivery') {
             ", [':oid' => $activeDelivery['order_id']]);
             $activeDelivery['items'] = $items;
             $activeDelivery['formatted_amount'] = format_inr($activeDelivery['total_amount']);
+        } else {
+            // If rider has no active delivery, get the parcel allocated to them
+            $allocatedOrder = get_driver_allocated_order($riderIdParam);
+            if ($allocatedOrder) {
+                $allocatedOrder['formatted_amount'] = format_inr($allocatedOrder['total_amount']);
+                $allocatedOrder['address_display'] = ($allocatedOrder['address_line'] ?: 'Indiranagar') . ($allocatedOrder['pincode'] ? ' (PIN: ' . $allocatedOrder['pincode'] . ')' : '');
+            }
         }
     }
 
@@ -143,6 +189,7 @@ if ($portal === 'delivery') {
         ],
         'rider_has_active' => $riderHasActive,
         'active_order' => $activeDelivery,
+        'allocated_order' => $allocatedOrder,
         'max_concurrent_deliveries' => 1,
         'ready_orders' => $readyOrders,
         'in_transit_orders' => $inTransitOrders

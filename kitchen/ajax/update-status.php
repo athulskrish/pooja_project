@@ -53,10 +53,10 @@ if (in_array($oldStatus, ['PLACED', 'CONFIRMED']) && $targetStatus === 'COOKING'
     $actionVerb = 'accepted and moved to Stoves (Cooking)';
 } elseif ($oldStatus === 'COOKING' && $targetStatus === 'READY') {
     $allowed = true;
-    $actionVerb = 'prepared, plated and ready at expeditor counter';
-} elseif ($oldStatus === 'READY' && $targetStatus === 'OUT_FOR_DELIVERY') {
+    $actionVerb = 'prepared and placed as Ready for Delivery';
+} elseif ($oldStatus === 'READY' && $targetStatus === 'OUT_FOR_DELIVERY' && is_admin()) {
     $allowed = true;
-    $actionVerb = 'handed over to delivery boy for doorstep fulfillment';
+    $actionVerb = 'dispatched for doorstep fulfillment';
 }
 
 if (!$allowed) {

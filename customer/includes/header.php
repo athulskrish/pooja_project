@@ -55,9 +55,7 @@ $dbStatus = checkDBStatus();
     $dishImageMap = [];
     if (!empty($catalogRows)) {
         foreach ($catalogRows as $cr) {
-            if (!empty($cr['image_url'])) {
-                $dishImageMap[$cr['item_id']] = $cr['image_url'];
-            }
+            $dishImageMap[$cr['item_id']] = get_dish_image_url($cr['image_url'] ?? '');
         }
     }
 
@@ -67,14 +65,11 @@ $dbStatus = checkDBStatus();
     $initialCatalogVer = md5(md5(json_encode($catVerData)) . '_' . md5(json_encode($dishVerData)));
     ?>
     window.POOJA_DISH_IMAGES = <?= json_encode($dishImageMap) ?>;
+    window.DISH_IMAGES_MAP = <?= json_encode($dishImageMap) ?>;
     window.POOJA_CATALOG_VER = <?= json_encode($initialCatalogVer) ?>;
     window.API_URL = <?= json_encode(BASE_URL . '/api') ?>;
-  </script>
-            $dishImageMap[$cr['item_id']] = get_dish_image_url($cr['image_url'] ?? '');
-        }
-    }
-    ?>
-    window.DISH_IMAGES_MAP = <?= json_encode($dishImageMap) ?>;
+    window.CUSTOMER_URL = <?= json_encode(CUSTOMER_URL) ?>;
+    window.BASE_URL = <?= json_encode(BASE_URL) ?>;
   </script>
 </head>
 <body>
@@ -125,6 +120,10 @@ $dbStatus = checkDBStatus();
           <a href="<?= CUSTOMER_URL ?>/search.php?category=healthy" class="nav-link-custom">
             <i class="fa-solid fa-leaf text-success"></i>
             <span>Healthy</span>
+          </a>
+          <a href="<?= CUSTOMER_URL ?>/index.php#moodSection" class="nav-link-custom" title="Order food matching your mood vibe">
+            <i class="fa-solid fa-masks-theater text-warning"></i>
+            <span>Mood Food</span>
           </a>
           <a href="<?= CUSTOMER_URL ?>/offers.php" class="nav-link-custom <?= ($activePage === 'offers') ? 'active text-success' : '' ?>">
             <i class="fa-solid fa-percent text-success"></i>

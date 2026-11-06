@@ -67,6 +67,10 @@ class WSJFQueue {
 
         // Calculate WSJF score for each order
         foreach ($orders as &$order) {
+            $isScheduled = !empty($order['is_scheduled']);
+            $scheduledTs = !empty($order['scheduled_for']) ? strtotime($order['scheduled_for']) : null;
+            $nowTs = time();
+
             $elapsed = max(1, (int)$order['elapsed_minutes']);
             $maxPrep = max(5, (int)$order['max_prep_time']);
             $portions = max(1, (int)$order['total_portions']);
@@ -74,30 +78,49 @@ class WSJFQueue {
             // Estimated Job Duration in minutes
             $jobDuration = $maxPrep + ($portions * 1.5);
 
-            // Cost of Delay (CoD): customer waiting urgency increases non-linearly
-            $urgencyWeight = match($order['order_status']) {
-                'PLACED', 'CONFIRMED' => 1.5,
-                'COOKING' => 1.2,
-                'READY' => 0.5,
-                default => 1.0
-            };
+            if ($isScheduled && $scheduledTs && $scheduledTs > $nowTs) {
+                // Advance Scheduled Order: evaluate priority by proximity to target meal slot
+                $minsUntilDue = (int)round(($scheduledTs - $nowTs) / 60);
+                $order['mins_until_due'] = $minsUntilDue;
 
-            $costOfDelay = $elapsed * $urgencyWeight;
-            $wsjfScore = round($costOfDelay / $jobDuration, 2);
+                // If scheduled delivery time is within cooking prep buffer, escalate priority
+                if ($minsUntilDue <= ($jobDuration + 15)) {
+                    $costOfDelay = max(15, (60 - max(0, $minsUntilDue))) * 1.5;
+                    $wsjfScore = round($costOfDelay / $jobDuration, 2);
+                    $urgencyBadge = ['label' => 'DUE SOON', 'class' => 'bg-danger text-white'];
+                } else {
+                    // Farther in the future: orderly advance queue
+                    $costOfDelay = 0.5;
+                    $wsjfScore = 0.1;
+                    $urgencyBadge = ['label' => 'SCHEDULED', 'class' => 'bg-primary text-white'];
+                }
+            } else {
+                // Standard Immediate Order
+                $urgencyWeight = match($order['order_status']) {
+                    'PLACED', 'CONFIRMED' => 1.5,
+                    'COOKING' => 1.2,
+                    'READY' => 0.5,
+                    default => 1.0
+                };
+
+                $costOfDelay = $elapsed * $urgencyWeight;
+                $wsjfScore = round($costOfDelay / $jobDuration, 2);
+
+                // Urgency tag
+                if ($wsjfScore >= 2.0 || $elapsed > 20) {
+                    $urgencyBadge = ['label' => 'CRITICAL DELAY', 'class' => 'bg-danger'];
+                } elseif ($wsjfScore >= 1.0 || $elapsed > 10) {
+                    $urgencyBadge = ['label' => 'HIGH PRIORITY', 'class' => 'bg-warning text-dark'];
+                } else {
+                    $urgencyBadge = ['label' => 'NORMAL', 'class' => 'bg-success'];
+                }
+            }
 
             $order['job_duration'] = round($jobDuration);
             $order['cost_of_delay'] = round($costOfDelay, 1);
             $order['wsjf_score'] = $wsjfScore;
             $order['items'] = $itemsByOrder[$order['order_id']] ?? [];
-
-            // Urgency tag
-            if ($wsjfScore >= 2.0 || $elapsed > 20) {
-                $order['urgency_badge'] = ['label' => 'CRITICAL DELAY', 'class' => 'bg-danger'];
-            } elseif ($wsjfScore >= 1.0 || $elapsed > 10) {
-                $order['urgency_badge'] = ['label' => 'HIGH PRIORITY', 'class' => 'bg-warning text-dark'];
-            } else {
-                $order['urgency_badge'] = ['label' => 'NORMAL', 'class' => 'bg-success'];
-            }
+            $order['urgency_badge'] = $urgencyBadge;
         }
         unset($order);
 

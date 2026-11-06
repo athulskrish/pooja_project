@@ -75,6 +75,67 @@
   </div>
 
   <!-- =========================================================================
+       MODAL: DISH CUSTOMISATION MODAL (Spice Levels, Extra Cheese, Toppings)
+       ========================================================================= -->
+  <div class="modal fade" id="customizationModal" tabindex="-1" aria-labelledby="customizationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 520px;">
+      <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+        
+        <div class="modal-header border-bottom py-3 px-4 bg-light">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-sliders2 text-success fs-5"></i>
+            <h5 class="modal-title fw-bold text-dark font-outfit mb-0" id="customizationModalLabel">Customise Your Dish</h5>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body p-4">
+          <!-- Dish Overview Card -->
+          <div class="d-flex gap-3 align-items-center mb-3 pb-3 border-bottom">
+            <div class="position-relative flex-shrink-0" style="width: 72px; height: 72px;">
+              <img src="" id="custModalDishImg" alt="Dish photo" class="rounded-3 w-100 h-100 object-fit-cover border shadow-sm">
+              <span id="custModalVegDot" class="position-absolute top-0 start-0 m-1" style="width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff;"></span>
+            </div>
+            <div class="overflow-hidden flex-grow-1">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span id="custModalCategory" class="badge bg-light text-dark border rounded-pill" style="font-size: 0.65rem;"></span>
+                <span id="custModalDietBadge" class="badge rounded-pill" style="font-size: 0.65rem;"></span>
+              </div>
+              <h6 class="fw-bold mb-0 text-dark text-truncate" id="custModalDishName" style="font-size: 1.05rem;"></h6>
+              <div class="small text-muted" id="custModalBasePrice"></div>
+            </div>
+          </div>
+
+          <!-- Loading Spinner -->
+          <div id="custModalLoading" class="text-center py-4">
+            <div class="spinner-border text-success" role="status">
+              <span class="visually-hidden">Loading options...</span>
+            </div>
+            <div class="small text-muted mt-2">Loading customisation choices...</div>
+          </div>
+
+          <!-- Groups Container (Rendered by JS) -->
+          <div id="custModalGroupsContainer" style="display: none;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Sticky Bottom Action Footer -->
+        <div class="modal-footer border-top bg-white p-3 px-4 d-flex justify-content-between align-items-center">
+          <div>
+            <div class="small text-muted text-uppercase fw-semibold" style="font-size: 0.7rem;">Item Total</div>
+            <div class="fs-5 fw-bold text-forest" id="custModalTotalPrice">₹0.00</div>
+          </div>
+          <button type="button" class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-sm" id="custModalAddToCartBtn" style="background:#2E6F40; border-color:#2E6F40;">
+            <i class="bi bi-bag-plus me-1"></i> Add to Cart
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
        LOCATION SELECTOR MODAL
        ========================================================================= -->
   <div class="modal fade" id="locationModal" tabindex="-1" aria-labelledby="locationModalLabel" aria-hidden="true">
@@ -123,6 +184,8 @@
     </div>
   </div>
 
+
+
   <!-- =========================================================================
        FLOATING MOBILE CART BAR (Visible only on mobile screens when cart > 0)
        ========================================================================= -->
@@ -143,6 +206,8 @@
       </button>
     </div>
   </div>
+
+
 
   <!-- =========================================================================
        MOBILE BOTTOM NAVIGATION
@@ -192,6 +257,48 @@
                     <i class="bi bi-shield-check me-1"></i> 100% Verified Customer Reviews
                   </span>
                 </div>
+
+                <!-- Dish-Level Feedback Dimension Breakdown Meters -->
+                <div class="mt-3 pt-3 border-top" id="dishModalDimensionsBox">
+                  <div class="small fw-bold text-muted text-uppercase mb-2" style="font-size:0.7rem; letter-spacing:0.5px;">Culinary Dimension Scores</div>
+                  
+                  <!-- Appearance -->
+                  <div class="d-flex align-items-center justify-content-between small mb-1">
+                    <span class="text-muted"><i class="bi bi-eye text-primary me-1"></i>Appearance</span>
+                    <span class="fw-bold text-dark font-monospace" id="dishDimAppearance">5.0 ★</span>
+                  </div>
+                  <div class="progress rounded-pill mb-2" style="height:6px; background:#E2ECE5;">
+                    <div class="progress-bar bg-primary" id="dishDimBarAppearance" role="progressbar" style="width: 100%;"></div>
+                  </div>
+
+                  <!-- Taste -->
+                  <div class="d-flex align-items-center justify-content-between small mb-1">
+                    <span class="text-muted"><i class="bi bi-fire text-danger me-1"></i>Taste & Flavor</span>
+                    <span class="fw-bold text-dark font-monospace" id="dishDimTaste">5.0 ★</span>
+                  </div>
+                  <div class="progress rounded-pill mb-2" style="height:6px; background:#E2ECE5;">
+                    <div class="progress-bar bg-danger" id="dishDimBarTaste" role="progressbar" style="width: 100%;"></div>
+                  </div>
+
+                  <!-- Portion Size -->
+                  <div class="d-flex align-items-center justify-content-between small mb-1">
+                    <span class="text-muted"><i class="bi bi-pie-chart text-warning me-1"></i>Portion Size</span>
+                    <span class="fw-bold text-dark font-monospace" id="dishDimPortion">4.8 ★</span>
+                  </div>
+                  <div class="progress rounded-pill mb-2" style="height:6px; background:#E2ECE5;">
+                    <div class="progress-bar bg-warning" id="dishDimBarPortion" role="progressbar" style="width: 96%;"></div>
+                  </div>
+
+                  <!-- Value -->
+                  <div class="d-flex align-items-center justify-content-between small mb-1">
+                    <span class="text-muted"><i class="bi bi-tag text-success me-1"></i>Value for Money</span>
+                    <span class="fw-bold text-dark font-monospace" id="dishDimValue">4.9 ★</span>
+                  </div>
+                  <div class="progress rounded-pill" style="height:6px; background:#E2ECE5;">
+                    <div class="progress-bar bg-success" id="dishDimBarValue" role="progressbar" style="width: 98%;"></div>
+                  </div>
+                </div>
+
               </div>
 
               <div class="col-md-7">
@@ -204,31 +311,87 @@
                 </div>
 
                 <!-- Quick Review Form Collapse -->
-                <div id="dishReviewFormBox" style="display: none;" class="p-3 bg-white rounded-3 border mt-2">
+                <div id="dishReviewFormBox" style="display: none;" class="p-3 bg-white rounded-3 border mt-2 shadow-xs">
                   <form id="inlineDishReviewForm" onsubmit="submitInlineDishReview(event)">
                     <input type="hidden" id="inlineDishId" value="0">
                     <input type="hidden" id="inlineDishRating" value="5">
+                    <input type="hidden" id="inlineDishAppearance" value="5">
+                    <input type="hidden" id="inlineDishTaste" value="5">
+                    <input type="hidden" id="inlineDishPortion" value="5">
+                    <input type="hidden" id="inlineDishValue" value="5">
                     
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                      <span class="small fw-bold text-muted">Your Star Rating:</span>
-                      <div class="d-inline-flex gap-1" id="inlineModalStars">
-                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="1" style="cursor:pointer;"></i>
-                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="2" style="cursor:pointer;"></i>
-                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="3" style="cursor:pointer;"></i>
-                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="4" style="cursor:pointer;"></i>
-                        <i class="bi bi-star-fill text-warning fs-5 inline-star" data-val="5" style="cursor:pointer;"></i>
+                    <div class="small fw-bold text-forest text-uppercase mb-2 pb-1 border-bottom" style="font-size:0.75rem;">
+                      <i class="bi bi-star-half me-1"></i> Dish-Level Feedback (4 Dimensions)
+                    </div>
+
+                    <!-- 1. Appearance -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <span class="small fw-semibold text-dark"><i class="bi bi-eye text-primary me-1"></i>Appearance:</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="d-inline-flex gap-1 inline-dimension-stars" data-dim="appearance" id="dimStars_appearance">
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="1" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="2" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="3" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="4" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="5" style="cursor:pointer;"></i>
+                        </div>
+                        <span class="small text-muted font-monospace" id="dimLabel_appearance" style="width:36px;">5.0 ★</span>
                       </div>
-                      <span class="small fw-bold text-forest ms-2" id="inlineRatingLabel">5 Stars ⭐</span>
+                    </div>
+
+                    <!-- 2. Taste -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <span class="small fw-semibold text-dark"><i class="bi bi-fire text-danger me-1"></i>Taste & Flavor:</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="d-inline-flex gap-1 inline-dimension-stars" data-dim="taste" id="dimStars_taste">
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="1" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="2" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="3" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="4" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="5" style="cursor:pointer;"></i>
+                        </div>
+                        <span class="small text-muted font-monospace" id="dimLabel_taste" style="width:36px;">5.0 ★</span>
+                      </div>
+                    </div>
+
+                    <!-- 3. Portion Size -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <span class="small fw-semibold text-dark"><i class="bi bi-pie-chart text-warning me-1"></i>Portion Size:</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="d-inline-flex gap-1 inline-dimension-stars" data-dim="portion" id="dimStars_portion">
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="1" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="2" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="3" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="4" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="5" style="cursor:pointer;"></i>
+                        </div>
+                        <span class="small text-muted font-monospace" id="dimLabel_portion" style="width:36px;">5.0 ★</span>
+                      </div>
+                    </div>
+
+                    <!-- 4. Value -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <span class="small fw-semibold text-dark"><i class="bi bi-tag text-success me-1"></i>Value for Money:</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="d-inline-flex gap-1 inline-dimension-stars" data-dim="value" id="dimStars_value">
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="1" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="2" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="3" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="4" style="cursor:pointer;"></i>
+                          <i class="bi bi-star-fill text-warning fs-6 inline-dim-star" data-val="5" style="cursor:pointer;"></i>
+                        </div>
+                        <span class="small text-muted font-monospace" id="dimLabel_value" style="width:36px;">5.0 ★</span>
+                      </div>
                     </div>
 
                     <div class="mb-2">
-                      <textarea id="inlineReviewText" class="form-control form-control-sm rounded-3" rows="2" placeholder="Tell us how delicious and flavorful this meal was..."></textarea>
+                      <textarea id="inlineReviewText" class="form-control form-control-sm rounded-3" rows="2" placeholder="Tell us how delicious, well-portioned, and visually appealing this meal was..."></textarea>
                     </div>
 
                     <div class="d-flex justify-content-end gap-2">
                       <button type="button" class="btn btn-sm btn-light rounded-pill px-3" onclick="toggleDishReviewForm()">Cancel</button>
                       <button type="submit" class="btn btn-sm btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
-                        Post Review ⭐
+                        Post Dish Feedback ⭐
                       </button>
                     </div>
                   </form>
@@ -259,6 +422,8 @@
       </div>
     </div>
   </div>
+
+
 
   <nav class="mobile-bottom-nav d-lg-none">
     <div class="container-fluid d-flex justify-content-around py-2">
@@ -364,6 +529,21 @@
 
   <!-- Bootstrap 5.3.3 JS Bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <?php
+    $custCounts = get_all_dishes_customization_counts();
+    $customizableIds = [];
+    foreach ($custCounts as $cid => $cData) {
+      if (!empty($cData['group_count'])) {
+        $customizableIds[] = (int)$cid;
+      }
+    }
+  ?>
+  <script>
+    window.ZIPPY_CUSTOMER_URL = '<?= CUSTOMER_URL ?>';
+    window.ZIPPY_BASE_URL = '<?= BASE_URL ?>';
+    window.DISH_CUSTOMIZABLE_IDS = <?= json_encode($customizableIds) ?>;
+  </script>
 
   <!-- Custom Zippy JS Engine -->
   <script src="<?= ASSETS_URL ?>/js/app.js?v=<?= time() ?>"></script>

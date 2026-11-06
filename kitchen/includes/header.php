@@ -898,10 +898,17 @@
             </button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-ready-btn" data-bs-toggle="pill" data-bs-target="#tab-ready" type="button" role="tab" title="Bagged & Ready for Courier Handover">
+            <button class="nav-link" id="tab-ready-btn" data-bs-toggle="pill" data-bs-target="#tab-ready" type="button" role="tab" title="Bagged & Ready for Delivery">
               <i class="bi bi-bag-check"></i>
-              <span class="d-none d-xxl-inline">3. </span><span>Courier</span>
+              <span class="d-none d-xxl-inline">3. </span><span>Ready for Delivery</span>
               <span class="badge-count" id="tabCountReady"><?= $countReady ?? 0 ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-scheduled-btn" data-bs-toggle="pill" data-bs-target="#tab-scheduled" type="button" role="tab" title="Advance Scheduled Meal Orders">
+              <i class="bi bi-calendar2-check-fill" style="color:#7C3AED;"></i>
+              <span class="d-none d-xxl-inline">Advance </span><span>Scheduled</span>
+              <span class="badge-count text-white" style="background:#7C3AED;" id="tabCountScheduled"><?= $countScheduled ?? 0 ?></span>
             </button>
           </li>
           <li class="nav-item" role="presentation">

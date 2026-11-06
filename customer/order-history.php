@@ -148,19 +148,21 @@ $cancelledStatuses = ['CANCELLED'];
 
 $allOrders = $orders;
 $ongoingOrders = array_values(array_filter($orders, fn($o) => in_array($o['order_status'], $ongoingStatuses)));
+$scheduledOrders = array_values(array_filter($orders, fn($o) => !empty($o['is_scheduled'])));
 $completedOrders = array_values(array_filter($orders, fn($o) => in_array($o['order_status'], $completedStatuses)));
 $cancelledOrders = array_values(array_filter($orders, fn($o) => in_array($o['order_status'], $cancelledStatuses)));
 
 // Calculate stats
 $totalOrdersCount = count($allOrders);
 $ongoingCount = count($ongoingOrders);
+$scheduledCount = count($scheduledOrders);
 $completedCount = count($completedOrders);
 $cancelledCount = count($cancelledOrders);
 
 $totalDeliveredSpend = array_reduce($completedOrders, fn($sum, $o) => $sum + (float)$o['total_amount'], 0.0);
 
 // Determine active tab from URL query
-$validTabs = ['all', 'ongoing', 'completed', 'cancelled'];
+$validTabs = ['all', 'ongoing', 'scheduled', 'completed', 'cancelled'];
 $activeTab = in_array(strtolower($_GET['tab'] ?? ''), $validTabs) ? strtolower($_GET['tab']) : 'all';
 
 require_once __DIR__ . '/includes/header.php';
@@ -388,6 +390,64 @@ require_once __DIR__ . '/includes/header.php';
       </div>
     </div>
 
+    <!-- 1-Tap Quick Reorder Previous Meal Banner -->
+    <?php
+    $latestCompleted = !empty($completedOrders) ? $completedOrders[0] : (!empty($allOrders) ? $allOrders[0] : null);
+    if ($latestCompleted && !empty($orderItemsGrouped[$latestCompleted['order_id']])):
+        $prevOrderItems = $orderItemsGrouped[$latestCompleted['order_id']];
+        $prevReorderPayload = array_map(function($it) {
+            return [
+                'id' => (int)$it['item_id'],
+                'name' => $it['item_name'],
+                'price' => (float)$it['unit_price'],
+                'isVeg' => (bool)$it['is_veg'],
+                'restaurant' => 'Meghana Foods',
+                'imageUrl' => get_dish_image_url($it['image_url'] ?? ''),
+                'qty' => (int)$it['quantity'],
+                'customizationText' => $it['customizations'] ?? '',
+                'customizationTotal' => (float)($it['customization_total'] ?? 0),
+                'cartItemId' => !empty($it['customizations']) ? ($it['item_id'] . '_' . md5($it['customizations'])) : (string)$it['item_id']
+            ];
+        }, $prevOrderItems);
+        $prevReorderJson = htmlspecialchars(json_encode($prevReorderPayload), ENT_QUOTES, 'UTF-8');
+    ?>
+    <div class="card border-0 rounded-4 shadow-sm p-3 p-md-4 mb-4" style="background: linear-gradient(135deg, #F0FAF3 0%, #E2F6EB 100%); border-left: 6px solid #2E6F40 !important;">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 shadow-sm" style="width: 50px; height: 50px; background: #2E6F40;">
+            <i class="fa-solid fa-rotate-right fs-4"></i>
+          </div>
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+              <span class="badge rounded-pill px-2 py-1 fw-bold" style="background: #243E2C; color: #CEFFDC; font-size: 0.7rem;">
+                <i class="fa-solid fa-bolt text-mint me-1"></i>1-TAP REORDER
+              </span>
+              <span class="badge bg-white text-forest border rounded-pill fw-semibold small">
+                Order #ZIP-<?= (int)$latestCompleted['order_id'] ?>
+              </span>
+              <span class="text-muted small"><?= date('d M Y, h:i A', strtotime($latestCompleted['placed_at'])) ?></span>
+            </div>
+            <h6 class="fw-bold mb-1 text-dark font-outfit">Repeat your previous meal in one tap</h6>
+            <div class="small text-muted d-flex align-items-center gap-2 flex-wrap">
+              <span><?= implode(' &bull; ', array_map(fn($it) => e($it['item_name']) . ' &times;' . (int)$it['quantity'], $prevOrderItems)) ?></span>
+              <strong class="text-forest">&bull; <?= format_inr($latestCompleted['total_amount']) ?></strong>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-sm d-flex align-items-center gap-2" style="background:#2E6F40; border-color:#2E6F40;" onclick="oneTapReorderMeal(<?= $prevReorderJson ?>, <?= (int)$latestCompleted['order_id'] ?>, false, this)">
+            <i class="fa-solid fa-rotate-right"></i>
+            <span>1-Tap Reorder (<?= format_inr($latestCompleted['total_amount']) ?>)</span>
+          </button>
+          <button type="button" class="btn btn-outline-forest rounded-pill px-3 py-2 fw-semibold bg-white d-none d-sm-inline-flex align-items-center gap-1" style="border-color:#2E6F40; color:#2E6F40;" onclick="oneTapReorderMeal(<?= $prevReorderJson ?>, <?= (int)$latestCompleted['order_id'] ?>, true, this)" title="Reorder and jump directly to checkout">
+            <i class="fa-solid fa-bolt text-warning"></i>
+            <span>Checkout Now</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Search & Filter Bar -->
     <div class="row align-items-center mb-4 g-2">
       <div class="col-md-8 col-lg-9">
@@ -428,7 +488,16 @@ require_once __DIR__ . '/includes/header.php';
           </button>
         </li>
 
-        <!-- Tab 3: Completed Orders -->
+        <!-- Tab 3: Scheduled Orders -->
+        <li class="nav-item flex-fill text-center" role="presentation">
+          <button class="nav-link w-100 <?= $activeTab === 'scheduled' ? 'active' : '' ?>" id="tab-scheduled-btn" data-bs-toggle="pill" data-bs-target="#tab-scheduled-pane" type="button" role="tab" aria-controls="tab-scheduled-pane" aria-selected="<?= $activeTab === 'scheduled' ? 'true' : 'false' ?>" data-tab-name="scheduled">
+            <i class="bi bi-calendar2-check-fill"></i>
+            <span>Scheduled</span>
+            <span class="badge rounded-pill ms-1 text-white" style="background:#7C3AED;" id="badge-count-scheduled"><?= $scheduledCount ?></span>
+          </button>
+        </li>
+
+        <!-- Tab 4: Completed Orders -->
         <li class="nav-item flex-fill text-center" role="presentation">
           <button class="nav-link w-100 <?= $activeTab === 'completed' ? 'active' : '' ?>" id="tab-completed-btn" data-bs-toggle="pill" data-bs-target="#tab-completed-pane" type="button" role="tab" aria-controls="tab-completed-pane" aria-selected="<?= $activeTab === 'completed' ? 'true' : 'false' ?>" data-tab-name="completed">
             <i class="bi bi-check2-circle"></i>
@@ -437,7 +506,7 @@ require_once __DIR__ . '/includes/header.php';
           </button>
         </li>
 
-        <!-- Tab 4: Cancelled Orders -->
+        <!-- Tab 5: Cancelled Orders -->
         <li class="nav-item flex-fill text-center" role="presentation">
           <button class="nav-link w-100 <?= $activeTab === 'cancelled' ? 'active' : '' ?>" id="tab-cancelled-btn" data-bs-toggle="pill" data-bs-target="#tab-cancelled-pane" type="button" role="tab" aria-controls="tab-cancelled-pane" aria-selected="<?= $activeTab === 'cancelled' ? 'true' : 'false' ?>" data-tab-name="cancelled">
             <i class="bi bi-x-circle"></i>
@@ -489,7 +558,10 @@ require_once __DIR__ . '/includes/header.php';
                 'price' => (float)$it['unit_price'],
                 'isVeg' => (bool)$it['is_veg'],
                 'restaurant' => 'Meghana Foods',
-                'qty' => (int)$it['quantity']
+                'qty' => (int)$it['quantity'],
+                'customizationText' => $it['customizations'] ?? '',
+                'customizationTotal' => (float)($it['customization_total'] ?? 0),
+                'cartItemId' => !empty($it['customizations']) ? ($it['item_id'] . '_' . md5($it['customizations'])) : (string)$it['item_id']
             ];
         }, $items);
         $reorderJson = htmlspecialchars(json_encode($reorderPayload), ENT_QUOTES, 'UTF-8');
@@ -504,6 +576,12 @@ require_once __DIR__ . '/includes/header.php';
                 <span class="text-muted small">
                   <i class="bi bi-calendar3 me-1"></i><?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?>
                 </span>
+
+                <?php if (!empty($order['is_scheduled'])): ?>
+                  <span class="badge rounded-pill text-white shadow-xs px-2 py-1" style="background:#7C3AED; font-size:0.75rem;">
+                    <i class="bi bi-calendar2-check-fill me-1"></i> ADVANCE: <?= e($order['scheduled_slot'] ?: date('d M, h:i A', strtotime($order['scheduled_for']))) ?>
+                  </span>
+                <?php endif; ?>
                 
                 <?php if ($isOngoing): ?>
                   <span class="badge bg-mint text-forest fw-semibold px-2 py-1 rounded-pill small d-inline-flex align-items-center gap-1">
@@ -535,16 +613,23 @@ require_once __DIR__ . '/includes/header.php';
 
                 <div class="d-flex flex-column">
                   <?php foreach ($items as $item): ?>
-                    <div class="order-item-row d-flex align-items-center gap-2 small">
-                      <div class="<?= $item['is_veg'] ? 'veg-box' : 'nonveg-box' ?>" title="<?= $item['is_veg'] ? 'Vegetarian' : 'Non-Vegetarian' ?>">
+                    <div class="order-item-row d-flex align-items-start gap-2 small py-1">
+                      <div class="<?= $item['is_veg'] ? 'veg-box' : 'nonveg-box' ?> mt-1" title="<?= $item['is_veg'] ? 'Vegetarian' : 'Non-Vegetarian' ?>">
                         <?php if ($item['is_veg']): ?>
                           <div class="dot"></div>
                         <?php else: ?>
                           <div class="triangle"></div>
                         <?php endif; ?>
                       </div>
-                      <span class="badge bg-light text-dark border px-2 py-1 fw-bold"><?= (int)$item['quantity'] ?>x</span>
-                      <span class="text-dark fw-semibold text-truncate" style="max-width: 220px;"><?= e($item['item_name']) ?></span>
+                      <span class="badge bg-light text-dark border px-2 py-1 fw-bold mt-1"><?= (int)$item['quantity'] ?>x</span>
+                      <div class="flex-grow-1 overflow-hidden">
+                        <span class="text-dark fw-semibold text-truncate d-block" style="max-width: 260px;"><?= e($item['item_name']) ?></span>
+                        <?php if (!empty($item['customizations'])): ?>
+                          <div class="mt-1">
+                            <?= format_customizations_html($item['customizations']) ?>
+                          </div>
+                        <?php endif; ?>
+                      </div>
                       <span class="text-muted ms-auto fw-medium"><?= format_inr($item['line_total']) ?></span>
                     </div>
                   <?php endforeach; ?>
@@ -739,6 +824,13 @@ require_once __DIR__ . '/includes/header.php';
                 'btnText' => 'Order Food Now',
                 'btnLink' => CUSTOMER_URL . '/index.php#dishes'
             ],
+            'scheduled' => [
+                'icon' => 'bi-calendar2-check',
+                'title' => 'No advance scheduled orders',
+                'desc' => 'You do not have any advance pre-booked meals at this time. Plan ahead for lunch or dinner!',
+                'btnText' => 'Schedule a Meal',
+                'btnLink' => CUSTOMER_URL . '/index.php#dishes'
+            ],
             'completed' => [
                 'icon' => 'bi-check2-circle',
                 'title' => 'No completed orders yet',
@@ -798,6 +890,19 @@ require_once __DIR__ . '/includes/header.php';
         <?php else: ?>
           <div class="row g-0 orders-list-container">
             <?php foreach ($ongoingOrders as $order): ?>
+              <?php render_order_card($order, $orderItemsGrouped[$order['order_id']] ?? []); ?>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- TAB: SCHEDULED ORDERS -->
+      <div class="tab-pane fade <?= $activeTab === 'scheduled' ? 'show active' : '' ?>" id="tab-scheduled-pane" role="tabpanel" aria-labelledby="tab-scheduled-btn" tabindex="0">
+        <?php if (empty($scheduledOrders)): ?>
+          <?php render_empty_state('scheduled'); ?>
+        <?php else: ?>
+          <div class="row g-0 orders-list-container">
+            <?php foreach ($scheduledOrders as $order): ?>
               <?php render_order_card($order, $orderItemsGrouped[$order['order_id']] ?? []); ?>
             <?php endforeach; ?>
           </div>
@@ -1027,10 +1132,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 /**
  * 1-Click Reorder Function
- * Adds order dishes directly into localStorage cart, calculates totals,
- * shows a toast notification and opens the offcanvas cart drawer.
+ * Delegates to centralized oneTapReorderMeal in app.js
  */
 function reorderItems(items, orderId) {
+  if (typeof oneTapReorderMeal === 'function') {
+    oneTapReorderMeal(items, orderId, false, null);
+    return;
+  }
   if (!items || !items.length) {
     if (typeof showToast === 'function') {
       showToast('No items found in this order to reorder.', 'warning');
@@ -1052,6 +1160,7 @@ function reorderItems(items, orderId) {
         price: Number(it.price),
         isVeg: Boolean(it.isVeg),
         restaurant: it.restaurant || 'Meghana Foods',
+        imageUrl: it.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[it.id]) || '',
         qty: Number(it.qty || 1)
       });
     }
@@ -1059,6 +1168,7 @@ function reorderItems(items, orderId) {
 
   // Save to localStorage
   localStorage.setItem('pooja_zippy_cart', JSON.stringify(currentCart));
+  if (typeof cart !== 'undefined') cart = currentCart;
 
   // Trigger app.js update helpers if available
   if (typeof updateCartBadge === 'function') updateCartBadge();

@@ -52,14 +52,23 @@ $orderItems = db_fetch_all("
         </div>
       </div>
 
-      <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #2E6F40; color: #CEFFDC;">
-        ORDER CONFIRMED & QUEUED
-      </span>
-
-      <h2 class="fw-bold font-outfit text-dark mb-2">Thank you, <?= e($order['full_name']) ?>!</h2>
-      <p class="text-muted small mb-4">
-        Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> has been sent to the kitchen. Our cooks are preparing your fresh meal!
-      </p>
+      <?php if (!empty($order['is_scheduled'])): ?>
+        <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold text-white shadow-xs" style="background: #7C3AED;">
+          <i class="bi bi-calendar2-check-fill me-1"></i> ADVANCE PRE-ORDER SCHEDULED
+        </span>
+        <h2 class="fw-bold font-outfit text-dark mb-2">Thank you, <?= e($order['full_name']) ?>!</h2>
+        <p class="text-muted small mb-4">
+          Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> is booked for <strong><?= e($order['scheduled_slot'] ?: date('D, d M h:i A', strtotime($order['scheduled_for']))) ?></strong>. It has been queued in the Kitchen Display System (KDS) and will be cooked fresh right on time!
+        </p>
+      <?php else: ?>
+        <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #2E6F40; color: #CEFFDC;">
+          ORDER CONFIRMED & QUEUED
+        </span>
+        <h2 class="fw-bold font-outfit text-dark mb-2">Thank you, <?= e($order['full_name']) ?>!</h2>
+        <p class="text-muted small mb-4">
+          Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> has been sent to the kitchen. Our cooks are preparing your fresh meal!
+        </p>
+      <?php endif; ?>
 
       <!-- Secret 6-Digit Delivery OTP Card -->
       <div class="p-3 p-md-4 rounded-4 mb-4 text-start" style="background: #EDFBF2; border: 2px dashed #2E6F40;">
@@ -98,9 +107,10 @@ $orderItems = db_fetch_all("
         </div>
         <div class="col-sm-6">
           <div class="p-3 rounded-3 bg-light border">
-            <div class="small text-muted">Estimated Delivery Time</div>
-            <div class="fw-bold fs-5 text-success">
-              <i class="bi bi-clock-history me-1"></i> 25-30 Mins
+            <div class="small text-muted"><?= !empty($order['is_scheduled']) ? 'Scheduled Delivery Slot' : 'Estimated Delivery Time' ?></div>
+            <div class="fw-bold fs-5 <?= !empty($order['is_scheduled']) ? 'text-primary' : 'text-success' ?>" style="<?= !empty($order['is_scheduled']) ? 'color:#7C3AED !important;' : '' ?>">
+              <i class="bi <?= !empty($order['is_scheduled']) ? 'bi-calendar-check' : 'bi-clock-history' ?> me-1"></i>
+              <?= !empty($order['is_scheduled']) ? e($order['scheduled_slot'] ?: date('d M, h:i A', strtotime($order['scheduled_for']))) : '25-30 Mins' ?>
             </div>
             <div class="small text-muted">Arriving at <?= e($order['address_line'] ?: 'Indiranagar') ?></div>
           </div>

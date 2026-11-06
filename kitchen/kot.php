@@ -133,10 +133,21 @@ foreach ($allItems as $it) {
         <div class="bold" style="font-size: 16px; margin-top:4px;">TICKET #ZIP-<?= (int)$order['order_id'] ?></div>
       </div>
 
+      <?php if (!empty($order['is_scheduled'])): ?>
+        <div style="border: 2px dashed #000; padding: 6px; margin: 8px 0; text-align: center; font-weight: bold; background: #eee;">
+          *** ADVANCE SCHEDULED MEAL ***
+          <br><span style="font-size: 14px;">TARGET DUE: <?= date('d-M-Y h:i A', strtotime($order['scheduled_for'])) ?></span>
+          <br><?= e($order['scheduled_slot'] ?? '') ?>
+        </div>
+      <?php endif; ?>
+
       <div class="divider"></div>
 
       <div><strong>Date/Time:</strong> <?= date('d-M-Y h:i A', strtotime($order['placed_at'])) ?></div>
-      <div><strong>Order Type:</strong> ONLINE DELIVERY (EXPRESS)</div>
+      <div><strong>Order Type:</strong> <?= !empty($order['is_scheduled']) ? 'ADVANCE PRE-ORDER (SCHEDULED)' : 'ONLINE DELIVERY (EXPRESS)' ?></div>
+      <?php if (!empty($order['is_scheduled'])): ?>
+        <div><strong>Target Delivery:</strong> <span class="bold"><?= date('d-M-Y h:i A', strtotime($order['scheduled_for'])) ?></span></div>
+      <?php endif; ?>
       <div><strong>Status:</strong> <?= e($order['order_status']) ?></div>
       <div><strong>Customer:</strong> <?= e($order['customer_name']) ?> (<?= e($order['customer_phone']) ?>)</div>
       <div><strong>Assigned Rider:</strong> <?= e($order['delivery_partner_name'] ?? 'Pending Assignment') ?></div>
@@ -167,6 +178,11 @@ foreach ($allItems as $it) {
               <td class="qty">[<?= (int)$it['quantity'] ?>x]</td>
               <td>
                 <span class="bold"><?= e($it['item_name']) ?></span>
+                <?php if (!empty($it['customizations'])): ?>
+                  <div style="font-size:11px; font-weight:bold; margin-top:2px; color:#111;">
+                    &gt;&gt; <?= e($it['customizations']) ?>
+                  </div>
+                <?php endif; ?>
                 <br>
                 <span class="badge"><?= $it['is_veg'] ? 'VEG' : 'NON-VEG' ?></span>
                 <span style="font-size:10px; color:#444;"><?= e($it['kitchen_station'] ?? 'Main Kitchen') ?></span>

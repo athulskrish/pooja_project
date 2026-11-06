@@ -30,6 +30,9 @@ $menuItems = db_fetch_all("
     ORDER BY m.stock_quantity DESC, m.item_id ASC
 ");
 
+$customSummaryMap = get_all_dishes_customization_counts();
+$foodMoods = get_food_moods();
+
 // Algorithm 1: Apriori Association Rule Dynamic Recommendations
 $aprioriCombos = AprioriEngine::getRecommendations([], 4);
 
@@ -57,6 +60,12 @@ if ($currentUser && !empty($currentUser['id'])) {
             default => ['badge' => 'bg-success', 'icon' => 'bi-bag-check', 'text' => 'In Progress', 'desc' => 'Your order is being handled']
         };
     }
+}
+
+// Fetch Previous Meal for 1-Tap Reorder (Prioritizes Delivered, falls back to recent)
+$previousMeal = null;
+if ($currentUser && !empty($currentUser['id'])) {
+    $previousMeal = get_customer_previous_meal((int)$currentUser['id']);
 }
 ?>
 
@@ -275,6 +284,7 @@ if ($currentUser && !empty($currentUser['id'])) {
         <!-- Popular Tags Pills -->
         <div class="d-flex align-items-center gap-2 mt-2 px-3 flex-wrap small">
           <span class="text-muted fw-semibold">Trending:</span>
+          <button type="button" class="badge rounded-pill bg-white text-dark border px-2 py-1 quick-tag-btn" onclick="scrollToMoodSection()"><i class="fa-solid fa-masks-theater text-warning me-1"></i>Mood Food 🎭</button>
           <button type="button" class="badge rounded-pill bg-white text-dark border px-2 py-1 quick-tag-btn" onclick="setQuickSearchTag('Biryani')">Dum Biryani</button>
           <button type="button" class="badge rounded-pill bg-white text-dark border px-2 py-1 quick-tag-btn" onclick="setQuickSearchTag('Salad')">Healthy Salad</button>
           <button type="button" class="badge rounded-pill bg-white text-dark border px-2 py-1 quick-tag-btn" onclick="setQuickSearchTag('Paneer')">Paneer Curries</button>
@@ -286,6 +296,128 @@ if ($currentUser && !empty($currentUser['id'])) {
 
     </div>
   </section>
+
+  <!-- =========================================================================
+       ONE-TAP REORDER PREVIOUS MEAL (Quick 1-Click Reorder for returning users)
+       ========================================================================= -->
+  <?php if ($previousMeal && !empty($previousMeal['items'])): 
+    $pmOrder = $previousMeal['order'];
+    $pmItems = $previousMeal['items'];
+    $pmPayloadJson = htmlspecialchars($previousMeal['reorder_json'], ENT_QUOTES, 'UTF-8');
+    $pmPlacedTs = strtotime($pmOrder['placed_at']);
+    $pmDateStr = date('d M Y, h:i A', $pmPlacedTs);
+  ?>
+  <section class="one-tap-reorder-section py-2 mb-3" id="oneTapReorderSection">
+    <div class="container-xl">
+      <div class="card border-0 shadow-sm rounded-4 overflow-hidden position-relative" style="background: linear-gradient(135deg, #F0FAF3 0%, #E5F7EC 100%); border: 1.5px solid #C4EED3 !important;">
+        
+        <div class="card-body p-3 p-md-4">
+          <div class="row align-items-center g-3">
+            
+            <!-- Left: Metadata and Dish Chips -->
+            <div class="col-lg-7">
+              <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                <span class="badge rounded-pill px-3 py-1 fw-bold shadow-xs d-inline-flex align-items-center gap-1" style="background: #243E2C; color: #CEFFDC; font-size: 0.72rem; letter-spacing: 0.5px;">
+                  <i class="fa-solid fa-bolt text-mint"></i> 1-TAP REORDER
+                </span>
+                <span class="badge rounded-pill bg-white text-forest border px-2 py-1 small fw-semibold">
+                  <i class="bi bi-clock-history me-1 text-success"></i> Previous Meal &bull; Order #ZIP-<?= (int)$pmOrder['order_id'] ?>
+                </span>
+                <span class="text-muted small">
+                  <?= $pmDateStr ?>
+                </span>
+                <?php if ($pmOrder['order_status'] === 'DELIVERED'): ?>
+                  <span class="badge bg-success bg-opacity-10 text-success border border-success-subtle rounded-pill px-2 py-1 small">
+                    <i class="bi bi-check2-circle me-1"></i>Delivered
+                  </span>
+                <?php endif; ?>
+              </div>
+
+              <h4 class="fw-bold text-dark font-outfit mb-1">
+                Craving your previous meal again?
+              </h4>
+              <p class="text-muted small mb-3">
+                Tap once to load your last combination into your cart with exact quantities & chef seasoning.
+              </p>
+
+              <!-- Dish Mini-Chips / Thumbnails -->
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <?php foreach ($pmItems as $item): ?>
+                  <div class="d-inline-flex align-items-center gap-2 bg-white rounded-pill px-3 py-1 border shadow-xs">
+                    <span class="food-badge-dot <?= $item['is_veg'] ? 'veg' : 'non-veg' ?>" style="width: 8px; height: 8px; border-radius: 50%; background: <?= $item['is_veg'] ? '#229947' : '#D9534F' ?>; display: inline-block;"></span>
+                    <span class="fw-semibold small text-dark"><?= e($item['item_name']) ?></span>
+                    <span class="badge bg-light text-secondary rounded-pill fw-bold" style="font-size: 0.7rem;">&times;<?= (int)$item['quantity'] ?></span>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+
+            <!-- Right: Bill Total and 1-Tap CTA Actions -->
+            <div class="col-lg-5 text-lg-end">
+              <div class="d-inline-flex flex-column align-items-lg-end w-100">
+                <div class="mb-2">
+                  <span class="text-muted small d-block">Meal Total (<?= $previousMeal['items_count'] ?> <?= $previousMeal['items_count'] === 1 ? 'item' : 'items' ?>)</span>
+                  <span class="fs-4 fw-bold text-forest font-outfit"><?= format_inr($pmOrder['total_amount']) ?></span>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 justify-content-lg-end w-100">
+                  <!-- 1-Tap Reorder (Adds to Cart and opens drawer) -->
+                  <button type="button" 
+                          id="btnOneTapReorder" 
+                          class="btn btn-success rounded-pill px-4 py-2 fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-lg-grow-0" 
+                          style="background:#2E6F40; border-color:#2E6F40;" 
+                          onclick="oneTapReorderMeal(<?= $pmPayloadJson ?>, <?= (int)$pmOrder['order_id'] ?>, false, this)">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>1-Tap Reorder</span>
+                  </button>
+
+                  <!-- 1-Tap Reorder & Checkout (Instant Jump) -->
+                  <button type="button" 
+                          id="btnOneTapReorderCheckout" 
+                          class="btn btn-outline-forest rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-lg-grow-0 bg-white" 
+                          style="border-color:#2E6F40; color:#2E6F40;" 
+                          onclick="oneTapReorderMeal(<?= $pmPayloadJson ?>, <?= (int)$pmOrder['order_id'] ?>, true, this)"
+                          title="Load meal and proceed directly to checkout">
+                    <i class="fa-solid fa-bolt text-warning"></i>
+                    <span>Reorder & Checkout</span>
+                  </button>
+                </div>
+
+                <div class="mt-2 small text-muted d-flex align-items-center gap-3 justify-content-lg-end">
+                  <a href="<?= CUSTOMER_URL ?>/order-status.php?order_id=<?= (int)$pmOrder['order_id'] ?>" class="text-muted text-decoration-none">
+                    <i class="bi bi-receipt me-1"></i>View Receipt
+                  </a>
+                  <a href="<?= CUSTOMER_URL ?>/order-history.php" class="text-success text-decoration-none fw-semibold">
+                    All Past Orders &rarr;
+                  </a>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+  <?php elseif (!$currentUser): ?>
+  <!-- Anonymous Guest 1-Tap Reorder Teaser -->
+  <section class="one-tap-reorder-teaser py-2 mb-3 d-none d-sm-block">
+    <div class="container-xl">
+      <div class="card border-0 rounded-4 px-4 py-3 bg-light bg-opacity-75" style="border: 1px dashed #C4EED3 !important;">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge rounded-pill bg-mint text-forest fw-bold px-3 py-1"><i class="fa-solid fa-bolt me-1"></i>1-TAP REORDER</span>
+            <span class="small text-muted">Returning foodie? Sign in to repeat your favorite meals with a single tap.</span>
+          </div>
+          <a href="<?= CUSTOMER_URL ?>/login.php" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-semibold">
+            Sign In to Reorder &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+  <?php endif; ?>
 
   <!-- =========================================================================
        INSPIRATION FOR YOUR FIRST ORDER (FOOD CATEGORIES)
@@ -403,6 +535,67 @@ if ($currentUser && !empty($currentUser['id'])) {
   </section>
 
   <!-- =========================================================================
+       MOOD-BASED FOOD SELECTION (How are you feeling today?)
+       ========================================================================= -->
+  <section class="mood-selection-section py-4" id="moodSection">
+    <div class="container-xl">
+      <div class="card border-0 rounded-4 shadow-sm p-4" style="background: linear-gradient(135deg, #F5FAF6 0%, #FFFFFF 100%); border: 1.5px solid #D6E8DC !important;">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+              <span class="badge rounded-pill px-3 py-1 fw-bold shadow-xs" style="background: #243E2C; color: #CEFFDC; font-size: 0.75rem; letter-spacing: 0.5px;">
+                <i class="fa-solid fa-masks-theater text-mint me-1"></i> MOOD-BASED FOOD SELECTION
+              </span>
+              <span class="badge rounded-pill bg-white text-success border px-2 py-1 small fw-semibold">
+                Curated by Emotional & Physical Vibe
+              </span>
+            </div>
+            <h3 class="fw-bold text-dark font-outfit mb-1">How are you feeling today?</h3>
+            <p class="text-muted small mb-0">Select your current vibe and let Zippy recommend the perfect soul food to elevate your spirits.</p>
+          </div>
+          
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <!-- Surprise My Mood / Feeling Lucky Button -->
+            <button type="button" class="btn btn-outline-forest rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-2 bg-white shadow-xs" onclick="surpriseMyMood()" id="btnSurpriseMood" title="Let Zippy surprise you based on a random mood vibe">
+              <span class="fs-6">🎲</span>
+              <span>Surprise My Mood</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1" onclick="resetAllStorefrontFilters()">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Show All
+            </button>
+          </div>
+        </div>
+
+        <!-- Mood Cards Grid (6 Moods) -->
+        <div class="row g-3">
+          <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+            <div class="col-6 col-md-4 col-lg-2">
+              <div class="mood-card p-3 text-center h-100 d-flex flex-column align-items-center justify-content-between shadow-xs" 
+                   data-mood-id="<?= e($mKey) ?>" 
+                   onclick="filterByMood('<?= e($mKey) ?>', this, event)">
+                <div class="mood-img-wrap mb-2 position-relative">
+                  <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="<?= e($mInfo['name']) ?>" class="mood-food-img" loading="lazy">
+                  <span class="mood-badge-mini" style="background: <?= $mInfo['badge_bg'] ?>;" title="<?= e($mInfo['name']) ?>">
+                    <?= $mInfo['emoji'] ?>
+                  </span>
+                </div>
+                <div class="fw-bold text-dark small mb-1 line-clamp-1"><?= e($mInfo['name']) ?></div>
+                <p class="text-muted mb-2 text-center" style="font-size: 0.7rem; line-height: 1.25; min-height: 2.5em;">
+                  <?= e($mInfo['tagline']) ?>
+                </p>
+                <span class="badge rounded-pill fw-semibold px-2 py-1 mood-explore-btn" style="background: <?= $mInfo['badge_bg'] ?>; color: <?= $mInfo['badge_color'] ?>; font-size: 0.65rem; border: 1px solid <?= $mInfo['border_color'] ?>;">
+                  Explore Vibe &rarr;
+                </span>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
        DISH CATALOG & LIVE MENU WITH ADD TO CART
        ========================================================================= -->
   <section class="dishes-catalog-section py-5" id="dishes">
@@ -433,6 +626,34 @@ if ($currentUser && !empty($currentUser['id'])) {
             <span>Healthy Food</span>
           </button>
 
+          <!-- Mood Filter Dropdown Chip -->
+          <div class="dropdown">
+            <button class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1 dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="moodFilterDropdownBtn">
+              <i class="fa-solid fa-masks-theater text-forest"></i>
+              <span id="activeMoodFilterLabel">Mood: All</span>
+            </button>
+            <ul class="dropdown-menu shadow-sm border-0 rounded-4 mt-2" style="min-width: 220px;">
+              <li>
+                <button class="dropdown-item small py-2 d-flex align-items-center justify-content-between" type="button" onclick="filterByMood('all', null, event)">
+                  <span>🎭 All Moods</span>
+                  <i class="bi bi-check2 text-success mood-check" id="check-mood-all"></i>
+                </button>
+              </li>
+              <li><hr class="dropdown-divider my-1"></li>
+              <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+                <li>
+                  <button class="dropdown-item small py-2 d-flex align-items-center justify-content-between" type="button" onclick="filterByMood('<?= e($mKey) ?>', null, event)">
+                    <span class="d-flex align-items-center gap-2">
+                      <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                      <span><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></span>
+                    </span>
+                    <i class="bi bi-check2 text-success mood-check d-none" id="check-mood-<?= e($mKey) ?>"></i>
+                  </button>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          </div>
+
           <!-- Fast Sort Dropdown -->
           <div class="dropdown">
             <button class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1 dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="storefrontSortBtn">
@@ -459,17 +680,39 @@ if ($currentUser && !empty($currentUser['id'])) {
         </div>
       </div>
 
+      <!-- Active Mood Indicator Banner -->
+      <div id="activeMoodBanner" class="alert alert-light border rounded-4 p-3 mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-xs" style="display:none; background: linear-gradient(135deg, #FFF9E6 0%, #FFF2D6 100%); border-color: #FFE69C !important;">
+        <div class="d-flex align-items-center gap-3">
+          <div class="position-relative" style="width: 52px; height: 52px; flex-shrink: 0;">
+            <img id="activeMoodBannerImg" src="<?= e(get_mood_image_url('comfort')) ?>" alt="Mood Food" class="w-100 h-100 rounded-circle object-fit-cover shadow-xs border border-2 border-white">
+            <span id="activeMoodBannerEmoji" class="position-absolute rounded-circle shadow-xs bg-white px-1 d-flex align-items-center justify-content-center" style="bottom: -2px; right: -2px; width: 22px; height: 22px; font-size: 0.75rem;">🛋️</span>
+          </div>
+          <div>
+            <div class="fw-bold text-dark font-outfit" id="activeMoodBannerTitle">Showing Food for Your Comfort & Soul Vibe</div>
+            <div class="small text-muted" id="activeMoodBannerDesc">Warm, soulful curries, rich gravies & buttery breads to unwind & destress</div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-white text-dark border px-3 py-2 fw-semibold" id="activeMoodBannerCount">0 Dishes Available</span>
+          <button type="button" class="btn btn-sm btn-outline-dark rounded-pill px-3 py-1" onclick="filterByMood('all', null, event)">
+            <i class="bi bi-x-circle me-1"></i>Clear Mood
+          </button>
+        </div>
+      </div>
+
       <!-- Dish Cards Grid -->
       <div class="row g-3 g-md-4" id="dishesGrid">
         <?php if (!empty($menuItems)): ?>
           <?php foreach ($menuItems as $dish): ?>
             <?php 
               $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+              $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
             ?>
             <div class="col-12 col-sm-6 col-lg-4 col-xl-3 dish-card-wrapper" 
                  data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" 
                  data-category="<?= e($dish['category_slug']) ?>" 
                  data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" 
+                 data-mood="<?= e($dish['mood'] ?? 'comfort') ?>" 
                  data-rating="<?= (float)($dish['rating'] ?? 4.8) ?>"
                  data-price="<?= (float)$dish['price'] ?>"
                  data-prep="<?= (int)$dish['prep_time_minutes'] ?>"
@@ -481,7 +724,7 @@ if ($currentUser && !empty($currentUser['id'])) {
                 <div class="dish-card-img-container position-relative overflow-hidden" style="height: 190px;">
                   <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
                   
-                  <!-- Indicators (Veg/Non-Veg + Healthy) -->
+                  <!-- Indicators (Veg/Non-Veg + Healthy + Mood) -->
                   <div class="position-absolute top-0 start-0 m-2 d-flex flex-column gap-1 align-items-start">
                     <?php if ($dish['is_veg']): ?>
                       <span class="badge bg-white text-success border border-success d-flex align-items-center gap-1 shadow-sm px-2 py-1" style="font-size: 0.7rem;">
@@ -498,6 +741,13 @@ if ($currentUser && !empty($currentUser['id'])) {
                     <?php if ($isHealthyDish): ?>
                       <span class="badge shadow-sm px-2 py-1" style="background: #CEFFDC; color: #1C2B20; font-size: 0.65rem; border: 1px solid #68BA7F;">
                         <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
+                      </span>
+                    <?php endif; ?>
+
+                    <?php if ($dishPrimaryMood): ?>
+                      <span class="badge shadow-sm px-2 py-1 d-inline-flex align-items-center gap-1" style="background: <?= $dishPrimaryMood['badge_bg'] ?>; color: <?= $dishPrimaryMood['badge_color'] ?>; font-size: 0.65rem; border: 1px solid <?= $dishPrimaryMood['border_color'] ?>;" title="Curated for <?= e($dishPrimaryMood['name']) ?> vibe">
+                        <img src="<?= e(get_mood_image_url($dishPrimaryMood['id'])) ?>" alt="" style="width: 13px; height: 13px; border-radius: 50%; object-fit: cover;">
+                        <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
                       </span>
                     <?php endif; ?>
                   </div>
@@ -551,6 +801,9 @@ if ($currentUser && !empty($currentUser['id'])) {
                   <div class="d-flex align-items-center justify-content-between pt-2 border-top">
                     <div>
                       <span class="fs-5 fw-bold text-forest"><?= format_inr($dish['price']) ?></span>
+                      <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
+                        <div class="text-success small fw-medium" style="font-size:0.68rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
+                      <?php endif; ?>
                     </div>
 
                     <!-- Client JS Synchronized ADD Button -->

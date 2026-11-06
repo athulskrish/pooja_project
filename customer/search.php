@@ -13,7 +13,9 @@ $query = clean_input($_GET['q'] ?? '');
 $categorySlug = clean_input($_GET['category'] ?? '');
 $vegOnly = !empty($_GET['veg_only']) ? true : false;
 $healthyOnly = !empty($_GET['healthy_only']) ? true : false;
+$moodFilter = clean_input($_GET['mood'] ?? '');
 $sort = clean_input($_GET['sort'] ?? 'recommended');
+$foodMoods = get_food_moods();
 
 // Build SQL
 $conditions = ["m.is_available = 1"];
@@ -37,6 +39,12 @@ if ($healthyOnly) {
     $conditions[] = "(c.category_slug = 'healthy' OR m.is_healthy = 1 OR LOWER(c.category_name) LIKE '%healthy%' OR LOWER(m.item_name) LIKE '%salad%' OR LOWER(m.item_name) LIKE '%quinoa%' OR LOWER(m.item_name) LIKE '%detox%')";
 }
 
+if (!empty($moodFilter) && $moodFilter !== 'all') {
+    $conditions[] = "(FIND_IN_SET(:mood, m.mood) > 0 OR m.mood LIKE :mood_like)";
+    $params[':mood'] = $moodFilter;
+    $params[':mood_like'] = '%' . $moodFilter . '%';
+}
+
 $orderBy = match($sort) {
     'price_asc' => "m.price ASC",
     'price_desc' => "m.price DESC",
@@ -55,6 +63,7 @@ $sql = "
 
 $dishes = db_fetch_all($sql, $params);
 $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORDER BY `display_order` ASC");
+$customSummaryMap = get_all_dishes_customization_counts();
 ?>
 
 <main class="py-4">
@@ -63,14 +72,14 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
     <!-- Search Bar Hero -->
     <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
       <form method="GET" action="<?= CUSTOMER_URL ?>/search.php" class="row g-2 align-items-center">
-        <div class="col-lg-7">
+        <div class="col-lg-5">
           <div class="input-group">
             <span class="input-group-text bg-white border-end-0 text-success"><i class="bi bi-search fs-5"></i></span>
             <input type="text" name="q" class="form-control border-start-0 py-3 ps-0" placeholder="Search for Biryani, Quinoa Bowls, Healthy Salads, Butter Chicken, Dosa..." value="<?= e($query) ?>">
           </div>
         </div>
 
-        <div class="col-lg-3 col-md-6">
+        <div class="col-lg-3 col-md-4">
           <select name="category" class="form-select py-3">
             <option value="">All Categories</option>
             <?php foreach ($categories as $cat): ?>
@@ -81,7 +90,18 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
           </select>
         </div>
 
-        <div class="col-lg-2 col-md-6">
+        <div class="col-lg-2 col-md-4">
+          <select name="mood" class="form-select py-3">
+            <option value="">🎭 All Moods</option>
+            <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+              <option value="<?= e($mKey) ?>" <?= ($moodFilter === $mKey) ? 'selected' : '' ?>>
+                <?= $mInfo['emoji'] ?> <?= e($mInfo['short_name']) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+
+        <div class="col-lg-2 col-md-4">
           <button type="submit" class="btn btn-success w-100 py-3 fw-bold rounded-3 shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">
             Search Menu
           </button>
@@ -92,24 +112,43 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
           <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="small fw-bold text-muted">Quick Filters:</span>
             
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '0' : '1' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=<?= urlencode($sort) ?>" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '0' : '1' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=<?= urlencode($sort) ?>" 
                class="btn btn-sm rounded-pill <?= $vegOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
               <span style="width:8px; height:8px; border-radius:50%; background:<?= $vegOnly ? '#fff' : '#229947' ?>; display:inline-block;"></span>
               Pure Veg <?= $vegOnly ? '✓' : '' ?>
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '0' : '1' ?>&sort=<?= urlencode($sort) ?>" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '0' : '1' ?>&mood=<?= urlencode($moodFilter) ?>&sort=<?= urlencode($sort) ?>" 
                class="btn btn-sm rounded-pill <?= $healthyOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
               <i class="fa-solid fa-leaf"></i>
               Healthy Food <?= $healthyOnly ? '✓' : '' ?>
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=price_asc" 
+            <!-- Mood Filter Dropdown Pill -->
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-sm rounded-pill <?= !empty($moodFilter) ? 'btn-success text-white' : 'btn-outline-secondary' ?> dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+                <span>🎭 <?= !empty($moodFilter) && isset($foodMoods[$moodFilter]) ? $foodMoods[$moodFilter]['emoji'] . ' ' . $foodMoods[$moodFilter]['short_name'] : 'Filter by Mood' ?></span>
+              </button>
+              <ul class="dropdown-menu shadow-sm border-0 rounded-4 mt-1">
+                <li><a class="dropdown-item small" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=&sort=<?= urlencode($sort) ?>">🎭 All Moods</a></li>
+                <li><hr class="dropdown-divider my-1"></li>
+                <?php foreach ($foodMoods as $mKey => $mInfo): ?>
+                  <li>
+                    <a class="dropdown-item small d-flex align-items-center gap-2 <?= ($moodFilter === $mKey) ? 'active fw-bold' : '' ?>" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($mKey) ?>&sort=<?= urlencode($sort) ?>">
+                      <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover;">
+                      <span><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></span>
+                    </a>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+            </div>
+
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=price_asc" 
                class="btn btn-sm rounded-pill <?= ($sort === 'price_asc') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Price: Low to High
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&sort=prep_time" 
+            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=prep_time" 
                class="btn btn-sm rounded-pill <?= ($sort === 'prep_time') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Fastest Prep Time (< 15m)
             </a>
@@ -128,9 +167,10 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
         <?php foreach ($dishes as $dish): ?>
           <?php 
             $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+            $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
           ?>
           <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-            <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift m3-card">
+            <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift m3-card" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
               
               <div class="position-relative" style="height: 180px;">
                 <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
@@ -142,6 +182,11 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
                   <?php if ($isHealthyDish): ?>
                     <span class="badge shadow-sm px-2 py-1" style="background:#CEFFDC; color:#1C2B20; font-size:0.65rem; border:1px solid #68BA7F;">
                       <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
+                    </span>
+                  <?php endif; ?>
+                  <?php if ($dishPrimaryMood): ?>
+                    <span class="badge shadow-sm px-2 py-1" style="background:<?= $dishPrimaryMood['badge_bg'] ?>; color:<?= $dishPrimaryMood['badge_color'] ?>; font-size:0.65rem; border:1px solid <?= $dishPrimaryMood['border_color'] ?>;" title="Mood: <?= e($dishPrimaryMood['name']) ?>">
+                      <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
                     </span>
                   <?php endif; ?>
                 </div>
@@ -175,7 +220,12 @@ $categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORD
                 </div>
 
                 <div class="d-flex align-items-center justify-content-between pt-2 border-top">
-                  <span class="fw-bold fs-5 text-forest"><?= format_inr($dish['price']) ?></span>
+                  <div>
+                    <span class="fw-bold fs-5 text-forest"><?= format_inr($dish['price']) ?></span>
+                    <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
+                      <div class="text-success small fw-medium" style="font-size:0.68rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
+                    <?php endif; ?>
+                  </div>
                   
                   <button 
                     type="button" 

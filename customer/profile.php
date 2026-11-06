@@ -25,6 +25,7 @@ $orderStats = db_fetch_one("
 ", [':id' => $userId]);
 
 $savedAddressesCount = db_fetch_val("SELECT COUNT(*) FROM `user_addresses` WHERE `user_id` = :id", [':id' => $userId]);
+$previousMeal = get_customer_previous_meal($userId);
 
 // Handle Profile Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_profile') {
@@ -94,6 +95,31 @@ require_once __DIR__ . '/includes/header.php';
             </a>
           </div>
         </div>
+
+        <!-- Previous Meal 1-Tap Reorder Card -->
+        <?php if (!empty($previousMeal) && !empty($previousMeal['items'])): 
+          $profPmOrder = $previousMeal['order'];
+          $profPmJson = htmlspecialchars($previousMeal['reorder_json'], ENT_QUOTES, 'UTF-8');
+        ?>
+          <div class="card border-0 rounded-4 shadow-sm p-3 bg-white mb-4" style="background: linear-gradient(135deg, #F0FAF3 0%, #E8F7EE 100%) !important; border: 1px solid #C4EED3 !important;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="badge rounded-pill px-2 py-1 fw-bold" style="background: #243E2C; color: #CEFFDC; font-size: 0.68rem;">
+                <i class="fa-solid fa-bolt text-mint me-1"></i>1-TAP REORDER
+              </span>
+              <span class="small text-muted">Order #ZIP-<?= (int)$profPmOrder['order_id'] ?></span>
+            </div>
+            <div class="small fw-semibold text-dark mb-1">Your Previous Meal</div>
+            <div class="small text-muted mb-2 text-start" style="font-size: 0.78rem;">
+              <?= implode(', ', array_map(fn($it) => e($it['item_name']) . ' (x' . $it['quantity'] . ')', $previousMeal['items'])) ?>
+            </div>
+            <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+              <span class="fw-bold text-forest"><?= format_inr($profPmOrder['total_amount']) ?></span>
+              <button type="button" class="btn btn-success btn-sm rounded-pill px-3 fw-bold" style="background:#2E6F40; border-color:#2E6F40;" onclick="oneTapReorderMeal(<?= $profPmJson ?>, <?= (int)$profPmOrder['order_id'] ?>, false, this)">
+                <i class="fa-solid fa-rotate-right me-1"></i>Reorder
+              </button>
+            </div>
+          </div>
+        <?php endif; ?>
 
         <!-- Account Stats Card -->
         <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">

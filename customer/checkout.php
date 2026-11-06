@@ -40,6 +40,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $orderNotes = clean_input($_POST['order_notes'] ?? '');
         $selectedAddressId = !empty($_POST['address_id']) ? (int)$_POST['address_id'] : null;
 
+        // Advance Order Scheduling parameters
+        $deliveryType = clean_input($_POST['delivery_type'] ?? 'now');
+        $isScheduled = ($deliveryType === 'schedule') ? 1 : 0;
+        $scheduledFor = null;
+        $scheduledSlot = null;
+
+        if ($isScheduled) {
+            $scheduledDate = clean_input($_POST['scheduled_date'] ?? date('Y-m-d'));
+            $scheduledTime = clean_input($_POST['scheduled_time'] ?? '13:00');
+            $scheduledSlotInput = clean_input($_POST['scheduled_slot'] ?? '');
+
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scheduledDate)) {
+                $scheduledDate = date('Y-m-d');
+            }
+            if (!preg_match('/^\d{2}:\d{2}$/', $scheduledTime)) {
+                $scheduledTime = '13:00';
+            }
+
+            $combinedDateTimeStr = $scheduledDate . ' ' . $scheduledTime . ':00';
+            $scheduledTimestamp = strtotime($combinedDateTimeStr);
+
+            // If scheduled time is past or within next 20 mins, ensure at least 45 mins in future
+            if (!$scheduledTimestamp || $scheduledTimestamp < time() + 1200) {
+                $scheduledTimestamp = strtotime('+1 hour');
+            }
+
+            $scheduledFor = date('Y-m-d H:i:s', $scheduledTimestamp);
+
+            if (!empty($scheduledSlotInput)) {
+                $scheduledSlot = $scheduledSlotInput;
+            } else {
+                $dateLabel = (date('Y-m-d', $scheduledTimestamp) === date('Y-m-d')) 
+                    ? 'Today' 
+                    : ((date('Y-m-d', $scheduledTimestamp) === date('Y-m-d', strtotime('+1 day'))) ? 'Tomorrow' : date('D, d M', $scheduledTimestamp));
+                $scheduledSlot = $dateLabel . ' (' . date('h:i A', $scheduledTimestamp) . ')';
+            }
+
+            $orderNotes = trim($orderNotes . " [ADVANCE ORDER: Scheduled for {$scheduledSlot}]");
+        }
+
         // Guest address input fallback
         $guestName = clean_input($_POST['guest_name'] ?? '');
         $guestPhone = clean_input($_POST['guest_phone'] ?? '');
@@ -132,14 +172,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             throw new Exception("Insufficient stock for '{$dish['item_name']}'. Only {$dish['stock_quantity']} portions remaining.");
                         }
 
-                        $lineTotal = round((float)$dish['price'] * $qty, 2);
+                        $basePrice = (float)$dish['price'];
+                        $addonTotal = 0.00;
+                        $customParts = [];
+
+                        // Verify and calculate customizations if present
+                        if (!empty($item['customizations']) && is_array($item['customizations'])) {
+                            $optIds = [];
+                            foreach ($item['customizations'] as $c) {
+                                if (!empty($c['optionId'])) {
+                                    $optIds[] = (int)$c['optionId'];
+                                } elseif (!empty($c['option_id'])) {
+                                    $optIds[] = (int)$c['option_id'];
+                                }
+                            }
+
+                            if (!empty($optIds)) {
+                                $inList = implode(',', array_map('intval', $optIds));
+                                $validOptions = db_fetch_all("
+                                    SELECT o.*, g.group_name 
+                                    FROM `dish_customization_options` o
+                                    JOIN `dish_customization_groups` g ON o.group_id = g.group_id
+                                    WHERE o.option_id IN ({$inList}) AND g.item_id = :iid AND o.is_available = 1
+                                ", [':iid' => $itemId]);
+
+                                foreach ($validOptions as $vo) {
+                                    $optPrice = (float)$vo['price'];
+                                    $addonTotal += $optPrice;
+                                    $priceTag = ($optPrice > 0) ? " (+₹" . number_format($optPrice, 2) . ")" : "";
+                                    $customParts[] = $vo['option_name'] . $priceTag;
+                                }
+                            }
+                        }
+
+                        $customText = !empty($customParts) ? implode(', ', $customParts) : (!empty($item['customizationText']) ? clean_input($item['customizationText']) : null);
+                        $unitPrice = $basePrice + $addonTotal;
+                        $lineTotal = round($unitPrice * $qty, 2);
                         $subtotal += $lineTotal;
                         $maxPrepTime = max($maxPrepTime, (int)$dish['prep_time_minutes']);
 
                         $verifiedItems[] = [
                             'item_id' => $dish['item_id'],
                             'item_name' => $dish['item_name'],
-                            'price' => (float)$dish['price'],
+                            'price' => $unitPrice,
+                            'base_price' => $basePrice,
+                            'customization_total' => $addonTotal,
+                            'customizations' => $customText,
                             'qty' => $qty,
                             'line_total' => $lineTotal
                         ];
@@ -160,15 +238,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         INSERT INTO `orders` (
                             `user_id`, `address_id`, `subtotal`, `tax_amount`, 
                             `delivery_fee`, `platform_fee`, `discount_amount`, `total_amount`, 
-                            `coupon_code`, `order_status`, `order_notes`, `placed_at`, `estimated_delivery_time`
+                            `coupon_code`, `order_status`, `is_scheduled`, `scheduled_for`, `scheduled_slot`,
+                            `order_notes`, `placed_at`, `estimated_delivery_time`
                         ) VALUES (
                             :uid, :aid, :sub, :tax, 
                             :del, :plat, :disc, :tot, 
-                            :coupon, 'CONFIRMED', :notes, NOW(), DATE_ADD(NOW(), INTERVAL :eta MINUTE)
+                            :coupon, 'CONFIRMED', :is_sched, :sched_for, :sched_slot,
+                            :notes, NOW(), :est_delivery
                         )
                     ");
                     $appliedCoupon = !empty($bill['coupon_code']) ? $bill['coupon_code'] : (!empty($couponCode) ? strtoupper(trim($couponCode)) : null);
                     $platformFee = (float)($bill['platform_fee'] ?? 5.00);
+                    $estimatedDelivery = $scheduledFor ?: date('Y-m-d H:i:s', strtotime("+{$etaMinutes} minutes"));
 
                     $orderStmt->execute([
                         ':uid' => $userId,
@@ -180,8 +261,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         ':disc' => $discountAmount,
                         ':tot' => $totalAmount,
                         ':coupon' => $appliedCoupon,
+                        ':is_sched' => $isScheduled,
+                        ':sched_for' => $scheduledFor,
+                        ':sched_slot' => $scheduledSlot,
                         ':notes' => $orderNotes,
-                        ':eta' => $etaMinutes
+                        ':est_delivery' => $estimatedDelivery
                     ]);
                     $orderId = (int)$pdo->lastInsertId();
 
@@ -194,8 +278,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                     // Step 6: Insert Order Items & Deduct Stock
                     $itemInsertStmt = $pdo->prepare("
-                        INSERT INTO `order_items` (`order_id`, `item_id`, `quantity`, `unit_price`, `line_total`) 
-                        VALUES (:oid, :iid, :qty, :price, :ltot)
+                        INSERT INTO `order_items` (`order_id`, `item_id`, `quantity`, `unit_price`, `line_total`, `customizations`, `customization_total`) 
+                        VALUES (:oid, :iid, :qty, :price, :ltot, :custom, :ctot)
                     ");
                     $stockUpdateStmt = $pdo->prepare("
                         UPDATE `menu_items` 
@@ -209,7 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             ':iid' => $vItem['item_id'],
                             ':qty' => $vItem['qty'],
                             ':price' => $vItem['price'],
-                            ':ltot' => $vItem['line_total']
+                            ':ltot' => $vItem['line_total'],
+                            ':custom' => $vItem['customizations'] ?? null,
+                            ':ctot' => $vItem['customization_total'] ?? 0.00
                         ]);
 
                         $stockUpdateStmt->execute([
@@ -279,12 +365,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     ]);
 
                     // Step 9: Audit Trail Logging
+                    $auditNewStatus = $isScheduled ? "CONFIRMED [Scheduled: {$scheduledSlot}]" : 'CONFIRMED';
                     $auditStmt = $pdo->prepare("
                         INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) 
-                        VALUES (:oid, 'PLACED', 'CONFIRMED', :uid, NOW())
+                        VALUES (:oid, 'PLACED', :astat, :uid, NOW())
                     ");
                     $auditStmt->execute([
                         ':oid' => $orderId,
+                        ':astat' => $auditNewStatus,
                         ':uid' => $userId
                     ]);
 
@@ -474,16 +562,137 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
           </div>
 
-          <!-- Section 3: Delivery Instructions & Notes -->
+          <!-- Section 3: Delivery Timing (Immediate vs Advance Scheduled Meal) -->
           <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-            <h5 class="fw-bold text-dark mb-3"><i class="bi bi-chat-left-text-fill text-success me-2"></i>3. Cooking & Drop-off Instructions</h5>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="fw-bold text-dark mb-0"><i class="bi bi-clock-history text-success me-2"></i>3. Delivery Schedule & Timing</h5>
+              <span class="badge rounded-pill px-3 py-1" style="background:#CEFFDC; color:#243E2C; font-size:0.75rem;">
+                <i class="bi bi-calendar2-check-fill me-1"></i> Advance Pre-Order
+              </span>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <!-- Option A: Deliver Now -->
+              <div class="col-md-6">
+                <label class="card h-100 p-3 border rounded-3 cursor-pointer delivery-type-card active" id="cardDeliverNow" style="cursor:pointer; border-color:#2E6F40 !important; background:#EDFBF2;">
+                  <div class="d-flex align-items-center gap-3">
+                    <input class="form-check-input m-0" type="radio" name="delivery_type" value="now" id="deliveryTypeNow" checked>
+                    <div>
+                      <div class="d-flex align-items-center gap-2">
+                        <strong class="text-dark">⚡ Deliver Now (Standard)</strong>
+                        <span class="badge bg-success rounded-pill px-2 py-0" style="font-size:0.65rem;">EXPRESS</span>
+                      </div>
+                      <span class="small text-muted d-block mt-1">Fresh cooking starts right away. Arrives in ~25-35 mins.</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Option B: Schedule in Advance -->
+              <div class="col-md-6">
+                <label class="card h-100 p-3 border rounded-3 cursor-pointer delivery-type-card" id="cardDeliverSchedule" style="cursor:pointer;">
+                  <div class="d-flex align-items-center gap-3">
+                    <input class="form-check-input m-0" type="radio" name="delivery_type" value="schedule" id="deliveryTypeSchedule">
+                    <div>
+                      <div class="d-flex align-items-center gap-2">
+                        <strong class="text-dark">📅 Schedule in Advance</strong>
+                        <span class="badge rounded-pill px-2 py-0.5 text-white" style="background:#7C3AED; font-size:0.65rem;">POPULAR</span>
+                      </div>
+                      <span class="small text-muted d-block mt-1">Pre-order for lunch, dinner or tomorrow. Cooked fresh on time!</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Advance Scheduling Drawer -->
+            <div id="advanceScheduleBox" style="display:none;" class="p-3 p-md-4 rounded-4 border mt-2 bg-light">
+              <h6 class="fw-bold text-dark mb-3"><i class="bi bi-calendar-event text-primary me-2"></i>Select Advance Meal Date & Delivery Slot</h6>
+              
+              <!-- Quick Date Selection -->
+              <div class="mb-3">
+                <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="font-size:0.72rem; letter-spacing:0.5px;">Choose Delivery Date</label>
+                <div class="d-flex flex-wrap gap-2 mb-2" id="datePillsGroup">
+                  <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 date-pill-btn active" data-date="<?= date('Y-m-d') ?>" style="background:#2E6F40; color:#fff;">
+                    Today (<?= date('M j') ?>)
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 date-pill-btn" data-date="<?= date('Y-m-d', strtotime('+1 day')) ?>">
+                    Tomorrow (<?= date('M j', strtotime('+1 day')) ?>)
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 date-pill-btn" data-date="<?= date('Y-m-d', strtotime('+2 days')) ?>">
+                    <?= date('D, M j', strtotime('+2 days')) ?>
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="document.getElementById('customScheduledDate').focus(); document.getElementById('customScheduledDate').showPicker?.();">
+                    <i class="bi bi-calendar3 me-1"></i> More Dates...
+                  </button>
+                </div>
+                <input type="date" name="scheduled_date" id="customScheduledDate" class="form-control rounded-3 mt-1" style="max-width:220px;" min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+7 days')) ?>" value="<?= date('Y-m-d') ?>">
+              </div>
+
+              <!-- Meal Slot Selection Chips -->
+              <div class="mb-3">
+                <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="font-size:0.72rem; letter-spacing:0.5px;">Choose Meal Time Window</label>
+                
+                <!-- Lunch Slots -->
+                <div class="mb-2">
+                  <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-sun text-warning me-1"></i> Lunch Slots (12:00 PM – 02:30 PM)</span>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:15" data-slot="Lunch (12:00 PM - 12:30 PM)">12:00 PM - 12:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:45" data-slot="Lunch (12:30 PM - 01:00 PM)">12:30 PM - 01:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn active" data-time="13:15" data-slot="Lunch (01:00 PM - 01:30 PM)" style="background:#7C3AED; color:#fff; border-color:#7C3AED;">01:00 PM - 01:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="13:45" data-slot="Lunch (01:30 PM - 02:00 PM)">01:30 PM - 02:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="14:15" data-slot="Lunch (02:00 PM - 02:30 PM)">02:00 PM - 02:30 PM</button>
+                  </div>
+                </div>
+
+                <!-- Snacks / Evening Slots -->
+                <div class="mb-2">
+                  <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-cup-hot text-danger me-1"></i> High Tea & Snacks (04:30 PM – 06:00 PM)</span>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="16:45" data-slot="Snacks (04:30 PM - 05:00 PM)">04:30 PM - 05:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:15" data-slot="Snacks (05:00 PM - 05:30 PM)">05:00 PM - 05:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:45" data-slot="Snacks (05:30 PM - 06:00 PM)">05:30 PM - 06:00 PM</button>
+                  </div>
+                </div>
+
+                <!-- Dinner Slots -->
+                <div class="mb-2">
+                  <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-moon-stars text-primary me-1"></i> Dinner Slots (07:00 PM – 10:00 PM)</span>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:15" data-slot="Dinner (07:00 PM - 07:30 PM)">07:00 PM - 07:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:45" data-slot="Dinner (07:30 PM - 08:00 PM)">07:30 PM - 08:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:15" data-slot="Dinner (08:00 PM - 08:30 PM)">08:00 PM - 08:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:45" data-slot="Dinner (08:30 PM - 09:00 PM)">08:30 PM - 09:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:15" data-slot="Dinner (09:00 PM - 09:30 PM)">09:00 PM - 09:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:45" data-slot="Dinner (09:30 PM - 10:00 PM)">09:30 PM - 10:00 PM</button>
+                  </div>
+                </div>
+
+                <!-- Hidden inputs keeping form values in sync -->
+                <input type="hidden" name="scheduled_slot" id="scheduledSlotHidden" value="Lunch (01:00 PM - 01:30 PM)">
+                <input type="hidden" name="scheduled_time" id="scheduledTimeHidden" value="13:15">
+              </div>
+
+              <!-- Live Schedule Preview Card -->
+              <div class="alert alert-primary d-flex align-items-center gap-3 py-2 px-3 mb-0 rounded-3 border-0" style="background:#F3E8FF; color:#5B21B6;">
+                <i class="bi bi-info-circle-fill fs-4 flex-shrink-0"></i>
+                <div class="small">
+                  <strong>Advance Meal Guarantee:</strong> Your order will be confirmed and pre-scheduled for <span class="fw-bold text-dark font-monospace" id="scheduleLiveSummary">Today • Lunch (01:00 PM - 01:30 PM)</span>. The Kitchen Display System (KDS) and kitchen staff will prepare your meal fresh to arrive hot right on schedule!
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 4: Cooking & Drop-off Instructions -->
+          <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+            <h5 class="fw-bold text-dark mb-3"><i class="bi bi-chat-left-text-fill text-success me-2"></i>4. Cooking & Drop-off Instructions</h5>
             <input type="text" name="order_notes" class="form-control rounded-3" placeholder="E.g. Extra spicy, ring bell once, contactless leave at door">
           </div>
 
-          <!-- Section 4: Payment Mode Selection -->
+          <!-- Section 5: Payment Mode Selection -->
           <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="fw-bold text-dark mb-0"><i class="bi bi-credit-card-2-front-fill text-success me-2"></i>4. Select Payment Method</h5>
+              <h5 class="fw-bold text-dark mb-0"><i class="bi bi-credit-card-2-front-fill text-success me-2"></i>5. Select Payment Method</h5>
               <span class="badge rounded-pill px-3 py-1" style="background:#02042B; color:#528FF0; font-size:0.75rem;">
                 <i class="bi bi-shield-check me-1"></i> Razorpay Test Sandbox
               </span>
@@ -574,6 +783,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             <!-- Bill Breakdown -->
             <div class="border-top pt-3">
+              <div class="d-flex justify-content-between small text-muted mb-2">
+                <span>Fulfillment Window</span>
+                <span class="fw-bold text-forest text-end" id="summaryDeliveryType">⚡ Express (~25-30m)</span>
+              </div>
               <div class="d-flex justify-content-between small text-muted mb-2">
                 <span>Item Total</span>
                 <span class="fw-bold text-dark" id="chkSubtotal">₹0.00</span>
@@ -1205,6 +1418,156 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   }
+
+  // Delivery Timing Toggle (Deliver Now vs Schedule in Advance)
+  const cardNow = document.getElementById('cardDeliverNow');
+  const cardSched = document.getElementById('cardDeliverSchedule');
+  const radioNow = document.getElementById('deliveryTypeNow');
+  const radioSched = document.getElementById('deliveryTypeSchedule');
+  const advanceBox = document.getElementById('advanceScheduleBox');
+  const summaryFulfillment = document.getElementById('summaryDeliveryType');
+  const scheduleLiveSummary = document.getElementById('scheduleLiveSummary');
+  const dateInput = document.getElementById('customScheduledDate');
+  const slotHidden = document.getElementById('scheduledSlotHidden');
+  const timeHidden = document.getElementById('scheduledTimeHidden');
+  const datePills = document.querySelectorAll('.date-pill-btn');
+  const slotChips = document.querySelectorAll('.slot-chip-btn');
+
+  function updateScheduleSummary() {
+    if (!radioSched || !radioSched.checked) {
+      if (summaryFulfillment) {
+        summaryFulfillment.className = 'fw-bold text-forest text-end';
+        summaryFulfillment.textContent = '⚡ Express (~25-30m)';
+      }
+      return;
+    }
+
+    const selectedDate = dateInput ? dateInput.value : '';
+    const selectedSlot = slotHidden ? slotHidden.value : 'Lunch (01:00 PM - 01:30 PM)';
+    
+    let dateStr = selectedDate;
+    if (selectedDate) {
+      const todayStr = '<?= date('Y-m-d') ?>';
+      const tomorrowStr = '<?= date('Y-m-d', strtotime('+1 day')) ?>';
+      if (selectedDate === todayStr) {
+        dateStr = 'Today (' + '<?= date('M j') ?>' + ')';
+      } else if (selectedDate === tomorrowStr) {
+        dateStr = 'Tomorrow (' + '<?= date('M j', strtotime('+1 day')) ?>' + ')';
+      } else {
+        const dObj = new Date(selectedDate + 'T00:00:00');
+        dateStr = dObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      }
+    }
+
+    const fullSummary = `${dateStr} • ${selectedSlot}`;
+    if (scheduleLiveSummary) {
+      scheduleLiveSummary.textContent = fullSummary;
+    }
+    if (summaryFulfillment) {
+      summaryFulfillment.className = 'fw-bold text-end';
+      summaryFulfillment.style.color = '#7C3AED';
+      summaryFulfillment.textContent = `📅 ${selectedSlot}`;
+    }
+  }
+
+  function setDeliveryMode(isSchedule) {
+    if (isSchedule) {
+      if (radioSched) radioSched.checked = true;
+      if (cardSched) {
+        cardSched.classList.add('active');
+        cardSched.style.background = '#F3E8FF';
+        cardSched.style.borderColor = '#7C3AED';
+      }
+      if (cardNow) {
+        cardNow.classList.remove('active');
+        cardNow.style.background = '';
+        cardNow.style.borderColor = '';
+      }
+      if (advanceBox) advanceBox.style.display = 'block';
+    } else {
+      if (radioNow) radioNow.checked = true;
+      if (cardNow) {
+        cardNow.classList.add('active');
+        cardNow.style.background = '#EDFBF2';
+        cardNow.style.borderColor = '#2E6F40';
+      }
+      if (cardSched) {
+        cardSched.classList.remove('active');
+        cardSched.style.background = '';
+        cardSched.style.borderColor = '';
+      }
+      if (advanceBox) advanceBox.style.display = 'none';
+    }
+    updateScheduleSummary();
+  }
+
+  if (cardNow) {
+    cardNow.addEventListener('click', () => setDeliveryMode(false));
+  }
+  if (cardSched) {
+    cardSched.addEventListener('click', () => setDeliveryMode(true));
+  }
+
+  // Date Pills
+  datePills.forEach(pill => {
+    pill.addEventListener('click', function(e) {
+      e.preventDefault();
+      datePills.forEach(p => {
+        p.classList.remove('active');
+        p.style.background = '';
+        p.style.color = '';
+      });
+      this.classList.add('active');
+      this.style.background = '#2E6F40';
+      this.style.color = '#fff';
+
+      const d = this.getAttribute('data-date');
+      if (dateInput) {
+        dateInput.value = d;
+      }
+      updateScheduleSummary();
+    });
+  });
+
+  if (dateInput) {
+    dateInput.addEventListener('change', function() {
+      datePills.forEach(p => {
+        if (p.getAttribute('data-date') === this.value) {
+          p.classList.add('active');
+          p.style.background = '#2E6F40';
+          p.style.color = '#fff';
+        } else {
+          p.classList.remove('active');
+          p.style.background = '';
+          p.style.color = '';
+        }
+      });
+      updateScheduleSummary();
+    });
+  }
+
+  // Slot Chips
+  slotChips.forEach(chip => {
+    chip.addEventListener('click', function(e) {
+      e.preventDefault();
+      slotChips.forEach(c => {
+        c.classList.remove('active');
+        c.style.background = '';
+        c.style.color = '';
+        c.style.borderColor = '';
+      });
+      this.classList.add('active');
+      this.style.background = '#7C3AED';
+      this.style.color = '#fff';
+      this.style.borderColor = '#7C3AED';
+
+      const sTime = this.getAttribute('data-time');
+      const sSlot = this.getAttribute('data-slot');
+      if (timeHidden) timeHidden.value = sTime;
+      if (slotHidden) slotHidden.value = sSlot;
+      updateScheduleSummary();
+    });
+  });
 
   // Payment Option selection visual styling
   const optionCards = document.querySelectorAll('.payment-option-card');

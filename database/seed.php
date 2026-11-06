@@ -54,7 +54,7 @@ try {
     }
 
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
-    $messages[] = "All 17 Relational Tables (3NF), Staff Profiles & Seed records imported successfully.";
+    $messages[] = "All 19 Relational Tables (3NF), 25 Food Catalog Dishes & 50 Customisation Groups imported successfully.";
 
     // Update demo user passwords with fresh system bcrypt hash
     $updateStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash");

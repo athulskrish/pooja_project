@@ -39,6 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'toggle_duty') {
         $newDuty = !empty($_POST['duty']) && $_POST['duty'] === '1';
         $_SESSION['rider_on_duty'] = $newDuty;
+        if ($newDuty) {
+            auto_allocate_ready_orders_fcfs();
+        }
         if ($isAjax) {
             header('Content-Type: application/json');
             echo json_encode(['success' => true, 'on_duty' => $newDuty]);
@@ -78,6 +81,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         $orderId = (int)($_POST['order_id'] ?? 0);
+        if ($orderId <= 0) {
+            $alloc = get_driver_allocated_order((int)$currentUser['id']);
+            if ($alloc) {
+                $orderId = (int)$alloc['order_id'];
+            }
+        }
         $order = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
 
         if ($order && in_array($order['order_status'], ['READY', 'CONFIRMED', 'COOKING'])) {
@@ -217,6 +226,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ':uid' => $currentUser['id']
             ]);
 
+            // Trigger FCFS auto-allocation for next waiting parcel
+            auto_allocate_ready_orders_fcfs();
+
             if ($isAjax) {
                 header('Content-Type: application/json');
                 echo json_encode([
@@ -285,19 +297,23 @@ if (!empty($activeOrders)) {
     }
 }
 
-// Fetch Available Orders Waiting for Pickup (Status: READY)
+// Ensure latest FCFS parcel allocation is up-to-date
+auto_allocate_ready_orders_fcfs();
+$allocatedOrder = empty($activeOrders) ? get_driver_allocated_order((int)$currentUser['id']) : null;
+
+// Fetch Available Orders Waiting for Pickup (Status: READY) strictly in FCFS order by preparation time
 $readyOrders = db_fetch_all("
     SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
            a.address_line, a.landmark, a.pincode,
            p.payment_mode,
-           d.delivery_otp
+           d.delivery_otp, d.rider_id, d.delivery_status
     FROM `orders` o
     JOIN `users` u ON o.user_id = u.user_id
     LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
     LEFT JOIN `payments` p ON o.order_id = p.order_id
     LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
     WHERE o.order_status = 'READY'
-    ORDER BY o.placed_at ASC
+    ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
 ");
 
 // Fetch Delivered Trip History FOR THIS RIDER
@@ -594,12 +610,17 @@ require_once __DIR__ . '/includes/header.php';
           <?php endif; ?>
         </div>
 
-        <!-- Section 2: Orders Ready in Kitchen for Courier Pickup -->
+        <!-- Section 2: Orders Ready in Kitchen (System FCFS Allocation) -->
         <div id="readyOrdersSection" class="mb-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold text-dark text-uppercase small mb-0">
-              <i class="fa-solid fa-fire-burner text-warning me-1"></i> Bagged &amp; Ready for Pickup at Kitchen (<span id="readyOrdersCountBadge"><?= count($readyOrders) ?></span>)
-            </h6>
+            <div>
+              <h6 class="fw-bold text-dark text-uppercase small mb-0">
+                <i class="bi bi-cpu-fill text-success me-1"></i> System Parcel Allocation (FCFS Queue)
+              </h6>
+              <div class="text-muted" style="font-size:0.75rem;">
+                Parcels allocated strictly in First-Come, First-Served order based on preparation completion.
+              </div>
+            </div>
             <button type="button" class="btn btn-sm btn-link text-success text-decoration-none p-0 fw-semibold" onclick="syncDeliveryApp(true)" title="Force sync ready food from kitchen">
               <i class="bi bi-arrow-clockwise me-1"></i> Sync Now
             </button>
@@ -613,54 +634,77 @@ require_once __DIR__ . '/includes/header.php';
               </div>
               <div class="flex-grow-1">
                 <div class="fw-bold text-dark mb-0">1 Driver, 1 Delivery Policy Active</div>
-                <div class="small text-muted">You are currently fulfilling active delivery <strong id="policyActiveOrderId">#ZIP-<?= !empty($activeOrders) ? (int)$activeOrders[0]['order_id'] : '' ?></strong>. Complete doorstep OTP verification to free your slot before accepting another order.</div>
+                <div class="small text-muted">You are currently fulfilling active delivery <strong id="policyActiveOrderId">#ZIP-<?= !empty($activeOrders) ? (int)$activeOrders[0]['order_id'] : '' ?></strong>. Complete doorstep OTP verification to free your slot. The system will then allocate your next parcel in First-Come, First-Served order.</div>
               </div>
             </div>
           </div>
 
           <div id="readyOrdersCardsContainer">
-            <?php if (empty($readyOrders)): ?>
+            <?php if (empty($activeOrders) && !empty($allocatedOrder)): ?>
+              <!-- System Allocated Parcel (FCFS Head of Queue) -->
+              <div class="card border-2 rounded-4 p-4 shadow-sm bg-white mb-3" style="border-color: #2E6F40 !important;" id="allocatedOrderCard">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <span class="badge rounded-pill px-3 py-1 fw-bold" style="background:#CEFFDC; color:#243E2C; font-size:0.75rem;">
+                    <i class="bi bi-cpu-fill me-1"></i> SYSTEM ALLOCATED (FCFS #1 PREPARED)
+                  </span>
+                  <span class="fw-bold font-monospace text-dark fs-6">#ZIP-<?= (int)$allocatedOrder['order_id'] ?></span>
+                </div>
+                <div class="small text-muted mb-2">
+                  <i class="bi bi-clock-history me-1 text-success"></i> Prepared at <strong><?= !empty($allocatedOrder['ready_at']) ? date('h:i A', strtotime($allocatedOrder['ready_at'])) : date('h:i A', strtotime($allocatedOrder['placed_at'])) ?></strong> • Allocated to you on First-Come, First-Served basis
+                </div>
+                <h5 class="fw-bold text-dark mb-1">Customer: <?= e($allocatedOrder['customer_name']) ?></h5>
+                <p class="small text-muted mb-2">
+                  <i class="bi bi-geo-alt me-1 text-danger"></i> <?= e($allocatedOrder['address_line'] ?: 'Indiranagar') ?> (PIN: <?= e($allocatedOrder['pincode'] ?: '560038') ?>)
+                </p>
+                <div class="small fw-semibold text-success mb-3">
+                  <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
+                </div>
+
+                <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0 claim-order-form" onsubmit="event.preventDefault(); takeReadyFood(<?= (int)$allocatedOrder['order_id'] ?>);">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="claim_order">
+                  <input type="hidden" name="order_id" value="<?= (int)$allocatedOrder['order_id'] ?>">
+                  <button type="submit" id="btnClaimOrder<?= (int)$allocatedOrder['order_id'] ?>" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
+                    <i class="bi bi-handbag me-1"></i> Accept &amp; Pick Up Allocated Order &rarr;
+                  </button>
+                </form>
+              </div>
+
+              <?php 
+                $otherReady = array_filter($readyOrders, fn($ro) => (int)$ro['order_id'] !== (int)$allocatedOrder['order_id']); 
+              ?>
+              <?php if (!empty($otherReady)): ?>
+                <div class="mt-3">
+                  <div class="small fw-bold text-muted text-uppercase mb-2">
+                    <i class="bi bi-list-ol me-1"></i> Upcoming Parcels in Kitchen FCFS Queue (<?= count($otherReady) ?>)
+                  </div>
+                  <div class="row g-2">
+                    <?php $qRank = 2; foreach ($otherReady as $oro): ?>
+                      <div class="col-md-6">
+                        <div class="card border rounded-3 p-2 bg-light small">
+                          <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge bg-secondary rounded-pill">Queue #<?= $qRank++ ?></span>
+                            <span class="font-mono fw-bold">#ZIP-<?= (int)$oro['order_id'] ?></span>
+                          </div>
+                          <div class="text-truncate text-muted mt-1">Customer: <?= e($oro['customer_name']) ?></div>
+                          <div class="text-muted" style="font-size:0.7rem;">Prepared: <?= !empty($oro['ready_at']) ? date('h:i A', strtotime($oro['ready_at'])) : 'Recently' ?></div>
+                        </div>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php endif; ?>
+
+            <?php elseif (empty($activeOrders) && empty($allocatedOrder) && empty($readyOrders)): ?>
               <div class="card border-0 rounded-4 p-4 text-center bg-white shadow-xs" id="noReadyOrdersCard">
                 <i class="bi bi-check2-circle fs-2 text-success mb-2"></i>
                 <h6 class="fw-bold text-dark mb-1">No Orders Waiting for Pickup</h6>
-                <p class="small text-muted mb-0">Kitchen orders will automatically pop up here as soon as cooks mark them "Ready".</p>
+                <p class="small text-muted mb-0">Kitchen orders will be automatically allocated to you in First-Come, First-Served order as soon as cooks mark them "Ready for Delivery".</p>
               </div>
-            <?php else: ?>
-              <div class="row g-3" id="readyOrdersGrid">
-                <?php foreach ($readyOrders as $ro): ?>
-                  <div class="col-md-6 ready-order-col" id="readyCardCol<?= (int)$ro['order_id'] ?>">
-                    <div class="card border rounded-4 p-3 shadow-sm bg-white h-100 d-flex flex-column justify-content-between">
-                      <div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                          <span class="badge bg-warning text-dark fw-bold">READY IN KITCHEN</span>
-                          <span class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$ro['order_id'] ?></span>
-                        </div>
-                        <h6 class="fw-bold text-dark mb-1">Customer: <?= e($ro['customer_name']) ?></h6>
-                        <p class="small text-muted mb-2">
-                          <i class="bi bi-geo-alt me-1 text-danger"></i> <?= e($ro['address_line'] ?: 'Indiranagar') ?> (PIN: <?= e($ro['pincode'] ?: '560038') ?>)
-                        </p>
-                        <div class="small fw-semibold text-success mb-3">
-                          <i class="bi bi-cash-coin me-1"></i> Est. Rider Earnings: <strong>₹55.00</strong>
-                        </div>
-                      </div>
-
-                      <?php if (!empty($activeOrders)): ?>
-                        <button type="button" class="btn btn-light text-muted border w-100 rounded-pill fw-bold py-2 shadow-xs btn-claim-locked" disabled title="Complete your active delivery #ZIP-<?= (int)$activeOrders[0]['order_id'] ?> first">
-                          <i class="bi bi-lock-fill me-1"></i> Locked (Delivering #ZIP-<?= (int)$activeOrders[0]['order_id'] ?>)
-                        </button>
-                      <?php else: ?>
-                        <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0 claim-order-form" onsubmit="event.preventDefault(); takeReadyFood(<?= (int)$ro['order_id'] ?>);">
-                          <?= csrf_field() ?>
-                          <input type="hidden" name="action" value="claim_order">
-                          <input type="hidden" name="order_id" value="<?= (int)$ro['order_id'] ?>">
-                          <button type="submit" id="btnClaimOrder<?= (int)$ro['order_id'] ?>" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
-                            <i class="bi bi-handbag me-1"></i> Accept &amp; Pick Up Order
-                          </button>
-                        </form>
-                      <?php endif; ?>
-                    </div>
-                  </div>
-                <?php endforeach; ?>
+            <?php elseif (!empty($activeOrders)): ?>
+              <div class="card border-0 rounded-4 p-3 text-center bg-white shadow-xs text-muted small">
+                <i class="bi bi-lock-fill text-warning fs-3 mb-1"></i>
+                <div>Complete your active delivery #ZIP-<?= (int)$activeOrders[0]['order_id'] ?> to receive your next FCFS parcel allocation.</div>
               </div>
             <?php endif; ?>
           </div>

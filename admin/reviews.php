@@ -25,7 +25,24 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     if ($exportTab === 'dishes') {
         header('Content-Disposition: attachment; filename=zippy_dish_reviews_' . date('Ymd_His') . '.csv');
         $output = fopen('php://output', 'w');
-        fputcsv($output, ['Review ID', 'Dish Name', 'Category', 'Dietary Type', 'Price (INR)', 'Customer Name', 'Customer Email', 'Star Rating', 'Attribute Tags', 'Review Comments', 'Associated Order ID', 'Review Date']);
+        fputcsv($output, [
+            'Review ID', 
+            'Dish Name', 
+            'Category', 
+            'Dietary Type', 
+            'Price (INR)', 
+            'Customer Name', 
+            'Customer Email', 
+            'Overall Star Rating', 
+            'Appearance Rating', 
+            'Taste Rating', 
+            'Portion Size Rating', 
+            'Value Rating', 
+            'Attribute Tags', 
+            'Review Comments', 
+            'Associated Order ID', 
+            'Review Date'
+        ]);
 
         $dishReviewsExport = db_fetch_all("
             SELECT dr.*, m.item_name, m.price, m.is_veg, c.category_name,
@@ -48,6 +65,10 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
                 $dr['customer_name'],
                 $dr['customer_email'],
                 $dr['rating'],
+                $dr['appearance_rating'] ?? $dr['rating'],
+                $dr['taste_rating'] ?? $dr['rating'],
+                $dr['portion_rating'] ?? $dr['rating'],
+                $dr['value_rating'] ?? $dr['rating'],
                 $dr['tags'] ?? '',
                 $dr['review_text'] ?? '',
                 $dr['order_id'] ? '#ZIP-' . $dr['order_id'] : 'Direct Catalog Rating',
@@ -123,10 +144,14 @@ $fiveStarFoodCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews` WHE
 $criticalReviewsCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews` WHERE `food_rating` <= 2 OR `rider_rating` <= 2") ?: 0;
 $totalTips = (float)db_fetch_val("SELECT COALESCE(SUM(rider_tip), 0.00) FROM `order_reviews`") ?: 0.00;
 
-// Dish Level Metrics
+// Dish Level Metrics & Dimension Feedback (Appearance, Taste, Portion Size, Value)
 $totalDishReviews = (int)db_fetch_val("SELECT COUNT(*) FROM `dish_reviews`") ?: 0;
 $avgDishRating = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(rating) FROM `dish_reviews`") : 0.0;
 $criticalDishReviewsCount = (int)db_fetch_val("SELECT COUNT(*) FROM `dish_reviews` WHERE `rating` <= 2") ?: 0;
+$avgAppearance = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(appearance_rating) FROM `dish_reviews`") : 0.0;
+$avgTaste = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(taste_rating) FROM `dish_reviews`") : 0.0;
+$avgPortion = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(portion_rating) FROM `dish_reviews`") : 0.0;
+$avgValue = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(value_rating) FROM `dish_reviews`") : 0.0;
 
 // Star Distributions for Histogram
 $orderStarDist = [];
@@ -270,101 +295,200 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
      ========================================================================= -->
 <div class="row g-3 mb-4">
   
-  <!-- Food Quality Index -->
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="small fw-bold text-muted text-uppercase">AVERAGE FOOD RATING</span>
-        <span class="badge rounded-circle p-2 bg-warning bg-opacity-25 text-warning">
-          <i class="bi bi-star-fill"></i>
-        </span>
-      </div>
-      <div class="d-flex align-items-baseline gap-2">
-        <h2 class="fw-bold font-outfit text-dark mb-0">
-          <?= $totalOrderReviews > 0 ? number_format($avgFoodRating, 1) : 'N/A' ?>
-        </h2>
-        <?php if ($totalOrderReviews > 0): ?>
-          <span class="fs-6 text-warning">/ 5.0 ⭐</span>
-        <?php endif; ?>
-      </div>
-      <div class="small mt-2 d-flex align-items-center justify-content-between">
-        <span class="text-muted">Based on <?= $totalOrderReviews ?> order reviews</span>
-        <span class="text-warning"><?= render_star_rating_html($avgFoodRating) ?></span>
+  <?php if ($viewTab === 'dishes'): ?>
+    <!-- 1. Appearance Metric -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">AVERAGE APPEARANCE</span>
+          <span class="badge rounded-circle p-2 bg-primary bg-opacity-10 text-primary">
+            <i class="bi bi-eye-fill"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-dark mb-0">
+            <?= $totalDishReviews > 0 ? number_format($avgAppearance, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalDishReviews > 0): ?>
+            <span class="fs-6 text-primary">/ 5.0 ★</span>
+          <?php endif; ?>
+        </div>
+        <div class="small mt-2 d-flex align-items-center justify-content-between">
+          <span class="text-muted">Plating &amp; visual presentation</span>
+          <span class="text-warning"><?= render_star_rating_html($avgAppearance) ?></span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Courier Delivery Satisfaction -->
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="small fw-bold text-muted text-uppercase">COURIER SATISFACTION</span>
-        <span class="badge rounded-circle p-2 bg-success bg-opacity-25 text-success">
-          <i class="bi bi-bicycle"></i>
-        </span>
-      </div>
-      <div class="d-flex align-items-baseline gap-2">
-        <h2 class="fw-bold font-outfit text-forest mb-0">
-          <?= $totalOrderReviews > 0 ? number_format($avgRiderRating, 1) : 'N/A' ?>
-        </h2>
-        <?php if ($totalOrderReviews > 0): ?>
-          <span class="fs-6 text-muted">/ 5.0 🛵</span>
-        <?php endif; ?>
-      </div>
-      <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
-        <span>Tips remitted: <strong class="text-forest"><?= format_inr($totalTips) ?></strong></span>
-        <span class="text-success"><?= render_star_rating_html($avgRiderRating) ?></span>
+    <!-- 2. Taste Metric -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">AVERAGE TASTE</span>
+          <span class="badge rounded-circle p-2 bg-danger bg-opacity-10 text-danger">
+            <i class="bi bi-fire"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-dark mb-0">
+            <?= $totalDishReviews > 0 ? number_format($avgTaste, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalDishReviews > 0): ?>
+            <span class="fs-6 text-danger">/ 5.0 ★</span>
+          <?php endif; ?>
+        </div>
+        <div class="small mt-2 d-flex align-items-center justify-content-between">
+          <span class="text-muted">Flavor, aroma &amp; seasoning</span>
+          <span class="text-warning"><?= render_star_rating_html($avgTaste) ?></span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Critical Reviews Requiring Action -->
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100 <?= $criticalReviewsCount > 0 ? 'border-start border-danger border-4' : '' ?>">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="small fw-bold text-muted text-uppercase">CRITICAL FEEDBACK (&le; 2★)</span>
-        <span class="badge rounded-circle p-2 <?= $criticalReviewsCount > 0 ? 'bg-danger bg-opacity-25 text-danger' : 'bg-success bg-opacity-25 text-success' ?>">
-          <i class="bi <?= $criticalReviewsCount > 0 ? 'bi-exclamation-triangle-fill' : 'bi-shield-check' ?>"></i>
-        </span>
-      </div>
-      <h2 class="fw-bold font-outfit mb-0 <?= $criticalReviewsCount > 0 ? 'text-danger' : 'text-dark' ?>">
-        <?= $criticalReviewsCount ?> <?= $criticalReviewsCount === 1 ? 'Review' : 'Reviews' ?>
-      </h2>
-      <div class="small mt-2">
-        <?php if ($criticalReviewsCount > 0): ?>
-          <a href="<?= ADMIN_URL ?>/reviews.php?tab=orders&sentiment=critical" class="text-danger fw-semibold text-decoration-none">
-            <i class="bi bi-arrow-right-circle me-1"></i> Inspect low rating alerts
-          </a>
-        <?php else: ?>
-          <span class="text-success"><i class="bi bi-check2-circle me-1"></i> Zero service complaints logged</span>
-        <?php endif; ?>
+    <!-- 3. Portion Size Metric -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">AVERAGE PORTION SIZE</span>
+          <span class="badge rounded-circle p-2 bg-warning bg-opacity-25 text-warning">
+            <i class="bi bi-pie-chart-fill"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-dark mb-0">
+            <?= $totalDishReviews > 0 ? number_format($avgPortion, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalDishReviews > 0): ?>
+            <span class="fs-6 text-warning">/ 5.0 ★</span>
+          <?php endif; ?>
+        </div>
+        <div class="small mt-2 d-flex align-items-center justify-content-between">
+          <span class="text-muted">Serving size &amp; fullness</span>
+          <span class="text-warning"><?= render_star_rating_html($avgPortion) ?></span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Catalog Dish Reviews -->
-  <div class="col-sm-6 col-xl-3">
-    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="small fw-bold text-muted text-uppercase">DISH-LEVEL REVIEWS</span>
-        <span class="badge rounded-circle p-2 bg-info bg-opacity-25 text-info">
-          <i class="bi bi-chat-heart-fill"></i>
-        </span>
-      </div>
-      <div class="d-flex align-items-baseline gap-2">
-        <h2 class="fw-bold font-outfit text-dark mb-0">
-          <?= $totalDishReviews ?> Verified
-        </h2>
-        <?php if ($totalDishReviews > 0): ?>
-          <span class="fs-6 text-muted">(<?= number_format($avgDishRating, 1) ?> ★)</span>
-        <?php endif; ?>
-      </div>
-      <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
-        <span>Menu culinary feedback</span>
-        <span class="text-warning"><?= render_star_rating_html($avgDishRating) ?></span>
+    <!-- 4. Value for Money Metric -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">AVERAGE VALUE</span>
+          <span class="badge rounded-circle p-2 bg-success bg-opacity-10 text-success">
+            <i class="bi bi-tag-fill"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-forest mb-0">
+            <?= $totalDishReviews > 0 ? number_format($avgValue, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalDishReviews > 0): ?>
+            <span class="fs-6 text-success">/ 5.0 ★</span>
+          <?php endif; ?>
+        </div>
+        <div class="small mt-2 d-flex align-items-center justify-content-between">
+          <span class="text-muted">Price-to-quality rating</span>
+          <span class="text-warning"><?= render_star_rating_html($avgValue) ?></span>
+        </div>
       </div>
     </div>
-  </div>
+
+  <?php else: ?>
+    <!-- Food Quality Index -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">AVERAGE FOOD RATING</span>
+          <span class="badge rounded-circle p-2 bg-warning bg-opacity-25 text-warning">
+            <i class="bi bi-star-fill"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-dark mb-0">
+            <?= $totalOrderReviews > 0 ? number_format($avgFoodRating, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalOrderReviews > 0): ?>
+            <span class="fs-6 text-warning">/ 5.0 ⭐</span>
+          <?php endif; ?>
+        </div>
+        <div class="small mt-2 d-flex align-items-center justify-content-between">
+          <span class="text-muted">Based on <?= $totalOrderReviews ?> order reviews</span>
+          <span class="text-warning"><?= render_star_rating_html($avgFoodRating) ?></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Courier Delivery Satisfaction -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">COURIER SATISFACTION</span>
+          <span class="badge rounded-circle p-2 bg-success bg-opacity-25 text-success">
+            <i class="bi bi-bicycle"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-forest mb-0">
+            <?= $totalOrderReviews > 0 ? number_format($avgRiderRating, 1) : 'N/A' ?>
+          </h2>
+          <?php if ($totalOrderReviews > 0): ?>
+            <span class="fs-6 text-muted">/ 5.0 🛵</span>
+          <?php endif; ?>
+        </div>
+        <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
+          <span>Tips remitted: <strong class="text-forest"><?= format_inr($totalTips) ?></strong></span>
+          <span class="text-success"><?= render_star_rating_html($avgRiderRating) ?></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Critical Reviews Requiring Action -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100 <?= $criticalReviewsCount > 0 ? 'border-start border-danger border-4' : '' ?>">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">CRITICAL FEEDBACK (&le; 2★)</span>
+          <span class="badge rounded-circle p-2 <?= $criticalReviewsCount > 0 ? 'bg-danger bg-opacity-25 text-danger' : 'bg-success bg-opacity-25 text-success' ?>">
+            <i class="bi <?= $criticalReviewsCount > 0 ? 'bi-exclamation-triangle-fill' : 'bi-shield-check' ?>"></i>
+          </span>
+        </div>
+        <h2 class="fw-bold font-outfit mb-0 <?= $criticalReviewsCount > 0 ? 'text-danger' : 'text-dark' ?>">
+          <?= $criticalReviewsCount ?> <?= $criticalReviewsCount === 1 ? 'Review' : 'Reviews' ?>
+        </h2>
+        <div class="small mt-2">
+          <?php if ($criticalReviewsCount > 0): ?>
+            <a href="<?= ADMIN_URL ?>/reviews.php?tab=orders&sentiment=critical" class="text-danger fw-semibold text-decoration-none">
+              <i class="bi bi-arrow-right-circle me-1"></i> Inspect low rating alerts
+            </a>
+          <?php else: ?>
+            <span class="text-success"><i class="bi bi-check2-circle me-1"></i> Zero service complaints logged</span>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+
+    <!-- Catalog Dish Reviews -->
+    <div class="col-sm-6 col-xl-3">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white h-100">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-bold text-muted text-uppercase">DISH-LEVEL REVIEWS</span>
+          <span class="badge rounded-circle p-2 bg-info bg-opacity-25 text-info">
+            <i class="bi bi-chat-heart-fill"></i>
+          </span>
+        </div>
+        <div class="d-flex align-items-baseline gap-2">
+          <h2 class="fw-bold font-outfit text-dark mb-0">
+            <?= $totalDishReviews ?> Verified
+          </h2>
+          <?php if ($totalDishReviews > 0): ?>
+            <span class="fs-6 text-muted">(<?= number_format($avgDishRating, 1) ?> ★)</span>
+          <?php endif; ?>
+        </div>
+        <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
+          <span>Taste, Appearance &amp; Portion</span>
+          <span class="text-warning"><?= render_star_rating_html($avgDishRating) ?></span>
+        </div>
+      </div>
+    </div>
+  <?php endif; ?>
 
 </div>
 
@@ -390,37 +514,120 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
       </div>
     </div>
 
-    <!-- Rating Distribution Bars on Right -->
-    <div class="col-lg-9 ps-lg-4">
-      <div class="d-flex flex-column gap-2">
-        <?php for ($s = 5; $s >= 1; $s--): 
-          $cnt = $activeDist[$s] ?? 0;
-          $pct = $activeTotal > 0 ? round(($cnt / $activeTotal) * 100) : 0;
-        ?>
-          <div class="d-flex align-items-center gap-3">
-            <a href="<?= ADMIN_URL ?>/reviews.php?tab=<?= $viewTab ?>&star=<?= $s ?>" 
-               class="text-decoration-none small fw-semibold text-dark d-flex align-items-center gap-1" 
-               style="width: 55px;" 
-               title="Filter by <?= $s ?> Stars">
-              <span><?= $s ?></span> <i class="bi bi-star-fill text-warning" style="font-size:0.75rem;"></i>
-            </a>
+    <?php if ($viewTab === 'dishes'): ?>
+      <!-- Dish Star Distribution in Middle -->
+      <div class="col-lg-5 ps-lg-3 pe-lg-3 border-end-lg">
+        <div class="small fw-bold text-muted text-uppercase mb-2">Overall Star Distribution</div>
+        <div class="d-flex flex-column gap-2">
+          <?php for ($s = 5; $s >= 1; $s--): 
+            $cnt = $activeDist[$s] ?? 0;
+            $pct = $activeTotal > 0 ? round(($cnt / $activeTotal) * 100) : 0;
+          ?>
+            <div class="d-flex align-items-center gap-3">
+              <a href="<?= ADMIN_URL ?>/reviews.php?tab=dishes&star=<?= $s ?>" 
+                 class="text-decoration-none small fw-semibold text-dark d-flex align-items-center gap-1" 
+                 style="width: 50px;" 
+                 title="Filter by <?= $s ?> Stars">
+                <span><?= $s ?></span> <i class="bi bi-star-fill text-warning" style="font-size:0.75rem;"></i>
+              </a>
 
-            <div class="progress flex-grow-1 rounded-pill" style="height: 10px; background-color: #E9ECEF;">
-              <div class="progress-bar <?= $s >= 4 ? 'bg-success' : ($s === 3 ? 'bg-warning' : 'bg-danger') ?>" 
-                   role="progressbar" 
-                   style="width: <?= $pct ?>%;" 
-                   aria-valuenow="<?= $pct ?>" 
-                   aria-valuemin="0" 
-                   aria-valuemax="100"></div>
+              <div class="progress flex-grow-1 rounded-pill" style="height: 8px; background-color: #E9ECEF;">
+                <div class="progress-bar <?= $s >= 4 ? 'bg-success' : ($s === 3 ? 'bg-warning' : 'bg-danger') ?>" 
+                     role="progressbar" 
+                     style="width: <?= $pct ?>%;" 
+                     aria-valuenow="<?= $pct ?>" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100"></div>
+              </div>
+
+              <div class="text-end text-muted small" style="width: 65px; font-size:0.75rem;">
+                <?= $cnt ?> (<?= $pct ?>%)
+              </div>
             </div>
+          <?php endfor; ?>
+        </div>
+      </div>
 
-            <div class="text-end text-muted small" style="width: 80px;">
-              <?= $cnt ?> <span class="text-secondary">(<?= $pct ?>%)</span>
+      <!-- Dish 4 Dimensions Breakdown Meter on Right -->
+      <div class="col-lg-4 ps-lg-3">
+        <div class="small fw-bold text-muted text-uppercase mb-2">Culinary Dimensions Averages</div>
+        <div class="d-flex flex-column gap-2">
+          <!-- Appearance -->
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted"><i class="bi bi-eye text-primary me-1"></i>Appearance</span>
+              <strong class="text-dark font-monospace"><?= number_format($avgAppearance, 1) ?> / 5.0 ★</strong>
+            </div>
+            <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+              <div class="progress-bar bg-primary" role="progressbar" style="width: <?= ($avgAppearance / 5) * 100 ?>%;"></div>
             </div>
           </div>
-        <?php endfor; ?>
+          <!-- Taste -->
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted"><i class="bi bi-fire text-danger me-1"></i>Taste &amp; Flavor</span>
+              <strong class="text-dark font-monospace"><?= number_format($avgTaste, 1) ?> / 5.0 ★</strong>
+            </div>
+            <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+              <div class="progress-bar bg-danger" role="progressbar" style="width: <?= ($avgTaste / 5) * 100 ?>%;"></div>
+            </div>
+          </div>
+          <!-- Portion Size -->
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted"><i class="bi bi-pie-chart text-warning me-1"></i>Portion Size</span>
+              <strong class="text-dark font-monospace"><?= number_format($avgPortion, 1) ?> / 5.0 ★</strong>
+            </div>
+            <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+              <div class="progress-bar bg-warning" role="progressbar" style="width: <?= ($avgPortion / 5) * 100 ?>%;"></div>
+            </div>
+          </div>
+          <!-- Value -->
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted"><i class="bi bi-tag text-success me-1"></i>Value for Money</span>
+              <strong class="text-dark font-monospace"><?= number_format($avgValue, 1) ?> / 5.0 ★</strong>
+            </div>
+            <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+              <div class="progress-bar bg-success" role="progressbar" style="width: <?= ($avgValue / 5) * 100 ?>%;"></div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+    <?php else: ?>
+      <!-- Order Rating Distribution Bars on Right -->
+      <div class="col-lg-9 ps-lg-4">
+        <div class="d-flex flex-column gap-2">
+          <?php for ($s = 5; $s >= 1; $s--): 
+            $cnt = $activeDist[$s] ?? 0;
+            $pct = $activeTotal > 0 ? round(($cnt / $activeTotal) * 100) : 0;
+          ?>
+            <div class="d-flex align-items-center gap-3">
+              <a href="<?= ADMIN_URL ?>/reviews.php?tab=orders&star=<?= $s ?>" 
+                 class="text-decoration-none small fw-semibold text-dark d-flex align-items-center gap-1" 
+                 style="width: 55px;" 
+                 title="Filter by <?= $s ?> Stars">
+                <span><?= $s ?></span> <i class="bi bi-star-fill text-warning" style="font-size:0.75rem;"></i>
+              </a>
+
+              <div class="progress flex-grow-1 rounded-pill" style="height: 10px; background-color: #E9ECEF;">
+                <div class="progress-bar <?= $s >= 4 ? 'bg-success' : ($s === 3 ? 'bg-warning' : 'bg-danger') ?>" 
+                     role="progressbar" 
+                     style="width: <?= $pct ?>%;" 
+                     aria-valuenow="<?= $pct ?>" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100"></div>
+              </div>
+
+              <div class="text-end text-muted small" style="width: 80px;">
+                <?= $cnt ?> <span class="text-secondary">(<?= $pct ?>%)</span>
+              </div>
+            </div>
+          <?php endfor; ?>
+        </div>
+      </div>
+    <?php endif; ?>
 
   </div>
 </div>
@@ -674,20 +881,25 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
       <table class="table table-hover align-middle mb-0" id="dishReviewsTable">
         <thead class="table-light small text-uppercase fw-semibold text-muted">
           <tr>
-            <th class="ps-4" style="min-width: 250px;">Dish & Category</th>
-            <th style="min-width: 170px;">Customer</th>
-            <th style="min-width: 140px;">Dish Rating</th>
-            <th style="min-width: 180px;">Customer Attribute Tags</th>
-            <th style="min-width: 260px;">Review Comments</th>
-            <th style="min-width: 120px;">Date</th>
-            <th class="text-end pe-4" style="min-width: 130px;">Actions</th>
+            <th class="ps-4" style="min-width: 240px;">Dish &amp; Category</th>
+            <th style="min-width: 160px;">Customer</th>
+            <th style="min-width: 130px;">Overall Rating</th>
+            <th style="min-width: 220px;">Dish Feedback (4 Criteria)</th>
+            <th style="min-width: 170px;">Customer Attribute Tags</th>
+            <th style="min-width: 240px;">Review Comments</th>
+            <th style="min-width: 110px;">Date</th>
+            <th class="text-end pe-4" style="min-width: 150px;">Actions</th>
           </tr>
         </thead>
         <tbody>
           <?php if (!empty($dishReviewsList)): ?>
             <?php foreach ($dishReviewsList as $dr): 
               $rating = (int)$dr['rating'];
-              $searchKeywords = strtolower("{$dr['item_name']} {$dr['customer_name']} {$dr['customer_email']} {$dr['review_text']} {$dr['tags']} ZIP-{$dr['order_id']}");
+              $appRate = (int)($dr['appearance_rating'] ?? $rating);
+              $tasteRate = (int)($dr['taste_rating'] ?? $rating);
+              $portionRate = (int)($dr['portion_rating'] ?? $rating);
+              $valueRate = (int)($dr['value_rating'] ?? $rating);
+              $searchKeywords = strtolower("{$dr['item_name']} {$dr['customer_name']} {$dr['customer_email']} {$dr['review_text']} {$dr['tags']} ZIP-{$dr['order_id']} appearance taste portion value");
             ?>
               <tr class="review-row" data-search="<?= e($searchKeywords) ?>">
                 <!-- Dish Info -->
@@ -726,12 +938,38 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                   <?php endif; ?>
                 </td>
 
-                <!-- Star Rating -->
+                <!-- Overall Star Rating -->
                 <td>
                   <div><?= render_star_rating_html($rating) ?></div>
                   <span class="badge <?= $rating >= 4 ? 'bg-success bg-opacity-25 text-success' : ($rating === 3 ? 'bg-warning bg-opacity-25 text-dark' : 'bg-danger bg-opacity-25 text-danger') ?> fw-bold mt-1" style="font-size:0.7rem;">
                     <?= $rating ?> / 5.0 Stars
                   </span>
+                </td>
+
+                <!-- Dish-Level Feedback (4 Dimensions: Appearance, Taste, Portion Size, Value) -->
+                <td>
+                  <div class="d-flex flex-column gap-1" style="min-width: 200px;">
+                    <!-- Appearance -->
+                    <div class="d-flex align-items-center justify-content-between small">
+                      <span class="text-muted" style="font-size:0.75rem;"><i class="bi bi-eye text-primary me-1"></i>Appearance</span>
+                      <span class="badge bg-light text-dark border font-monospace py-0 px-2" style="font-size:0.72rem;"><?= $appRate ?> / 5 ★</span>
+                    </div>
+                    <!-- Taste -->
+                    <div class="d-flex align-items-center justify-content-between small">
+                      <span class="text-muted" style="font-size:0.75rem;"><i class="bi bi-fire text-danger me-1"></i>Taste</span>
+                      <span class="badge bg-light text-dark border font-monospace py-0 px-2" style="font-size:0.72rem;"><?= $tasteRate ?> / 5 ★</span>
+                    </div>
+                    <!-- Portion Size -->
+                    <div class="d-flex align-items-center justify-content-between small">
+                      <span class="text-muted" style="font-size:0.75rem;"><i class="bi bi-pie-chart text-warning me-1"></i>Portion</span>
+                      <span class="badge bg-light text-dark border font-monospace py-0 px-2" style="font-size:0.72rem;"><?= $portionRate ?> / 5 ★</span>
+                    </div>
+                    <!-- Value -->
+                    <div class="d-flex align-items-center justify-content-between small">
+                      <span class="text-muted" style="font-size:0.75rem;"><i class="bi bi-tag text-success me-1"></i>Value</span>
+                      <span class="badge bg-light text-dark border font-monospace py-0 px-2" style="font-size:0.72rem;"><?= $valueRate ?> / 5 ★</span>
+                    </div>
+                  </div>
                 </td>
 
                 <!-- Tags -->
@@ -768,13 +1006,42 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                 <!-- Actions -->
                 <td class="text-end pe-4">
                   <div class="d-flex align-items-center justify-content-end gap-1">
+                    <!-- Inspect Dish Feedback Modal Trigger -->
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-forest rounded-pill px-2 py-1" 
+                            style="font-size:0.75rem;" 
+                            onclick="openDishReviewInspectModal(<?= htmlspecialchars(json_encode([
+                              'review_id' => $dr['dish_review_id'],
+                              'item_id' => $dr['item_id'],
+                              'item_name' => $dr['item_name'],
+                              'category_name' => $dr['category_name'] ?? 'General',
+                              'image_url' => get_dish_image_url($dr['image_url']),
+                              'price' => format_inr($dr['price']),
+                              'is_veg' => (bool)$dr['is_veg'],
+                              'customer_name' => $dr['customer_name'],
+                              'customer_email' => $dr['customer_email'],
+                              'customer_phone' => $dr['customer_phone'] ?? '',
+                              'order_id' => $dr['order_id'],
+                              'rating' => (int)$dr['rating'],
+                              'appearance_rating' => $appRate,
+                              'taste_rating' => $tasteRate,
+                              'portion_rating' => $portionRate,
+                              'value_rating' => $valueRate,
+                              'tags' => $dr['tags'] ?? '',
+                              'review_text' => $dr['review_text'] ?: 'No comments provided',
+                              'created_at' => date('d M Y, h:i A', strtotime($dr['created_at']))
+                            ]), ENT_QUOTES, 'UTF-8') ?>)"
+                            title="Inspect full dish feedback breakdown">
+                      <i class="bi bi-eye"></i> Details
+                    </button>
+
                     <!-- Jump to Dishes Console -->
                     <a href="<?= ADMIN_URL ?>/dishes.php?search=<?= urlencode($dr['item_name']) ?>" 
-                       class="btn btn-sm btn-outline-forest rounded-pill px-2 py-1" 
+                       class="btn btn-sm btn-light border rounded-pill px-2 py-1 text-muted" 
                        style="font-size:0.75rem;" 
                        target="_blank" 
                        title="Manage this dish in Dishes & Inventory">
-                      <i class="fa-solid fa-bowl-food me-1"></i> Dish
+                      <i class="fa-solid fa-bowl-food"></i>
                     </a>
                   </div>
                 </td>
@@ -901,9 +1168,210 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
 </div>
 
 <!-- =========================================================================
+     DISH FEEDBACK INSPECTION MODAL (Appearance, Taste, Portion, Value)
+     ========================================================================= -->
+<div class="modal fade" id="dishReviewInspectModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden text-start">
+      
+      <!-- Modal Header -->
+      <div class="p-3 px-4 bg-dark text-white d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-success rounded-pill px-3 py-1">DISH FEEDBACK HUD</span>
+          <span class="fw-bold font-outfit" id="dishModalItemName">Dish Name</span>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="modal-body p-4 bg-light">
+        <div class="row g-3">
+          
+          <!-- Dish Meta & Customer Info -->
+          <div class="col-md-5">
+            <div class="card border-0 rounded-4 p-3 bg-white shadow-xs h-100">
+              <div class="d-flex align-items-center gap-3 mb-3">
+                <img id="dishModalImg" src="" alt="Dish" class="rounded-3 object-fit-cover shadow-xs border" style="width: 58px; height: 58px;">
+                <div>
+                  <div class="fw-bold text-dark fs-6" id="dishModalTitle">Dish Title</div>
+                  <div class="d-flex align-items-center gap-1 mt-1">
+                    <span class="badge bg-light text-muted border" id="dishModalCategory">Category</span>
+                    <span class="badge bg-success" id="dishModalDiet">VEG</span>
+                    <span class="small text-forest fw-bold ms-1" id="dishModalPrice">₹0.00</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="small fw-bold text-muted text-uppercase mb-1 pt-2 border-top">Customer Info</div>
+              <div class="fw-semibold text-dark small" id="dishModalCustName">Customer</div>
+              <div class="text-muted small" id="dishModalCustEmail">email@example.com</div>
+              <div class="text-muted small mb-2" id="dishModalCustPhone">Phone</div>
+
+              <div class="mt-auto pt-2 border-top d-flex justify-content-between align-items-center small">
+                <span class="text-muted" id="dishModalDate">Date</span>
+                <span class="badge bg-light text-secondary border" id="dishModalOrderBadge">Catalog Rating</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4-Dimension Sensory Scores -->
+          <div class="col-md-7">
+            <div class="card border-0 rounded-4 p-3 bg-white shadow-xs h-100">
+              <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                <span class="small fw-bold text-muted text-uppercase">Culinary Feedback Dimensions</span>
+                <span class="badge bg-warning bg-opacity-25 text-dark fw-bold fs-6" id="dishModalOverallRating">5.0 / 5 ★</span>
+              </div>
+
+              <div class="d-flex flex-column gap-3">
+                <!-- Appearance -->
+                <div>
+                  <div class="d-flex justify-content-between small mb-1">
+                    <span class="text-dark fw-semibold"><i class="bi bi-eye text-primary me-1"></i>Appearance (Plating &amp; Color)</span>
+                    <strong class="font-monospace text-primary" id="dishModalAppVal">5 / 5 ★</strong>
+                  </div>
+                  <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+                    <div class="progress-bar bg-primary" id="dishModalAppBar" role="progressbar" style="width: 100%;"></div>
+                  </div>
+                </div>
+
+                <!-- Taste -->
+                <div>
+                  <div class="d-flex justify-content-between small mb-1">
+                    <span class="text-dark fw-semibold"><i class="bi bi-fire text-danger me-1"></i>Taste &amp; Flavor (Seasoning)</span>
+                    <strong class="font-monospace text-danger" id="dishModalTasteVal">5 / 5 ★</strong>
+                  </div>
+                  <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+                    <div class="progress-bar bg-danger" id="dishModalTasteBar" role="progressbar" style="width: 100%;"></div>
+                  </div>
+                </div>
+
+                <!-- Portion Size -->
+                <div>
+                  <div class="d-flex justify-content-between small mb-1">
+                    <span class="text-dark fw-semibold"><i class="bi bi-pie-chart text-warning me-1"></i>Portion Size (Adequacy)</span>
+                    <strong class="font-monospace text-warning" id="dishModalPortionVal">5 / 5 ★</strong>
+                  </div>
+                  <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+                    <div class="progress-bar bg-warning" id="dishModalPortionBar" role="progressbar" style="width: 100%;"></div>
+                  </div>
+                </div>
+
+                <!-- Value -->
+                <div>
+                  <div class="d-flex justify-content-between small mb-1">
+                    <span class="text-dark fw-semibold"><i class="bi bi-tag text-success me-1"></i>Value for Money</span>
+                    <strong class="font-monospace text-success" id="dishModalValueVal">5 / 5 ★</strong>
+                  </div>
+                  <div class="progress rounded-pill" style="height: 8px; background:#E9ECEF;">
+                    <div class="progress-bar bg-success" id="dishModalValueBar" role="progressbar" style="width: 100%;"></div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Tags & Review Text -->
+          <div class="col-12">
+            <div class="card border-0 rounded-4 p-3 bg-white shadow-xs">
+              <div class="small fw-bold text-muted text-uppercase mb-2">Customer Feedback &amp; Tags</div>
+              <div class="d-flex flex-wrap gap-1 mb-2" id="dishModalTags">
+                <!-- Tags populated via JS -->
+              </div>
+              <div class="p-3 rounded-3 bg-light border small text-dark fst-italic" id="dishModalReviewText">
+                "Review comments here."
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-3 px-4 bg-white border-top d-flex align-items-center justify-content-between">
+        <a id="dishModalManageDishBtn" href="#" class="btn btn-outline-forest btn-sm rounded-pill px-3" target="_blank">
+          <i class="fa-solid fa-bowl-food me-1"></i> View in Dishes &amp; Inventory
+        </a>
+        <button type="button" class="btn btn-secondary btn-sm rounded-pill px-4" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
      CLIENT INTERACTIVE SCRIPTS: LIVE SEARCH & MODAL CONTROLLER
      ========================================================================= -->
 <script>
+  // Open and populate Dish Details Inspection Modal
+  function openDishReviewInspectModal(data) {
+    document.getElementById('dishModalItemName').textContent = data.item_name;
+    document.getElementById('dishModalTitle').textContent = data.item_name;
+    document.getElementById('dishModalImg').src = data.image_url;
+    document.getElementById('dishModalCategory').textContent = data.category_name;
+    
+    const dietBadge = document.getElementById('dishModalDiet');
+    if (dietBadge) {
+      dietBadge.textContent = data.is_veg ? 'VEG' : 'NON-VEG';
+      dietBadge.className = data.is_veg ? 'badge bg-success' : 'badge bg-danger';
+    }
+    document.getElementById('dishModalPrice').textContent = data.price;
+    document.getElementById('dishModalCustName').textContent = data.customer_name;
+    document.getElementById('dishModalCustEmail').textContent = data.customer_email;
+    document.getElementById('dishModalCustPhone').textContent = data.customer_phone || 'Phone not registered';
+    document.getElementById('dishModalDate').textContent = data.created_at;
+
+    const orderBadge = document.getElementById('dishModalOrderBadge');
+    if (orderBadge) {
+      orderBadge.textContent = data.order_id ? 'Order #ZIP-' + data.order_id : 'Direct Menu Feedback';
+    }
+
+    document.getElementById('dishModalOverallRating').textContent = data.rating + ' / 5.0 ★';
+    
+    // Dimension values & bars
+    const appRate = Number(data.appearance_rating || data.rating);
+    const tasteRate = Number(data.taste_rating || data.rating);
+    const portRate = Number(data.portion_rating || data.rating);
+    const valRate = Number(data.value_rating || data.rating);
+
+    document.getElementById('dishModalAppVal').textContent = appRate + ' / 5 ★';
+    document.getElementById('dishModalAppBar').style.width = ((appRate / 5) * 100) + '%';
+
+    document.getElementById('dishModalTasteVal').textContent = tasteRate + ' / 5 ★';
+    document.getElementById('dishModalTasteBar').style.width = ((tasteRate / 5) * 100) + '%';
+
+    document.getElementById('dishModalPortionVal').textContent = portRate + ' / 5 ★';
+    document.getElementById('dishModalPortionBar').style.width = ((portRate / 5) * 100) + '%';
+
+    document.getElementById('dishModalValueVal').textContent = valRate + ' / 5 ★';
+    document.getElementById('dishModalValueBar').style.width = ((valRate / 5) * 100) + '%';
+
+    // Tags
+    const tagsBox = document.getElementById('dishModalTags');
+    if (tagsBox) {
+      if (data.tags) {
+        const tagArr = data.tags.split(',');
+        tagsBox.innerHTML = tagArr.map(t => `<span class="badge bg-light text-forest border px-2 py-1">${t.trim()}</span>`).join(' ');
+      } else {
+        tagsBox.innerHTML = '<span class="text-muted small fst-italic">No tags attached</span>';
+      }
+    }
+
+    document.getElementById('dishModalReviewText').textContent = '"' + data.review_text + '"';
+
+    const manageBtn = document.getElementById('dishModalManageDishBtn');
+    if (manageBtn) {
+      manageBtn.href = '<?= ADMIN_URL ?>/dishes.php?search=' + encodeURIComponent(data.item_name);
+    }
+
+    const modalEl = document.getElementById('dishReviewInspectModal');
+    if (modalEl) {
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+    }
+  }
   // Open and populate Order Details Inspection Modal
   function openReviewInspectModal(data) {
     document.getElementById('modalOrderId').textContent = '#ZIP-' + data.order_id;

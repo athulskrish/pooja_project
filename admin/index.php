@@ -40,6 +40,19 @@ $deliveryDelays = (int)(db_fetch_val(
     "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('OUT_FOR_DELIVERY', 'DELIVERING') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) > 45"
 ) ?: 0);
 
+$scheduledOrdersCount = (int)(db_fetch_val(
+    "SELECT COUNT(*) FROM `orders` WHERE is_scheduled = 1 AND order_status NOT IN ('DELIVERED', 'CANCELLED')"
+) ?: 0);
+$upcomingScheduledList = db_fetch_all("
+    SELECT o.order_id, o.scheduled_for, o.scheduled_slot, o.order_status, u.full_name,
+           TIMESTAMPDIFF(MINUTE, NOW(), o.scheduled_for) AS minutes_until
+    FROM `orders` o
+    JOIN `users` u ON o.user_id = u.user_id
+    WHERE o.is_scheduled = 1 AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')
+    ORDER BY o.scheduled_for ASC
+    LIMIT 4
+");
+
 $triageSeverityCounts = ['CRITICAL' => 0, 'WARNING' => 0, 'INFO' => 0];
 foreach ($triageExceptions as $exception) {
     $triageSeverityCounts[$exception['severity']] = ($triageSeverityCounts[$exception['severity']] ?? 0) + 1;
@@ -137,6 +150,29 @@ require_once __DIR__ . '/includes/header.php';
     </div>
   </div>
 </section>
+
+<?php if (!empty($upcomingScheduledList)): ?>
+<div class="alert p-3 rounded-4 mb-4 border d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-xs" style="background:#FAF5FF; border-color:#E9D5FF !important;">
+  <div class="d-flex align-items-center gap-3">
+    <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 shadow-sm" style="width:42px; height:42px; background:#7C3AED;">
+      <i class="bi bi-calendar2-check-fill fs-5"></i>
+    </div>
+    <div>
+      <div class="fw-bold text-dark font-outfit" style="color:#6B21A8 !important;">
+        <?= count($upcomingScheduledList) ?> Advance Scheduled Meal Order(s) Logged
+      </div>
+      <div class="small text-muted">
+        <?php foreach ($upcomingScheduledList as $idx => $so): ?>
+          <span>#ZIP-<?= (int)$so['order_id'] ?> (<?= e($so['full_name']) ?> &bull; <strong style="color:#6B21A8;"><?= e($so['scheduled_slot'] ?: date('d M, h:i A', strtotime($so['scheduled_for']))) ?></strong>)<?= ($idx < count($upcomingScheduledList) - 1) ? ' &bull; ' : '' ?></span>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  </div>
+  <a href="<?= ADMIN_URL ?>/orders.php?status=SCHEDULED" class="btn btn-sm text-white rounded-pill px-3 shadow-xs fw-semibold" style="background:#7C3AED;">
+    View Scheduled Queue &rarr;
+  </a>
+</div>
+<?php endif; ?>
 
 <section class="card border rounded-4 shadow-xs bg-white mb-4 overflow-hidden" style="border-color:#E2ECE5 !important;" aria-labelledby="attentionHeading">
   <div class="p-3 p-xl-4 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-3">

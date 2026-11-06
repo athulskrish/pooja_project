@@ -32,6 +32,8 @@ foreach ($categories as $cat) {
         ORDER BY `price` ASC
     ", [':cid' => $cat['category_id']]);
 }
+
+$customSummaryMap = get_all_dishes_customization_counts();
 ?>
 
 <main class="py-4">
@@ -102,7 +104,7 @@ foreach ($categories as $cat) {
             <i class="fa-solid fa-book-open text-success me-2"></i> Menu Catalog
           </div>
           
-          <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-3 flex-wrap">
             <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
               <input class="form-check-input" type="checkbox" role="switch" id="vegOnlySwitch" style="cursor: pointer;">
               <label class="form-check-label fw-bold small text-success mb-0" for="vegOnlySwitch" style="cursor: pointer;">
@@ -114,6 +116,18 @@ foreach ($categories as $cat) {
               <label class="form-check-label fw-bold small text-success mb-0" for="healthyOnlySwitch" style="cursor: pointer;">
                 <i class="fa-solid fa-leaf text-success me-1"></i>Healthy Only
               </label>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+              <label for="restaurantMoodSelect" class="small fw-bold text-muted d-none d-sm-inline">Mood:</label>
+              <select class="form-select form-select-sm rounded-pill border-success" id="restaurantMoodSelect" style="width: auto; font-size: 0.8rem;">
+                <option value="all">🎭 All Moods</option>
+                <option value="comfort">🛋️ Comfort & Soul</option>
+                <option value="party">🎉 Party & Celebration</option>
+                <option value="healthy">⚡ Energetic & Fit</option>
+                <option value="quick_bite">🍿 Quick Bites</option>
+                <option value="spicy">🔥 Fiery & Spicy</option>
+                <option value="sweet">💖 Sweet Craving</option>
+              </select>
             </div>
           </div>
         </div>
@@ -158,7 +172,12 @@ foreach ($categories as $cat) {
                       <span class="rating-val"><?= number_format((float)(!empty($rec['rating']) ? $rec['rating'] : 4.8), 1) ?></span>
                     </span>
                   </div>
-                  <div class="text-muted small mb-2"><?= format_inr($rec['price']) ?></div>
+                  <div class="text-muted small mb-1"><?= format_inr($rec['price']) ?></div>
+                  <?php if (!empty($customSummaryMap[$rec['item_id']]['group_count'])): ?>
+                    <div class="text-success small fw-medium mb-2" style="font-size:0.65rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
+                  <?php else: ?>
+                    <div class="mb-2" style="height: 15px;"></div>
+                  <?php endif; ?>
                   <button type="button" 
                           class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
                           onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= e(addslashes($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>, 'Meghana Foods', '<?= e(get_dish_image_url($rec['image_url'] ?? '')) ?>'); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
@@ -188,12 +207,13 @@ foreach ($categories as $cat) {
               <?php foreach ($catItems as $dish): ?>
                 <?php 
                   $isHealthyDish = (!empty($dish['is_healthy']) || ($cat['category_slug'] ?? '') === 'healthy' || stripos($cat['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
+                  $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
                 ?>
-                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>">
+                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
                   
                   <!-- Dish Info -->
                   <div class="flex-grow-1">
-                    <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                       <?php if ($dish['is_veg']): ?>
                         <span class="badge bg-white text-success border border-success d-flex align-items-center gap-1 px-2 py-0" style="font-size:0.65rem;">
                           <span style="width:6px; height:6px; border-radius:50%; background:#229947; display:inline-block;"></span> VEG
@@ -207,6 +227,13 @@ foreach ($categories as $cat) {
                       <?php if ($isHealthyDish): ?>
                         <span class="badge px-2 py-0 fw-semibold" style="background:#CEFFDC; color:#243E2C; font-size:0.65rem; border:1px solid #68BA7F;">
                           <i class="fa-solid fa-leaf me-1 text-success"></i> HEALTHY
+                        </span>
+                      <?php endif; ?>
+
+                      <?php if ($dishPrimaryMood): ?>
+                        <span class="badge px-2 py-0 fw-semibold d-inline-flex align-items-center gap-1" style="background:<?= $dishPrimaryMood['badge_bg'] ?>; color:<?= $dishPrimaryMood['badge_color'] ?>; font-size:0.65rem; border:1px solid <?= $dishPrimaryMood['border_color'] ?>;">
+                          <img src="<?= e(get_mood_image_url($dishPrimaryMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
+                          <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
                         </span>
                       <?php endif; ?>
 
@@ -228,7 +255,14 @@ foreach ($categories as $cat) {
                       </button>
                     </div>
 
-                    <div class="fw-bold text-forest fs-5 mb-1"><?= format_inr($dish['price']) ?></div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="fw-bold text-forest fs-5"><?= format_inr($dish['price']) ?></span>
+                      <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
+                        <span class="badge rounded-pill text-success bg-success-subtle border border-success-subtle" style="font-size: 0.68rem; font-weight: 500;">
+                          <i class="bi bi-sliders me-1"></i>Customisable
+                        </span>
+                      <?php endif; ?>
+                    </div>
                     <p class="text-muted small mb-0" style="max-width: 500px;">
                       <?= e($dish['description']) ?>
                     </p>

@@ -130,6 +130,19 @@ $laneNew = array_values(array_filter($allActiveOrders, fn($o) => in_array($o['or
 $laneCooking = array_values(array_filter($allActiveOrders, fn($o) => $o['order_status'] === 'COOKING'));
 $laneReady = array_values(array_filter($allActiveOrders, fn($o) => $o['order_status'] === 'READY'));
 
+// Automatically ensure ready orders are allocated in FCFS order
+auto_allocate_ready_orders_fcfs();
+
+// Sort Ready orders strictly by First-Come First-Served based on food preparation time (ready_at)
+usort($laneReady, function($a, $b) {
+    $timeA = !empty($a['ready_at']) ? strtotime($a['ready_at']) : strtotime($a['placed_at']);
+    $timeB = !empty($b['ready_at']) ? strtotime($b['ready_at']) : strtotime($b['placed_at']);
+    if ($timeA === $timeB) {
+        return (int)$a['order_id'] <=> (int)$b['order_id'];
+    }
+    return $timeA <=> $timeB;
+});
+
 // Fetch Dispatches and Riders details for Ready lane
 $readyOrderIds = array_column($laneReady, 'order_id');
 $dispatchesByOrder = [];
@@ -213,12 +226,33 @@ $allMenuItems = db_fetch_all("
     ORDER BY c.display_order ASC, m.item_name ASC
 ");
 
+// Active Advance Scheduled Orders
+$scheduledOrders = array_values(array_filter($allActiveOrders, fn($o) => !empty($o['is_scheduled'])));
+$countScheduled = count($scheduledOrders);
+
 // Count stats
 $countNew = count($laneNew);
 $countCooking = count($laneCooking);
 $countReady = count($laneReady);
 $countHandedOver = count($recentHandedOver);
 $totalActive = $countNew + $countCooking + $countReady;
+
+// State fingerprint for live synchronization
+$latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
+$latestDispatch = db_fetch_one("SELECT MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
+$countDeliveredToday = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED' AND DATE(`placed_at`) = CURDATE()");
+$kdsInitialStateHash = md5(json_encode([
+    'new' => $countNew,
+    'cooking' => $countCooking,
+    'ready' => $countReady,
+    'handed_over' => $countHandedOver,
+    'delivered' => $countDeliveredToday,
+    'max_audit' => $latestAudit['max_audit'] ?? 0,
+    'audit_time' => $latestAudit['max_time'] ?? '',
+    'disp_assigned' => $latestDispatch['max_assigned'] ?? '',
+    'disp_dispatched' => $latestDispatch['max_dispatched'] ?? '',
+    'disp_delivered' => $latestDispatch['max_delivered'] ?? ''
+]));
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -260,21 +294,32 @@ require_once __DIR__ . '/includes/header.php';
                       
                       <!-- Ticket Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div class="d-flex align-items-center gap-1">
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
                           <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">
                             #ZIP-<?= (int)$t['order_id'] ?>
                           </span>
+                          <?php if (!empty($t['is_scheduled'])): ?>
+                            <span class="ticket-tag-pill" style="background:#F3E8FF; color:#6B21A8; border:1px solid #D8B4FE; font-weight:700;">
+                              <i class="bi bi-calendar2-check-fill"></i> ADVANCE: <?= e($t['scheduled_slot'] ?: date('d M, h:i A', strtotime($t['scheduled_for']))) ?>
+                            </span>
+                          <?php endif; ?>
                           <?php $pBadge = get_kds_priority_badge($t); ?>
-                          <?php if ($pBadge['label'] !== 'STANDARD'): ?>
+                          <?php if ($pBadge['label'] !== 'STANDARD' && empty($t['is_scheduled'])): ?>
                             <span class="ticket-tag-pill <?= $pBadge['class'] ?>">
                               <i class="bi <?= $pBadge['icon'] ?>"></i> <?= e($pBadge['label']) ?>
                             </span>
                           <?php endif; ?>
                         </div>
-                        <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
-                        <span class="ticket-tag-pill <?= $wait['class'] ?>">
-                          <i class="bi bi-stopwatch"></i> <?= e($wait['label']) ?>
-                        </span>
+                        <?php if (!empty($t['is_scheduled'])): ?>
+                          <span class="ticket-tag-pill" style="background:#FAF5FF; color:#7C3AED; border:1px solid #E9D5FF;" title="Scheduled Target Time">
+                            <i class="bi bi-alarm"></i> <?= date('d M h:i A', strtotime($t['scheduled_for'])) ?>
+                          </span>
+                        <?php else: ?>
+                          <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                          <span class="ticket-tag-pill <?= $wait['class'] ?>">
+                            <i class="bi bi-stopwatch"></i> <?= e($wait['label']) ?>
+                          </span>
+                        <?php endif; ?>
                       </div>
 
                       <!-- Customer Meta -->
@@ -298,13 +343,22 @@ require_once __DIR__ . '/includes/header.php';
                           <span class="badge" style="background:var(--lush-mint-soft); color:var(--lush-forest); font-size:0.65rem;"><?= count($t['items']) ?> items</span>
                         </div>
                         <?php foreach ($t['items'] as $it): ?>
-                          <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle small">
-                            <div class="d-flex align-items-center gap-2">
-                              <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
-                              <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
-                              <span class="fw-semibold" style="color:var(--lush-text-main); font-size:0.83rem;"><?= e($it['item_name']) ?></span>
+                          <div class="py-1 border-bottom border-light-subtle small">
+                            <div class="d-flex justify-content-between align-items-center">
+                              <div class="d-flex align-items-center gap-2">
+                                <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
+                                <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
+                                <span class="fw-semibold" style="color:var(--lush-text-main); font-size:0.83rem;"><?= e($it['item_name']) ?></span>
+                              </div>
+                              <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
                             </div>
-                            <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
+                            <?php if (!empty($it['customizations'])): ?>
+                              <div class="ps-4 mt-1">
+                                <span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:0.68rem; font-weight:500;">
+                                  <i class="bi bi-sliders me-1 text-warning-emphasis"></i><?= e($it['customizations']) ?>
+                                </span>
+                              </div>
+                            <?php endif; ?>
                           </div>
                         <?php endforeach; ?>
                       </div>
@@ -361,18 +415,29 @@ require_once __DIR__ . '/includes/header.php';
                       
                       <!-- Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div class="d-flex align-items-center gap-1">
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
                           <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">
                             #ZIP-<?= (int)$t['order_id'] ?>
                           </span>
+                          <?php if (!empty($t['is_scheduled'])): ?>
+                            <span class="ticket-tag-pill" style="background:#F3E8FF; color:#6B21A8; border:1px solid #D8B4FE; font-weight:700;">
+                              <i class="bi bi-calendar2-check-fill"></i> ADVANCE: <?= e($t['scheduled_slot'] ?: date('d M, h:i A', strtotime($t['scheduled_for']))) ?>
+                            </span>
+                          <?php endif; ?>
                           <span class="ticket-tag-pill" style="background:#FFF7ED; color:#C2410C; border:1px solid #FED7AA;">
                             <i class="fa-solid fa-fire-burner"></i> ON STOVE
                           </span>
                         </div>
-                        <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
-                        <span class="ticket-tag-pill <?= $wait['class'] ?>">
-                          <i class="bi bi-clock-history"></i> <?= e($wait['label']) ?>
-                        </span>
+                        <?php if (!empty($t['is_scheduled'])): ?>
+                          <span class="ticket-tag-pill" style="background:#FAF5FF; color:#7C3AED; border:1px solid #E9D5FF;" title="Scheduled Target Time">
+                            <i class="bi bi-alarm"></i> <?= date('d M h:i A', strtotime($t['scheduled_for'])) ?>
+                          </span>
+                        <?php else: ?>
+                          <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                          <span class="ticket-tag-pill <?= $wait['class'] ?>">
+                            <i class="bi bi-clock-history"></i> <?= e($wait['label']) ?>
+                          </span>
+                        <?php endif; ?>
                       </div>
 
                       <div class="d-flex justify-content-between align-items-center small text-muted mb-2">
@@ -394,16 +459,25 @@ require_once __DIR__ . '/includes/header.php';
                           <span class="badge" style="background:#FEF3C7; color:#B45309; font-size:0.65rem;">Tap when plated</span>
                         </div>
                         <?php foreach ($t['items'] as $idx => $it): ?>
-                          <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light-subtle small">
-                            <div class="form-check d-flex align-items-center gap-2 m-0">
-                              <input class="form-check-input dish-checkbox" type="checkbox" id="chk_<?= $t['order_id'] ?>_<?= $idx ?>">
-                              <label class="form-check-label fw-semibold" for="chk_<?= $t['order_id'] ?>_<?= $idx ?>" style="cursor:pointer; font-size:0.83rem;">
-                                <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
-                                <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
-                                <span><?= e($it['item_name']) ?></span>
-                              </label>
+                          <div class="py-1 border-bottom border-light-subtle small">
+                            <div class="d-flex justify-content-between align-items-center">
+                              <div class="form-check d-flex align-items-center gap-2 m-0">
+                                <input class="form-check-input dish-checkbox" type="checkbox" id="chk_<?= $t['order_id'] ?>_<?= $idx ?>">
+                                <label class="form-check-label fw-semibold" for="chk_<?= $t['order_id'] ?>_<?= $idx ?>" style="cursor:pointer; font-size:0.83rem;">
+                                  <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
+                                  <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
+                                  <span><?= e($it['item_name']) ?></span>
+                                </label>
+                              </div>
+                              <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
                             </div>
-                            <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
+                            <?php if (!empty($it['customizations'])): ?>
+                              <div class="ps-4 mt-1">
+                                <span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:0.68rem; font-weight:500;">
+                                  <i class="bi bi-sliders me-1 text-warning-emphasis"></i><?= e($it['customizations']) ?>
+                                </span>
+                              </div>
+                            <?php endif; ?>
                           </div>
                         <?php endforeach; ?>
                       </div>
@@ -420,7 +494,7 @@ require_once __DIR__ . '/includes/header.php';
                           <input type="hidden" name="target_status" value="READY">
                           <button type="submit" class="btn-action-ready w-100">
                             <i class="bi bi-check2-circle me-1"></i>
-                            <span>Order Plated & Ready</span>
+                            <span>Mark Ready for Delivery</span>
                             <i class="bi bi-arrow-right ms-1"></i>
                           </button>
                         </form>
@@ -433,15 +507,15 @@ require_once __DIR__ . '/includes/header.php';
             </div>
           </div>
 
-          <!-- Column 3: Ready for Delivery Handover -->
+          <!-- Column 3: Ready for Delivery (System FCFS Allocation) -->
           <div class="col-12 col-lg-4">
             <div class="swimlane-col">
               <div class="swimlane-header">
                 <div class="d-flex align-items-center gap-2">
                   <span class="rounded-circle d-inline-block" style="width:9px; height:9px; background:#16A34A;"></span>
                   <div>
-                    <div class="swimlane-title font-outfit">3. Courier Handover (Ready)</div>
-                    <div class="small text-muted" style="font-size:0.68rem;">Bagged & Sealed for Courier</div>
+                    <div class="swimlane-title font-outfit">3. Ready for Delivery</div>
+                    <div class="small text-muted" style="font-size:0.68rem;">Bagged & Sealed • FCFS Driver Queue</div>
                   </div>
                 </div>
                 <span class="swimlane-counter badge-lane-ready" id="laneReadyCountBadge"><?= $countReady ?></span>
@@ -456,21 +530,27 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="small text-muted">Finished orders will appear here for courier dispatch.</div>
                   </div>
                 <?php else: ?>
-                  <?php foreach ($laneReady as $t): ?>
+                  <?php foreach ($laneReady as $readyIdx => $t): ?>
                     <?php 
                       $disp = $dispatchesByOrder[$t['order_id']] ?? null;
-                      $riderName = $disp['delivery_partner_name'] ?? 'Suresh Kumar (Rider)';
-                      $riderPhone = $disp['delivery_partner_phone'] ?? '+91 96320 98765';
+                      $riderName = $disp['delivery_partner_name'] ?? 'Assigned Courier';
+                      $riderPhone = $disp['delivery_partner_phone'] ?? '';
                       $otp = $disp['delivery_otp'] ?? '';
+                      $fcfsRank = $readyIdx + 1;
                     ?>
                     <div class="ticket-card card-lane-ready ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
                       
                       <!-- Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div class="d-flex align-items-center gap-1">
+                        <div class="d-flex align-items-center gap-1 flex-wrap">
                           <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">
                             #ZIP-<?= (int)$t['order_id'] ?>
                           </span>
+                          <?php if (!empty($t['is_scheduled'])): ?>
+                            <span class="ticket-tag-pill" style="background:#F3E8FF; color:#6B21A8; border:1px solid #D8B4FE; font-weight:700;">
+                              <i class="bi bi-calendar2-check-fill"></i> ADVANCE: <?= e($t['scheduled_slot'] ?: date('d M, h:i A', strtotime($t['scheduled_for']))) ?>
+                            </span>
+                          <?php endif; ?>
                           <span class="ticket-tag-pill" style="background:#ECFDF5; color:#047857; border:1px solid #A7F3D0;">
                             <i class="bi bi-bag-check-fill"></i> BAGGED & READY
                           </span>
@@ -493,59 +573,42 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                       </div>
 
-                      <!-- Rider Assignment Station -->
-                      <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'OUT_FOR_DELIVERY')">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="action" value="kds_advance">
-                        <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
-                        <input type="hidden" name="target_status" value="OUT_FOR_DELIVERY">
-
-                        <div class="mb-2">
-                          <div class="d-flex align-items-center gap-1 mb-1 small text-muted" style="font-size:0.75rem;">
-                            <i class="fa-solid fa-motorcycle text-success me-1"></i> <span>Courier Fleet Handover:</span>
+                      <!-- System FCFS Dispatch Status Box -->
+                      <div class="p-2 rounded-3 border mb-1" style="background: <?= !empty($disp['rider_id']) ? '#F0FDF4; border-color:#BBF7D0 !important;' : '#FFFBEB; border-color:#FDE68A !important;' ?>">
+                        <?php if (!empty($disp['rider_id'])): ?>
+                          <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="badge rounded-pill text-white" style="background:var(--lush-forest); font-size:0.68rem;">
+                              <i class="bi bi-cpu me-1"></i> SYSTEM ALLOCATED (FCFS #<?= $fcfsRank ?>)
+                            </span>
+                            <span class="small font-mono text-muted" style="font-size:0.72rem;">
+                              <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                            </span>
                           </div>
-                          
-                          <?php 
-                            $defaultRiderCol3 = '';
-                            foreach ($ridersList as $r) {
-                                if (stripos($riderName, $r['full_name']) !== false && (!$r['is_busy'] || (int)$r['active_order_id'] === (int)$t['order_id'])) {
-                                    $defaultRiderCol3 = $r['full_name'];
-                                    break;
-                                }
-                            }
-                            if (empty($defaultRiderCol3)) {
-                                foreach ($ridersList as $r) {
-                                    if (!$r['is_busy'] || (int)$r['active_order_id'] === (int)$t['order_id']) {
-                                        $defaultRiderCol3 = $r['full_name'];
-                                        break;
-                                    }
-                                }
-                            }
-                            if (empty($defaultRiderCol3) && !empty($ridersList)) {
-                                $defaultRiderCol3 = $ridersList[0]['full_name'];
-                            }
-                          ?>
-                          <select name="rider_name" class="form-select form-select-sm bg-white border" style="font-size:0.82rem; border-color:var(--lush-border) !important; border-radius:8px;">
-                            <?php if (!empty($ridersList)): ?>
-                              <?php foreach ($ridersList as $r): ?>
-                                <?php $isBusyWithOther = $r['is_busy'] && ((int)$r['active_order_id'] !== (int)$t['order_id']); ?>
-                                <option value="<?= e($r['full_name']) ?>" <?= ($defaultRiderCol3 === $r['full_name']) ? 'selected' : '' ?>>
-                                  <?= e($r['full_name']) ?> <?= $isBusyWithOther ? "🔴 [Busy on #ZIP-{$r['active_order_id']}]" : '🟢 [Available (0/1)]' ?>
-                                </option>
-                              <?php endforeach; ?>
-                            <?php else: ?>
-                              <option value="Suresh Kumar (Rider)" selected>Suresh Kumar (Rider) - +91 96320 98765</option>
-                            <?php endif; ?>
-                          </select>
-                        </div>
-
-                        <!-- Action Button: Hand Over to Delivery Boy -->
-                        <button type="submit" class="btn-action-dispatch w-100 py-2">
-                          <i class="bi bi-bicycle me-2"></i>
-                          <span>Hand Over to Delivery Boy</span>
-                          <i class="bi bi-arrow-right ms-1"></i>
-                        </button>
-                      </form>
+                          <div class="d-flex align-items-center gap-2 small">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0" style="width:26px; height:26px; background:var(--lush-forest); font-size:0.75rem;">
+                              <i class="fa-solid fa-motorcycle"></i>
+                            </div>
+                            <div class="text-truncate flex-grow-1">
+                              <div class="fw-bold" style="color:var(--lush-pine); font-size:0.83rem;"><?= e($riderName) ?></div>
+                              <div class="text-muted" style="font-size:0.7rem;">
+                                <i class="bi bi-clock me-1 text-success"></i>Awaiting Driver Counter Pickup
+                              </div>
+                            </div>
+                          </div>
+                        <?php else: ?>
+                          <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="badge bg-warning text-dark rounded-pill" style="font-size:0.68rem;">
+                              <i class="bi bi-hourglass-split me-1"></i> FCFS QUEUE #<?= $fcfsRank ?> (FIRST PREPARED)
+                            </span>
+                            <span class="small font-mono text-muted" style="font-size:0.72rem;">
+                              <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                            </span>
+                          </div>
+                          <div class="small text-muted" style="font-size:0.75rem;">
+                            <i class="bi bi-shield-check text-success me-1"></i>Ready for Delivery • System will auto-assign to next free driver.
+                          </div>
+                        <?php endif; ?>
+                      </div>
 
                     </div>
                   <?php endforeach; ?>
@@ -713,7 +776,7 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="hidden" name="target_status" value="READY">
                         <button type="submit" class="btn-action-ready w-100">
                           <i class="bi bi-check2-circle me-1"></i>
-                          <span>Mark Plated & Ready</span>
+                          <span>Mark Ready for Delivery</span>
                           <i class="bi bi-arrow-right ms-1"></i>
                         </button>
                       </form>
@@ -728,14 +791,14 @@ require_once __DIR__ . '/includes/header.php';
       </div>
 
       <!-- ====================================================================
-           TAB 4: READY (FOCUSED VIEW)
+           TAB 4: READY FOR DELIVERY (FOCUSED VIEW - SYSTEM FCFS ALLOCATION)
            ==================================================================== -->
       <div class="tab-pane fade" id="tab-ready" role="tabpanel">
         <div class="card p-3 p-md-4 modal-content-lush">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <h4 class="fw-bold font-outfit mb-1" style="color:var(--lush-pine);">3. Courier Expedition Handover</h4>
-              <p class="text-muted small mb-0">Packaged food parcels waiting for courier pickup and OTP handover.</p>
+              <h4 class="fw-bold font-outfit mb-1" style="color:var(--lush-pine);">3. Ready for Delivery</h4>
+              <p class="text-muted small mb-0">Packaged food parcels waiting for system driver allocation and courier pickup.</p>
             </div>
             <span class="badge rounded-pill font-mono px-3 py-2 badge-lane-ready">READY: <?= $countReady ?></span>
           </div>
@@ -744,11 +807,12 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($laneReady)): ?>
               <div class="col-12 text-center py-5 text-muted">No orders waiting for courier pickup.</div>
             <?php else: ?>
-              <?php foreach ($laneReady as $t): ?>
+              <?php foreach ($laneReady as $readyIdx => $t): ?>
                 <?php 
                   $disp = $dispatchesByOrder[$t['order_id']] ?? null;
-                  $riderName = $disp['delivery_partner_name'] ?? 'Suresh Kumar (Rider)';
+                  $riderName = $disp['delivery_partner_name'] ?? 'Assigned Courier';
                   $otp = $disp['delivery_otp'] ?? '';
+                  $fcfsRank = $readyIdx + 1;
                 ?>
                 <div class="col-md-6 col-xl-4">
                   <div class="ticket-card card-lane-ready">
@@ -772,60 +836,186 @@ require_once __DIR__ . '/includes/header.php';
                       </div>
                     </div>
 
-                    <form method="POST" action="<?= KITCHEN_URL ?>/index.php" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'OUT_FOR_DELIVERY')">
-                      <?= csrf_field() ?>
-                      <input type="hidden" name="action" value="kds_advance">
-                      <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
-                      <input type="hidden" name="target_status" value="OUT_FOR_DELIVERY">
-
-                      <div class="mb-2">
-                        <div class="d-flex align-items-center gap-1 mb-1 small text-muted" style="font-size:0.75rem;">
-                          <i class="fa-solid fa-motorcycle text-success me-1"></i> <span>Courier Fleet Handover:</span>
+                    <!-- System FCFS Dispatch Status Box -->
+                    <div class="p-2 rounded-3 border mb-1" style="background: <?= !empty($disp['rider_id']) ? '#F0FDF4; border-color:#BBF7D0 !important;' : '#FFFBEB; border-color:#FDE68A !important;' ?>">
+                      <?php if (!empty($disp['rider_id'])): ?>
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                          <span class="badge rounded-pill text-white" style="background:var(--lush-forest); font-size:0.68rem;">
+                            <i class="bi bi-cpu me-1"></i> SYSTEM ALLOCATED (FCFS #<?= $fcfsRank ?>)
+                          </span>
+                          <span class="small font-mono text-muted" style="font-size:0.72rem;">
+                            <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                          </span>
                         </div>
-                        
-                        <?php 
-                          $defaultRiderChoiceTab4 = '';
-                          foreach ($ridersList as $r) {
-                              if (stripos($riderName, $r['full_name']) !== false && (!$r['is_busy'] || (int)$r['active_order_id'] === (int)$t['order_id'])) {
-                                  $defaultRiderChoiceTab4 = $r['full_name'];
-                                  break;
-                              }
-                          }
-                          if (empty($defaultRiderChoiceTab4)) {
-                              foreach ($ridersList as $r) {
-                                  if (!$r['is_busy'] || (int)$r['active_order_id'] === (int)$t['order_id']) {
-                                      $defaultRiderChoiceTab4 = $r['full_name'];
-                                      break;
-                                  }
-                              }
-                          }
-                          if (empty($defaultRiderChoiceTab4) && !empty($ridersList)) {
-                              $defaultRiderChoiceTab4 = $ridersList[0]['full_name'];
-                          }
-                        ?>
-                        <select name="rider_name" class="form-select form-select-sm bg-white border" style="font-size:0.82rem; border-color:var(--lush-border) !important; border-radius:8px;">
-                          <?php if (!empty($ridersList)): ?>
-                            <?php foreach ($ridersList as $r): ?>
-                              <?php $isBusyWithOther = $r['is_busy'] && ((int)$r['active_order_id'] !== (int)$t['order_id']); ?>
-                              <option value="<?= e($r['full_name']) ?>" <?= ($defaultRiderChoiceTab4 === $r['full_name']) ? 'selected' : '' ?>>
-                                <?= e($r['full_name']) ?> <?= $isBusyWithOther ? "🔴 [Busy on #ZIP-{$r['active_order_id']}]" : '🟢 [Available (0/1)]' ?>
-                              </option>
-                            <?php endforeach; ?>
-                          <?php else: ?>
-                            <option value="Suresh Kumar (Rider)" selected>Suresh Kumar (Rider) - +91 96320 98765</option>
-                          <?php endif; ?>
-                        </select>
-                      </div>
+                        <div class="d-flex align-items-center gap-2 small">
+                          <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0" style="width:26px; height:26px; background:var(--lush-forest); font-size:0.75rem;">
+                            <i class="fa-solid fa-motorcycle"></i>
+                          </div>
+                          <div class="text-truncate flex-grow-1">
+                            <div class="fw-bold" style="color:var(--lush-pine); font-size:0.83rem;"><?= e($riderName) ?></div>
+                            <div class="text-muted" style="font-size:0.7rem;">
+                              <i class="bi bi-clock me-1 text-success"></i>Awaiting Driver Counter Pickup
+                            </div>
+                          </div>
+                        </div>
+                      <?php else: ?>
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                          <span class="badge bg-warning text-dark rounded-pill" style="font-size:0.68rem;">
+                            <i class="bi bi-hourglass-split me-1"></i> FCFS QUEUE #<?= $fcfsRank ?> (FIRST PREPARED)
+                          </span>
+                          <span class="small font-mono text-muted" style="font-size:0.72rem;">
+                            <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                          </span>
+                        </div>
+                        <div class="small text-muted" style="font-size:0.75rem;">
+                          <i class="bi bi-shield-check text-success me-1"></i>Ready for Delivery • System will auto-assign to next free driver.
+                        </div>
+                      <?php endif; ?>
+                    </div>
 
-                      <button type="submit" class="btn-action-dispatch w-100 py-2">
-                        <i class="bi bi-bicycle me-2"></i> Hand Over to Delivery Boy &rarr;
-                      </button>
-                    </form>
                   </div>
                 </div>
               <?php endforeach; ?>
             <?php endif; ?>
           </div>
+        </div>
+      </div>
+
+      <!-- ====================================================================
+           TAB: ADVANCE SCHEDULED MEAL ORDERS (CULINARY PRE-ORDER QUEUE)
+           ==================================================================== -->
+      <div class="tab-pane fade" id="tab-scheduled" role="tabpanel">
+        <div class="card p-3 p-md-4 modal-content-lush">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+              <h4 class="fw-bold font-outfit mb-1" style="color:#6B21A8;">
+                <i class="bi bi-calendar2-check-fill me-2" style="color:#7C3AED;"></i>Advance Scheduled Meal Orders
+              </h4>
+              <p class="text-muted small mb-0">Pre-booked customer orders scheduled for advance meal slots. Plan batch preparation and mise-en-place ahead of time.</p>
+            </div>
+            
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge rounded-pill text-white px-3 py-2 font-mono" style="background:#7C3AED; font-size:0.85rem;">
+                <i class="bi bi-calendar-event me-1"></i> ACTIVE PRE-ORDERS: <?= $countScheduled ?>
+              </span>
+            </div>
+          </div>
+
+          <?php if (empty($scheduledOrders)): ?>
+            <div class="text-center py-5 text-muted">
+              <i class="bi bi-calendar-check fs-1 d-block mb-3" style="color:#7C3AED; opacity:0.6;"></i>
+              <h5 class="fw-bold font-outfit" style="color:var(--lush-pine);">No advance scheduled orders currently queued.</h5>
+              <p class="small text-muted mb-0">When customers choose "Schedule in Advance" during checkout, their tickets appear here for advance kitchen staging.</p>
+            </div>
+          <?php else: ?>
+            <div class="row g-3">
+              <?php foreach ($scheduledOrders as $t): ?>
+                <div class="col-12 col-lg-6 col-xl-4">
+                  <div class="ticket-card card-lane-new ticket-item h-100 d-flex flex-column" data-ticket-id="<?= $t['order_id'] ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>" style="border-top: 4px solid #7C3AED !important;">
+                    
+                    <!-- Header -->
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">
+                          #ZIP-<?= (int)$t['order_id'] ?>
+                        </span>
+                        <span class="badge rounded-pill text-white px-2 py-1" style="background:#7C3AED; font-size:0.72rem;">
+                          <i class="bi bi-calendar2-check-fill me-1"></i> <?= e($t['scheduled_slot'] ?: date('d M, h:i A', strtotime($t['scheduled_for']))) ?>
+                        </span>
+                      </div>
+                      <span class="badge bg-light text-dark border small">
+                        <?= e($t['order_status']) ?>
+                      </span>
+                    </div>
+
+                    <!-- Target Time Callout -->
+                    <div class="p-2 rounded-3 mb-2 small" style="background:#FAF5FF; border:1px solid #E9D5FF; color:#581C87;">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-clock-history me-1"></i> Target Delivery:</span>
+                        <strong class="font-mono"><?= date('d-M-Y h:i A', strtotime($t['scheduled_for'])) ?></strong>
+                      </div>
+                    </div>
+
+                    <!-- Customer Meta -->
+                    <div class="d-flex justify-content-between align-items-center small text-muted mb-2">
+                      <span>Customer: <strong style="color:var(--lush-pine);"><?= e(trim(str_ireplace('(Customer)', '', $t['customer_name']))) ?></strong></span>
+                      <span class="font-mono" style="color:var(--lush-forest); font-weight:600;"><i class="fa-solid fa-fire me-1"></i>Prep: <?= (int)$t['job_duration'] ?>m</span>
+                    </div>
+
+                    <!-- Customer Notes -->
+                    <?php if (!empty($t['order_notes'])): ?>
+                      <div class="kds-card-note mb-2">
+                        <i class="bi bi-chat-quote-fill"></i>
+                        <span class="text-truncate"><strong>Note:</strong> <?= e($t['order_notes']) ?></span>
+                      </div>
+                    <?php endif; ?>
+
+                    <!-- Items List -->
+                    <div class="ticket-items-box mb-3 flex-grow-1">
+                      <div class="d-flex justify-content-between align-items-center mb-1 text-muted" style="font-size:0.68rem; text-transform:uppercase; font-weight:700;">
+                        <span>Docket (<?= (int)$t['total_portions'] ?> portions)</span>
+                        <span class="badge" style="background:var(--lush-mint-soft); color:var(--lush-forest); font-size:0.65rem;"><?= count($t['items']) ?> items</span>
+                      </div>
+                      <?php foreach ($t['items'] as $it): ?>
+                        <div class="py-1 border-bottom border-light-subtle small">
+                          <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-2">
+                              <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
+                              <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
+                              <span class="fw-semibold text-truncate" style="color:var(--lush-text-main); font-size:0.83rem; max-width:180px;"><?= e($it['item_name']) ?></span>
+                            </div>
+                            <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
+                          </div>
+                          <?php if (!empty($it['customizations'])): ?>
+                            <div class="ps-4 mt-1">
+                              <span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:0.68rem; font-weight:500;">
+                                <i class="bi bi-sliders me-1 text-warning-emphasis"></i><?= e($it['customizations']) ?>
+                              </span>
+                            </div>
+                          <?php endif; ?>
+                        </div>
+                      <?php endforeach; ?>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-flex gap-2 pt-2 border-top">
+                      <button type="button" class="btn-kot-print" onclick="openKOT(<?= (int)$t['order_id'] ?>)" title="Print Thermal KOT Slip">
+                        <i class="bi bi-printer"></i>
+                      </button>
+                      <?php if (in_array($t['order_status'], ['PLACED', 'CONFIRMED'])): ?>
+                        <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'COOKING')">
+                          <?= csrf_field() ?>
+                          <input type="hidden" name="action" value="kds_advance">
+                          <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
+                          <input type="hidden" name="target_status" value="COOKING">
+                          <button type="submit" class="btn-action-primary w-100">
+                            <span>Accept & Cook Now</span>
+                            <i class="bi bi-arrow-right ms-1"></i>
+                          </button>
+                        </form>
+                      <?php elseif ($t['order_status'] === 'COOKING'): ?>
+                        <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'READY')">
+                          <?= csrf_field() ?>
+                          <input type="hidden" name="action" value="kds_advance">
+                          <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
+                          <input type="hidden" name="target_status" value="READY">
+                          <button type="submit" class="btn-action-ready w-100">
+                            <i class="bi bi-check2-circle me-1"></i>
+                            <span>Mark Plated & Ready</span>
+                          </button>
+                        </form>
+                      <?php elseif ($t['order_status'] === 'READY'): ?>
+                        <span class="badge bg-success w-100 py-2 d-flex align-items-center justify-content-center">
+                          <i class="bi bi-bag-check-fill me-1"></i> Plated & Ready at Counter
+                        </span>
+                      <?php endif; ?>
+                    </div>
+
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
         </div>
       </div>
 
@@ -894,10 +1084,17 @@ require_once __DIR__ . '/includes/header.php';
                       <td style="max-width: 260px;">
                         <div class="d-flex flex-column gap-1">
                           <?php foreach ($hItems as $it): ?>
-                            <div class="small d-flex align-items-center gap-1">
-                              <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
-                              <span class="item-qty-pill" style="font-size:0.7rem;"><?= (int)$it['quantity'] ?>x</span>
-                              <span class="text-truncate"><?= e($it['item_name']) ?></span>
+                            <div class="small">
+                              <div class="d-flex align-items-center gap-1">
+                                <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
+                                <span class="item-qty-pill" style="font-size:0.7rem;"><?= (int)$it['quantity'] ?>x</span>
+                                <span class="text-truncate"><?= e($it['item_name']) ?></span>
+                              </div>
+                              <?php if (!empty($it['customizations'])): ?>
+                                <div class="text-muted ms-3" style="font-size:0.68rem;">
+                                  <i class="bi bi-sliders me-1"></i><?= e($it['customizations']) ?>
+                                </div>
+                              <?php endif; ?>
                             </div>
                           <?php endforeach; ?>
                         </div>

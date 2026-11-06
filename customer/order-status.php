@@ -158,11 +158,24 @@ if ($uid) {
 
 // Fetch line items
 $items = db_fetch_all("
-    SELECT oi.*, m.item_name, m.is_veg 
+    SELECT oi.*, m.item_name, m.is_veg, m.image_url 
     FROM `order_items` oi
     JOIN `menu_items` m ON oi.item_id = m.item_id
     WHERE oi.order_id = :id
 ", [':id' => $order['order_id']]);
+
+$statusReorderPayload = array_map(function($it) {
+    return [
+        'id' => (int)$it['item_id'],
+        'name' => $it['item_name'],
+        'price' => (float)$it['unit_price'],
+        'isVeg' => (bool)$it['is_veg'],
+        'restaurant' => 'Meghana Foods',
+        'imageUrl' => get_dish_image_url($it['image_url'] ?? ''),
+        'qty' => (int)$it['quantity']
+    ];
+}, $items);
+$statusReorderJson = htmlspecialchars(json_encode($statusReorderPayload), ENT_QUOTES, 'UTF-8');
 
 // Map statuses to step index (0 to 3)
 $statusMap = [
@@ -259,6 +272,18 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
         <!-- Live Countdown & Stepper Card -->
         <div class="card border-0 rounded-4 shadow-sm p-4 p-md-5 bg-white mb-4">
           
+          <?php if (!empty($order['is_scheduled'])): ?>
+            <div class="alert alert-info d-flex align-items-center gap-3 p-3 rounded-4 mb-4 border-0" style="background:#F3E8FF; color:#5B21B6;">
+              <i class="bi bi-calendar2-check-fill fs-3 flex-shrink-0"></i>
+              <div>
+                <div class="fw-bold fs-6">Advance Scheduled Meal Order</div>
+                <div class="small">
+                  This meal is booked in advance for <strong><?= e($order['scheduled_slot'] ?: date('D, d M h:i A', strtotime($order['scheduled_for']))) ?></strong>. The kitchen team has this ticket logged on their Kitchen Display System (KDS) and will commence preparation right before delivery to guarantee peak flavor & warmth!
+                </div>
+              </div>
+            </div>
+          <?php endif; ?>
+
           <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-4 mb-4 gap-3">
             <div>
               <?php if ($isDelivered): ?>
@@ -273,6 +298,14 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
                 </span>
                 <h3 class="fw-bold font-outfit mb-0 text-dark" id="statusHeading">Order Was Cancelled</h3>
                 <div class="text-muted small" id="statusSubtext">This order has been cancelled and closed</div>
+              <?php elseif (!empty($order['is_scheduled'])): ?>
+                <span class="badge rounded-pill px-3 py-1 mb-1 text-white shadow-xs" id="scheduleBadge" style="background:#7C3AED;">
+                  <i class="bi bi-calendar2-check-fill me-1"></i> ADVANCE PRE-ORDER
+                </span>
+                <h3 class="fw-bold font-outfit mb-0 text-dark" id="statusHeading">
+                  Scheduled for <?= e($order['scheduled_slot'] ?: date('D, d M h:i A', strtotime($order['scheduled_for']))) ?>
+                </h3>
+                <div class="text-muted small" id="statusSubtext">Target Delivery: <strong><?= date('d M Y, h:i A', strtotime($order['scheduled_for'])) ?></strong> • Queued in Kitchen KDS</div>
               <?php else: ?>
                 <span class="badge rounded-pill px-3 py-1 mb-1" id="scheduleBadge" style="background:#CEFFDC; color:#243E2C;">
                   ⚡ ON SCHEDULE
@@ -293,18 +326,23 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
             <!-- Countdown Timer Box -->
             <div class="text-center p-3 rounded-4 shadow-sm" id="countdownBox" style="background: #243E2C; color: #fff; min-width: 140px;">
               <div class="small text-white-50 text-uppercase fw-semibold" id="countdownLabel" style="font-size: 0.65rem; letter-spacing: 0.5px;">
-                <?= ($isDelivered || $isCancelled) ? 'ORDER STATUS' : 'ESTIMATED TIME' ?>
+                <?= ($isDelivered || $isCancelled) ? 'ORDER STATUS' : (!empty($order['is_scheduled']) ? 'SCHEDULED TARGET' : 'ESTIMATED TIME') ?>
               </div>
               <div class="fs-2 fw-bold font-monospace text-mint" id="live-eta-countdown" data-status="<?= e($order['order_status']) ?>" data-no-simulation="true">
                 <?php if ($isDelivered): ?>
                   DELIVERED
                 <?php elseif ($isCancelled): ?>
                   CANCELLED
+                <?php elseif (!empty($order['is_scheduled'])): ?>
+                  <?= date('h:i A', strtotime($order['scheduled_for'])) ?>
                 <?php else: ?>
                   <?= $initialCountdownText ?>
                 <?php endif; ?>
               </div>
               <div class="small text-white-50" id="countdownSubtext" style="font-size: 0.7rem;">
+                <?= !empty($order['is_scheduled']) ? date('d-M', strtotime($order['scheduled_for'])) : 'Arrival Window' ?>
+              </div>
+            </div>
                 <?php if ($isDelivered): ?>
                   ORDER COMPLETED
                 <?php elseif ($isCancelled): ?>
@@ -485,12 +523,19 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
           
           <div class="d-flex flex-column gap-2 mb-3">
             <?php foreach ($items as $item): ?>
-              <div class="d-flex justify-content-between align-items-center small">
+              <div class="d-flex justify-content-between align-items-start small pb-2 border-bottom">
                 <div>
-                  <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 me-1" style="font-size:0.6rem;"><?= (int)$item['quantity'] ?>x</span>
-                  <span><?= e($item['item_name']) ?></span>
+                  <div class="d-flex align-items-center">
+                    <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 me-1" style="font-size:0.6rem;"><?= (int)$item['quantity'] ?>x</span>
+                    <span class="fw-semibold text-dark"><?= e($item['item_name']) ?></span>
+                  </div>
+                  <?php if (!empty($item['customizations'])): ?>
+                    <div class="ps-3 mt-1">
+                      <?= format_customizations_html($item['customizations']) ?>
+                    </div>
+                  <?php endif; ?>
                 </div>
-                <span class="fw-bold"><?= format_inr($item['line_total']) ?></span>
+                <span class="fw-bold text-dark"><?= format_inr($item['line_total']) ?></span>
               </div>
             <?php endforeach; ?>
           </div>
@@ -532,6 +577,11 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
           </div>
 
           <div class="mt-4 d-grid gap-2">
+            <?php if ($isDelivered): ?>
+              <button type="button" class="btn btn-success btn-sm rounded-pill py-2 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2" style="background:#2E6F40; border-color:#2E6F40;" onclick="oneTapReorderMeal(<?= $statusReorderJson ?>, <?= (int)$order['order_id'] ?>, false, this)">
+                <i class="fa-solid fa-rotate-right"></i> 1-Tap Reorder This Meal
+              </button>
+            <?php endif; ?>
             <a href="<?= CUSTOMER_URL ?>/invoice.php?order_id=<?= (int)$order['order_id'] ?>" class="btn btn-outline-success btn-sm rounded-pill py-2 fw-semibold" target="_blank">
               <i class="bi bi-file-earmark-text me-1"></i> Download Tax Invoice
             </a>

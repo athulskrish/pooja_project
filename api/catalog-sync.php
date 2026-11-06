@@ -45,7 +45,7 @@ $categories = db_fetch_all("
 // 2. Query all menu items key summary attributes
 $dishes = db_fetch_all("
     SELECT m.item_id, m.category_id, m.item_name, m.price, m.stock_quantity, 
-           m.is_available, m.is_veg, m.is_healthy, m.kitchen_station, m.image_url, m.created_at
+           m.is_available, m.is_veg, m.is_healthy, m.mood, m.kitchen_station, m.image_url, m.created_at
     FROM `menu_items` m
     ORDER BY m.item_id ASC
 ");

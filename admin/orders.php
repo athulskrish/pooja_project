@@ -150,6 +150,7 @@ $cntReady = $orderKpis['ready'];
 $cntDelivering = $orderKpis['delivering'];
 $cntDelivered = $orderKpis['delivered'];
 $cntCancelled = $orderKpis['cancelled'];
+$cntScheduled = $orderKpis['scheduled'] ?? 0;
 
 // 3. Build Dynamic Filtering Query
 $where = "1=1";
@@ -157,6 +158,8 @@ $params = [];
 
 if ($filterStatus === 'LIVE') {
     $where .= " AND o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')";
+} elseif ($filterStatus === 'SCHEDULED') {
+    $where .= " AND o.is_scheduled = 1";
 } elseif ($filterStatus === 'PREPARING') {
     $where .= " AND o.order_status IN ('CONFIRMED', 'COOKING')";
 } elseif ($filterStatus === 'COOKING') {
@@ -273,6 +276,10 @@ if (!empty($orders)) {
       <a href="<?= ADMIN_URL ?>/orders.php?status=LIVE<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'LIVE') ? 'btn-dark' : 'btn-light border' ?>">
         ⚡ Live Active (<span id="ordersLiveCount"><?= $cntLive ?></span>)
+      </a>
+      <a href="<?= ADMIN_URL ?>/orders.php?status=SCHEDULED<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
+         class="btn btn-sm rounded-pill <?= ($filterStatus === 'SCHEDULED') ? 'text-white' : 'btn-light border' ?>" style="<?= ($filterStatus === 'SCHEDULED') ? 'background:#7C3AED; border-color:#7C3AED;' : '' ?>">
+        📅 Advance Scheduled (<span id="ordersScheduledCount"><?= $cntScheduled ?></span>)
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=PREPARING<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'PREPARING') ? 'btn-warning text-dark' : 'btn-light border' ?>">
@@ -494,12 +501,17 @@ if (!empty($orders)) {
 
                   <div class="d-flex flex-column gap-1">
                     <?php foreach ($items as $it): ?>
-                      <div class="d-flex align-items-center justify-content-between">
+                      <div class="d-flex align-items-start justify-content-between py-0.5">
                         <span class="text-truncate">
                           <span class="badge <?= $it['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 me-1" style="font-size:0.65rem;">
                             <?= (int)$it['quantity'] ?>x
                           </span>
                           <span class="text-dark fw-semibold"><?= e($it['item_name']) ?></span>
+                          <?php if (!empty($it['customizations'])): ?>
+                            <div class="text-muted ps-3 mt-0.5" style="font-size:0.68rem;">
+                              <i class="bi bi-sliders me-1 text-success"></i><?= e($it['customizations']) ?>
+                            </div>
+                          <?php endif; ?>
                         </span>
                         <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= format_inr($it['line_total']) ?></span>
                       </div>
@@ -564,12 +576,17 @@ if (!empty($orders)) {
                   </div>
                   <div class="d-flex flex-column gap-1">
                     <?php foreach ($items as $it): ?>
-                      <div class="d-flex align-items-center justify-content-between">
+                      <div class="d-flex align-items-start justify-content-between py-0.5">
                         <span class="text-truncate">
                           <span class="badge <?= $it['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 me-1" style="font-size:0.65rem;">
                             <?= (int)$it['quantity'] ?>x
                           </span>
                           <span class="text-dark"><?= e($it['item_name']) ?></span>
+                          <?php if (!empty($it['customizations'])): ?>
+                            <div class="text-muted ps-3 mt-0.5" style="font-size:0.68rem;">
+                              <i class="bi bi-sliders me-1 text-success"></i><?= e($it['customizations']) ?>
+                            </div>
+                          <?php endif; ?>
                         </span>
                         <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= format_inr($it['line_total']) ?></span>
                       </div>
@@ -763,6 +780,11 @@ if (!empty($orders)) {
                 <td>
                   <div class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$order['order_id'] ?></div>
                   <div class="small text-muted"><?= date('d M, h:i A', strtotime($order['placed_at'])) ?></div>
+                  <?php if (!empty($order['is_scheduled'])): ?>
+                    <span class="badge rounded-pill text-white mt-1 d-inline-block shadow-xs" style="background:#7C3AED; font-size:0.7rem; padding:3px 8px;">
+                      <i class="bi bi-calendar2-check-fill me-1"></i> <?= e($order['scheduled_slot'] ?: ('Scheduled: ' . date('d M, h:i A', strtotime($order['scheduled_for'])))) ?>
+                    </span>
+                  <?php endif; ?>
                   <?php if (!empty($order['delivery_otp'])): ?>
                     <span class="delivery-otp-pill mt-1" style="font-size:0.75rem; padding:2px 6px;">OTP: <?= e($order['delivery_otp']) ?></span>
                   <?php endif; ?>
@@ -794,6 +816,11 @@ if (!empty($orders)) {
                           <?= (int)$it['quantity'] ?>x
                         </span>
                         <span><?= e($it['item_name']) ?></span>
+                        <?php if (!empty($it['customizations'])): ?>
+                          <div class="text-muted" style="font-size:0.65rem; padding-left:18px;">
+                            <i class="bi bi-sliders me-1 text-success"></i><?= e($it['customizations']) ?>
+                          </div>
+                        <?php endif; ?>
                       </div>
                     <?php endforeach; ?>
                   </div>
@@ -901,6 +928,19 @@ if (!empty($orders)) {
 
           <div class="modal-body p-4">
             
+            <?php if (!empty($order['is_scheduled'])): ?>
+              <div class="p-3 rounded-3 mb-3" style="background:#FAF5FF; border:1px solid #E9D5FF; color:#581C87;">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <i class="bi bi-calendar2-check-fill text-purple"></i>
+                  <strong>Advance Scheduled Meal Order</strong>
+                </div>
+                <div class="small">
+                  Scheduled Slot: <strong><?= e($order['scheduled_slot'] ?: 'Custom Slot') ?></strong>
+                  <br>Target Delivery: <strong class="font-mono"><?= date('d-M-Y h:i A', strtotime($order['scheduled_for'])) ?></strong>
+                </div>
+              </div>
+            <?php endif; ?>
+
             <div class="row g-3 mb-3">
               <div class="col-6">
                 <label class="form-label small fw-bold text-muted">Current Lifecycle Status</label>

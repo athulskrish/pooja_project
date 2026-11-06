@@ -155,10 +155,18 @@ function updateCartBadge() {
 /**
  * Add or Increment Item in Cart
  */
-function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods', imageUrl = '') {
+function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods', imageUrl = '', skipCustomizationModal = false) {
   sessionStorage.removeItem('dismiss_cart_bar');
-  const existingItem = cart.find(item => item.id == id);
-  const resolvedImg = imageUrl || (existingItem && existingItem.imageUrl) || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+  const numId = Number(id) || id;
+
+  // Intercept customizable dishes to open customization modal
+  if (!skipCustomizationModal && window.DISH_CUSTOMIZABLE_IDS && window.DISH_CUSTOMIZABLE_IDS.includes(numId)) {
+    openCustomizationModal(numId, name, price, isVeg, imageUrl, restaurant);
+    return;
+  }
+
+  const existingItem = cart.find(item => item.id == numId && (!item.cartItemId || item.cartItemId == String(numId)));
+  const resolvedImg = imageUrl || (existingItem && existingItem.imageUrl) || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[numId]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
 
   if (existingItem) {
     existingItem.qty += 1;
@@ -167,13 +175,17 @@ function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods', imageUr
     }
   } else {
     cart.push({
-      id: Number(id) || id,
+      cartItemId: String(numId),
+      id: numId,
       name: name,
+      basePrice: Number(price),
       price: Number(price),
       isVeg: Boolean(isVeg && isVeg !== '0' && isVeg !== 'false'),
       restaurant,
       imageUrl: resolvedImg,
-      qty: 1
+      qty: 1,
+      customizations: [],
+      customizationText: ''
     });
   }
   saveCart();
@@ -181,10 +193,21 @@ function addToCart(id, name, price, isVeg, restaurant = 'Meghana Foods', imageUr
 }
 
 /**
- * Decrement or Remove Item from Cart
+ * Increment Cart Item Quantity (Supports Unique Customized Entries)
  */
-function decrementCartItem(id) {
-  const itemIndex = cart.findIndex(item => item.id == id);
+function incrementCartItem(cartKey) {
+  const item = cart.find(it => (it.cartItemId && it.cartItemId == cartKey) || it.id == cartKey);
+  if (item) {
+    item.qty += 1;
+    saveCart();
+  }
+}
+
+/**
+ * Decrement or Remove Item from Cart (Supports Unique Customized Entries)
+ */
+function decrementCartItem(cartKey) {
+  const itemIndex = cart.findIndex(it => (it.cartItemId && it.cartItemId == cartKey) || it.id == cartKey);
   if (itemIndex > -1) {
     if (cart[itemIndex].qty > 1) {
       cart[itemIndex].qty -= 1;
@@ -200,10 +223,310 @@ function decrementCartItem(id) {
 /**
  * Remove Item Completely
  */
-function removeCartItem(id) {
-  cart = cart.filter(item => item.id != id);
+function removeCartItem(cartKey) {
+  cart = cart.filter(it => !((it.cartItemId && it.cartItemId == cartKey) || it.id == cartKey));
   saveCart();
   showToast('Item removed from cart');
+}
+
+/**
+ * Add Customized Dish with Selected Options to Cart
+ */
+function addCustomizedItemToCart(dishId, name, basePrice, isVeg, restaurant, imageUrl, selectedCustomizations, customizationSummary) {
+  sessionStorage.removeItem('dismiss_cart_bar');
+  const numId = Number(dishId) || dishId;
+  const resolvedImg = imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[numId]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+
+  // Compute add-on costs
+  const addonCost = (selectedCustomizations || []).reduce((sum, opt) => sum + Number(opt.price || 0), 0);
+  const finalUnitPrice = Math.round((Number(basePrice) + addonCost) * 100) / 100;
+
+  // Generate deterministic unique key based on selected option IDs
+  const optKey = (selectedCustomizations || []).map(o => o.optionId).sort().join('-');
+  const cartItemId = optKey ? `${numId}_cust_${optKey}` : String(numId);
+
+  const existingItem = cart.find(item => item.cartItemId === cartItemId);
+
+  if (existingItem) {
+    existingItem.qty += 1;
+  } else {
+    cart.push({
+      cartItemId: cartItemId,
+      id: numId,
+      name: name,
+      basePrice: Number(basePrice),
+      price: finalUnitPrice,
+      isVeg: Boolean(isVeg && isVeg !== '0' && isVeg !== 'false'),
+      restaurant: restaurant || 'Meghana Foods',
+      imageUrl: resolvedImg,
+      qty: 1,
+      customizations: selectedCustomizations || [],
+      customizationText: customizationSummary || ''
+    });
+  }
+
+  saveCart();
+  showToast(`Added "${name}" with customisations to cart!`);
+
+  // Auto-open cart drawer
+  const drawerEl = document.getElementById('cartDrawer');
+  if (drawerEl && typeof bootstrap !== 'undefined') {
+    const bsDrawer = bootstrap.Offcanvas.getOrCreateInstance(drawerEl);
+    bsDrawer.show();
+  }
+}
+
+/**
+ * Modal State Tracking
+ */
+let currentModalDish = null;
+let currentModalGroups = [];
+
+/**
+ * Open Dish Customisation Modal
+ */
+function openCustomizationModal(dishId, name, basePrice, isVeg, imageUrl, restaurant = 'Meghana Foods') {
+  const modalEl = document.getElementById('customizationModal');
+  if (!modalEl) {
+    addToCart(dishId, name, basePrice, isVeg, restaurant, imageUrl, true);
+    return;
+  }
+
+  const resolvedImg = imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[dishId]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+  const isVegBool = Boolean(isVeg && isVeg !== '0' && isVeg !== 'false');
+
+  currentModalDish = {
+    id: dishId,
+    name: name,
+    basePrice: Number(basePrice),
+    isVeg: isVegBool,
+    imageUrl: resolvedImg,
+    restaurant: restaurant
+  };
+
+  document.getElementById('custModalDishName').textContent = name;
+  document.getElementById('custModalDishImg').src = resolvedImg;
+  document.getElementById('custModalVegDot').style.background = isVegBool ? '#229947' : '#D32F2F';
+  document.getElementById('custModalDietBadge').textContent = isVegBool ? 'PURE VEG' : 'NON-VEG';
+  document.getElementById('custModalDietBadge').className = isVegBool ? 'badge bg-success-subtle text-success border border-success-subtle' : 'badge bg-danger-subtle text-danger border border-danger-subtle';
+  document.getElementById('custModalBasePrice').textContent = 'Base Price: ₹' + Number(basePrice).toFixed(2);
+  document.getElementById('custModalTotalPrice').textContent = '₹' + Number(basePrice).toFixed(2);
+
+  document.getElementById('custModalLoading').style.display = 'block';
+  document.getElementById('custModalGroupsContainer').style.display = 'none';
+  document.getElementById('custModalGroupsContainer').innerHTML = '';
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  // Wire up Add to Cart Button in Modal
+  const addBtn = document.getElementById('custModalAddToCartBtn');
+  addBtn.onclick = function() {
+    handleCustomizationModalSubmit(modal);
+  };
+
+  // Fetch groups and options via AJAX
+  const customerUrl = window.ZIPPY_CUSTOMER_URL || (window.location.origin + '/customer');
+  fetch(customerUrl + '/ajax/get-dish-customizations.php?item_id=' + encodeURIComponent(dishId))
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('custModalLoading').style.display = 'none';
+
+      if (!data.success || !data.has_customizations || !data.groups || data.groups.length === 0) {
+        modal.hide();
+        addToCart(dishId, name, basePrice, isVegBool, restaurant, resolvedImg, true);
+        return;
+      }
+
+      if (data.dish && data.dish.category_name) {
+        document.getElementById('custModalCategory').textContent = data.dish.category_name;
+      }
+
+      currentModalGroups = data.groups;
+      renderCustomizationModalGroups(data.groups);
+      document.getElementById('custModalGroupsContainer').style.display = 'block';
+      updateCustomizationModalPrice();
+    })
+    .catch(err => {
+      console.error('Failed to load customizations:', err);
+      document.getElementById('custModalLoading').innerHTML = '<div class="alert alert-warning py-2 small mb-0">Adding standard dish...</div>';
+      setTimeout(() => {
+        modal.hide();
+        addToCart(dishId, name, basePrice, isVegBool, restaurant, resolvedImg, true);
+      }, 700);
+    });
+}
+
+/**
+ * Render Customisation Groups inside Modal
+ */
+function renderCustomizationModalGroups(groups) {
+  const container = document.getElementById('custModalGroupsContainer');
+  if (!container) return;
+
+  let html = '';
+  groups.forEach((group, gIdx) => {
+    const isRadio = (group.selection_type === 'radio');
+    const isRequired = (group.is_required == 1);
+
+    html += `
+      <div class="custom-group-block mb-4 p-3 rounded-3 border bg-light-subtle">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="d-flex align-items-center gap-2">
+            <h6 class="fw-bold mb-0 text-dark" style="font-size: 0.95rem;">${group.group_name}</h6>
+            ${isRequired ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill" style="font-size:0.6rem;">REQUIRED</span>' : '<span class="badge bg-secondary-subtle text-secondary rounded-pill" style="font-size:0.6rem;">OPTIONAL</span>'}
+          </div>
+          <span class="small text-muted" style="font-size:0.75rem;">
+            ${isRadio ? 'Choose 1' : 'Choose any'}
+          </span>
+        </div>
+        <div class="custom-options-list d-flex flex-column gap-2 mt-2">
+    `;
+
+    group.options.forEach((opt, oIdx) => {
+      const inputId = `cust_input_${group.group_id}_${opt.option_id}`;
+      const isDefault = (opt.is_default == 1);
+      const isChecked = isDefault;
+
+      const priceVal = Number(opt.price || 0);
+      const priceText = priceVal > 0 ? `+₹${priceVal.toFixed(2)}` : 'Free';
+      const priceClass = priceVal > 0 ? 'text-forest fw-bold' : 'text-muted';
+
+      html += `
+        <label class="form-check custom-option-card p-2 px-3 rounded-3 bg-white border d-flex align-items-center justify-content-between m-0" for="${inputId}" style="cursor: pointer; transition: all 0.15s ease;">
+          <div class="d-flex align-items-center gap-2">
+            <input class="form-check-input cust-input m-0" 
+                   type="${isRadio ? 'radio' : 'checkbox'}" 
+                   name="cust_group_${group.group_id}" 
+                   id="${inputId}" 
+                   value="${opt.option_id}"
+                   data-group-id="${group.group_id}"
+                   data-group-name="${group.group_name.replace(/"/g, '&quot;')}"
+                   data-option-id="${opt.option_id}"
+                   data-option-name="${opt.option_name.replace(/"/g, '&quot;')}"
+                   data-price="${priceVal}"
+                   ${isChecked ? 'checked' : ''}
+                   onchange="updateCustomizationModalPrice()">
+            <span class="small fw-semibold text-dark">${opt.option_name}</span>
+          </div>
+          <span class="small ${priceClass}">${priceText}</span>
+        </label>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  // Ensure every required radio group has at least 1 radio checked
+  groups.forEach(group => {
+    if (group.selection_type === 'radio' && group.is_required == 1) {
+      const radios = container.querySelectorAll(`input[name="cust_group_${group.group_id}"]`);
+      const anyChecked = Array.from(radios).some(r => r.checked);
+      if (!anyChecked && radios.length > 0) {
+        radios[0].checked = true;
+      }
+    }
+  });
+}
+
+/**
+ * Dynamic Live Price Recalculation inside Customisation Modal
+ */
+function updateCustomizationModalPrice() {
+  if (!currentModalDish) return;
+
+  const container = document.getElementById('custModalGroupsContainer');
+  if (!container) return;
+
+  let addonSum = 0;
+  const checkedInputs = container.querySelectorAll('.cust-input:checked');
+  checkedInputs.forEach(inp => {
+    addonSum += Number(inp.dataset.price || 0);
+  });
+
+  const total = Math.round((currentModalDish.basePrice + addonSum) * 100) / 100;
+  const totalEl = document.getElementById('custModalTotalPrice');
+  if (totalEl) {
+    totalEl.textContent = '₹' + total.toFixed(2);
+  }
+
+  // Check required groups validation
+  let allRequiredMet = true;
+  currentModalGroups.forEach(grp => {
+    if (grp.is_required == 1) {
+      const inputs = container.querySelectorAll(`input[name="cust_group_${grp.group_id}"]:checked`);
+      if (inputs.length === 0) {
+        allRequiredMet = false;
+      }
+    }
+  });
+
+  const addBtn = document.getElementById('custModalAddToCartBtn');
+  if (addBtn) {
+    if (allRequiredMet) {
+      addBtn.disabled = false;
+      addBtn.innerHTML = `<i class="bi bi-bag-plus me-1"></i> Add to Cart • ₹${total.toFixed(2)}`;
+    } else {
+      addBtn.disabled = true;
+      addBtn.innerHTML = `Please select required choices`;
+    }
+  }
+}
+
+/**
+ * Handle Add to Cart submission from Customisation Modal
+ */
+function handleCustomizationModalSubmit(modalInstance) {
+  if (!currentModalDish) return;
+
+  const container = document.getElementById('custModalGroupsContainer');
+  if (!container) return;
+
+  const checkedInputs = container.querySelectorAll('.cust-input:checked');
+  const selectedOptions = [];
+  const summaryParts = [];
+
+  checkedInputs.forEach(inp => {
+    const optId = Number(inp.dataset.optionId);
+    const grpName = inp.dataset.groupName;
+    const optName = inp.dataset.optionName;
+    const price = Number(inp.dataset.price || 0);
+
+    selectedOptions.push({
+      optionId: optId,
+      groupId: Number(inp.dataset.groupId),
+      groupName: grpName,
+      optionName: optName,
+      price: price
+    });
+
+    const priceTag = price > 0 ? ` (+₹${price.toFixed(2)})` : '';
+    summaryParts.push(`${optName}${priceTag}`);
+  });
+
+  const summaryText = summaryParts.join(', ');
+
+  // Hide modal
+  if (modalInstance) {
+    modalInstance.hide();
+  }
+
+  // Add customized item to cart
+  addCustomizedItemToCart(
+    currentModalDish.id,
+    currentModalDish.name,
+    currentModalDish.basePrice,
+    currentModalDish.isVeg,
+    currentModalDish.restaurant,
+    currentModalDish.imageUrl,
+    selectedOptions,
+    summaryText
+  );
 }
 
 /**
@@ -216,6 +539,111 @@ function clearCart() {
   activeCoupon = null;
   saveCart();
   showToast('Cart cleared');
+}
+
+/**
+ * 1-Click / 1-Tap Reorder Function
+ * Adds order dishes directly into localStorage & in-memory cart,
+ * recalculates totals, updates UI badges, shows a celebratory toast,
+ * and opens the cart drawer or navigates directly to checkout.
+ *
+ * @param {Array} items - Array of item objects {id, name, price, isVeg, restaurant, imageUrl, qty}
+ * @param {number|string} orderId - Previous order ID
+ * @param {boolean} [directToCheckout=false] - If true, immediately routes to checkout page
+ * @param {HTMLElement} [btnElement=null] - Optional triggering button for loading spinner
+ */
+function oneTapReorderMeal(items, orderId, directToCheckout = false, btnElement = null) {
+  if (!items || !items.length) {
+    if (typeof showToast === 'function') {
+      showToast('No items found in this order to reorder.', 'warning');
+    }
+    return;
+  }
+
+  // Visual loading feedback if triggered by a button
+  let originalHtml = '';
+  if (btnElement && btnElement instanceof HTMLElement) {
+    originalHtml = btnElement.innerHTML;
+    btnElement.disabled = true;
+    btnElement.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Adding...`;
+  }
+
+  // Ensure cart is initialized from localStorage
+  try {
+    cart = JSON.parse(localStorage.getItem('pooja_zippy_cart')) || [];
+  } catch (e) {
+    cart = [];
+  }
+
+  let totalItemsAdded = 0;
+  items.forEach(it => {
+    const dishId = Number(it.id);
+    const qtyToAdd = Number(it.qty || 1);
+    const existingIndex = cart.findIndex(c => Number(c.id) === dishId);
+    const resolvedImg = it.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[dishId]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+
+    if (existingIndex > -1) {
+      cart[existingIndex].qty += qtyToAdd;
+      if (!cart[existingIndex].imageUrl && resolvedImg) {
+        cart[existingIndex].imageUrl = resolvedImg;
+      }
+    } else {
+      cart.push({
+        id: dishId,
+        name: it.name,
+        price: Number(it.price),
+        isVeg: Boolean(it.isVeg),
+        restaurant: it.restaurant || 'Meghana Foods',
+        imageUrl: resolvedImg,
+        qty: qtyToAdd
+      });
+    }
+    totalItemsAdded += qtyToAdd;
+  });
+
+  // Save to persistent storage and update client UI
+  saveCart();
+
+  // Reset button loading state after brief feedback
+  if (btnElement && originalHtml) {
+    setTimeout(() => {
+      btnElement.disabled = false;
+      btnElement.innerHTML = originalHtml;
+    }, 700);
+  }
+
+  if (directToCheckout) {
+    if (typeof showToast === 'function') {
+      showToast(`Order #ZIP-${orderId} reordered! Redirecting to checkout... 🚀`, 'success');
+    }
+    const checkoutUrl = (window.CUSTOMER_URL || (window.location.origin + (window.location.pathname.includes('/customer') ? '/customer' : ''))) + '/checkout.php';
+    setTimeout(() => {
+      window.location.href = checkoutUrl;
+    }, 400);
+    return;
+  }
+
+  // Normal 1-tap reorder: show toast and reveal cart drawer
+  if (typeof showToast === 'function') {
+    showToast(`Previous meal (#ZIP-${orderId}) reordered! Added ${totalItemsAdded} item${totalItemsAdded > 1 ? 's' : ''} to cart 🎉`, 'success');
+  }
+
+  // If on cart.php, trigger dedicated cart refresh
+  if (typeof renderDedicatedCart === 'function') {
+    renderDedicatedCart();
+  }
+
+  // Open offcanvas cart drawer
+  const drawerEl = document.getElementById('cartDrawer');
+  if (drawerEl && typeof bootstrap !== 'undefined') {
+    const bsDrawer = bootstrap.Offcanvas.getOrCreateInstance(drawerEl);
+    bsDrawer.show();
+  }
+}
+
+// Global alias for compatibility
+function reorderItems(items, orderId) {
+  oneTapReorderMeal(items, orderId, false, null);
 }
 
 /**
@@ -310,6 +738,12 @@ function renderCartDrawer() {
     const safeName = (item.name || '').replace(/'/g, "\\'");
     const itemImg = item.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
     const itemTotal = (Number(item.price) * Number(item.qty)).toFixed(2);
+    const cartKey = item.cartItemId || item.id;
+    const customBadge = item.customizationText ? `
+      <div class="small text-muted text-truncate mt-1" style="font-size: 0.75rem; max-width: 170px;" title="${item.customizationText}">
+        <i class="bi bi-sliders2 me-1 text-success"></i>${item.customizationText}
+      </div>` : '';
+
     html += `
       <div class="cart-item-card p-2 p-sm-3 rounded-3 border bg-white d-flex align-items-center justify-content-between gap-2 shadow-sm mb-2">
         <div class="d-flex align-items-center gap-2 overflow-hidden">
@@ -320,15 +754,16 @@ function renderCartDrawer() {
           <div class="overflow-hidden">
             <h6 class="mb-0 fw-bold text-dark text-truncate" style="font-size: 0.92rem;" title="${item.name}">${item.name}</h6>
             <span class="text-muted small">₹${Number(item.price).toFixed(2)} each</span>
+            ${customBadge}
           </div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
           <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
-            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${item.id}')" aria-label="Decrease quantity">
+            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${cartKey}')" aria-label="Decrease quantity">
               <i class="bi bi-dash"></i>
             </button>
             <span class="m3-stepper-qty">${item.qty}</span>
-            <button type="button" class="m3-stepper-btn" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}')" aria-label="Increase quantity">
+            <button type="button" class="m3-stepper-btn" onclick="incrementCartItem('${cartKey}')" aria-label="Increase quantity">
               <i class="bi bi-plus"></i>
             </button>
           </div>
@@ -431,20 +866,24 @@ function renderDishQtyControls() {
 
     if (!id || !name || !price) return;
 
-    const item = cart.find(c => c.id == id);
+    const isCustomizable = window.DISH_CUSTOMIZABLE_IDS && window.DISH_CUSTOMIZABLE_IDS.includes(Number(id));
+    const matchingItems = cart.filter(c => c.id == id);
+    const totalDishQty = matchingItems.reduce((s, it) => s + it.qty, 0);
     const safeName = (name || '').replace(/'/g, "\\'");
 
-    if (item && item.qty > 0) {
+    if (totalDishQty > 0) {
+      const lastItemKey = (matchingItems[matchingItems.length - 1] && matchingItems[matchingItems.length - 1].cartItemId) || id;
       wrap.innerHTML = `
         <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
-          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${id}')" aria-label="Decrease quantity">
+          <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${lastItemKey}')" aria-label="Decrease quantity">
             <i class="bi bi-dash"></i>
           </button>
-          <span class="m3-stepper-qty">${item.qty}</span>
+          <span class="m3-stepper-qty">${totalDishQty}</span>
           <button type="button" class="m3-stepper-btn" onclick="addToCart('${id}', '${safeName}', ${price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${imgUrl}')" aria-label="Increase quantity">
             <i class="bi bi-plus"></i>
           </button>
         </div>
+        ${isCustomizable ? '<div class="text-center text-muted" style="font-size:0.62rem; margin-top:2px;">Customised</div>' : ''}
       `;
     } else {
       wrap.innerHTML = `
@@ -455,6 +894,7 @@ function renderDishQtyControls() {
         >
           ADD <i class="bi bi-plus-lg ms-1"></i>
         </button>
+        ${isCustomizable ? '<div class="text-center text-success fw-medium" style="font-size:0.62rem; margin-top:2px;"><i class="bi bi-sliders me-1"></i>Customisable</div>' : ''}
       `;
     }
   });
@@ -510,6 +950,7 @@ function setupDietaryFilters() {
   if (dishesGrid && (vegBtn || healthyBtn)) {
     let vegActive = false;
     let healthyActive = false;
+    let activeMood = 'all';
     let activeCategorySlug = 'all';
     let searchQuery = '';
     let currentSort = 'recommended';
@@ -523,6 +964,7 @@ function setupDietaryFilters() {
         const isVeg = card.getAttribute('data-veg') === 'true';
         const isHealthy = card.getAttribute('data-healthy') === 'true';
         const cardCategory = (card.getAttribute('data-category') || '').trim().toLowerCase();
+        const cardMood = (card.getAttribute('data-mood') || '').trim().toLowerCase();
         const cardName = (card.getAttribute('data-name') || card.querySelector('.dish-title')?.textContent || '').toLowerCase();
         const cardDesc = (card.querySelector('.dish-desc-clamp')?.textContent || '').toLowerCase();
 
@@ -530,11 +972,21 @@ function setupDietaryFilters() {
         if (vegActive && !isVeg) show = false;
         if (healthyActive && !isHealthy) show = false;
         if (activeCategorySlug !== 'all' && cardCategory !== activeCategorySlug) show = false;
+        if (activeMood !== 'all') {
+          const moodList = cardMood.split(',').map(m => m.trim());
+          if (!moodList.includes(activeMood)) show = false;
+        }
         if (searchQuery && !cardName.includes(searchQuery) && !cardDesc.includes(searchQuery)) show = false;
 
         card.style.display = show ? 'block' : 'none';
         if (show) visibleCount++;
       });
+
+      // Update active mood banner count if visible
+      const countEl = document.getElementById('activeMoodBannerCount');
+      if (countEl) {
+        countEl.textContent = `${visibleCount} ${visibleCount === 1 ? 'Dish' : 'Dishes'} Available`;
+      }
 
       // Handle empty state message
       let emptyMsg = document.getElementById('dietaryEmptyStateMsg');
@@ -545,9 +997,9 @@ function setupDietaryFilters() {
           emptyMsg.className = 'col-12 text-center py-5';
           emptyMsg.innerHTML = `
             <div class="p-4 rounded-4 bg-light border d-inline-block text-center" style="max-width: 480px;">
-              <i class="fa-solid fa-leaf text-success fs-1 mb-2"></i>
-              <h5 class="fw-bold text-dark">No dishes match selected filters</h5>
-              <p class="text-muted small mb-3">Try disabling one of the filters or clearing the search box to see more delicious options.</p>
+              <i class="fa-solid fa-masks-theater text-warning fs-1 mb-2"></i>
+              <h5 class="fw-bold text-dark">No dishes match selected mood & filters</h5>
+              <p class="text-muted small mb-3">Try choosing another mood, disabling one of the filters, or clearing the search box to see more delicious options.</p>
               <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="resetAllStorefrontFilters()">Reset All Filters</button>
             </div>
           `;
@@ -562,7 +1014,7 @@ function setupDietaryFilters() {
       // Show or hide the quick "Clear Filters" button in toolbar
       const resetBtn = document.getElementById('resetStorefrontFiltersBtn');
       if (resetBtn) {
-        const isFiltered = vegActive || healthyActive || (activeCategorySlug !== 'all') || searchQuery.length > 0 || currentSort !== 'recommended';
+        const isFiltered = vegActive || healthyActive || (activeCategorySlug !== 'all') || (activeMood !== 'all') || searchQuery.length > 0 || currentSort !== 'recommended';
         resetBtn.style.display = isFiltered ? 'inline-block' : 'none';
       }
     }
@@ -695,9 +1147,95 @@ function setupDietaryFilters() {
       applyStorefrontDietaryFilters();
     };
 
+    // Mood-Based Food Selection Handler
+    window.filterByMood = function(mood, el, event) {
+      if (event) event.preventDefault();
+      activeMood = (mood || 'all').trim().toLowerCase();
+
+      // Highlight active mood card in #moodSection
+      document.querySelectorAll('.mood-card').forEach(card => {
+        if (card.getAttribute('data-mood-id') === activeMood) {
+          card.classList.add('active');
+        } else {
+          card.classList.remove('active');
+        }
+      });
+
+      const moodMeta = {
+        'all': { name: 'Mood: All', emoji: '🎭', image: '', title: 'All Moods', desc: 'Browse all delicious dishes' },
+        'comfort': { name: 'Mood: 🛋️ Comfort', emoji: '🛋️', image: '/assets/images/moods/comfort.jpg', title: 'Showing Comfort & Soul Food', desc: 'Warm, soulful curries, rich gravies & buttery breads to unwind & destress' },
+        'party': { name: 'Mood: 🎉 Party', emoji: '🎉', image: '/assets/images/moods/party.jpg', title: 'Showing Party & Celebration Feasts', desc: 'Royal aromatic biryanis & loaded gourmet feast burgers for celebrations' },
+        'healthy': { name: 'Mood: ⚡ Healthy', emoji: '⚡', image: '/assets/images/moods/healthy.jpg', title: 'Showing Energetic & Fit Meals', desc: 'Nutrient-dense superfoods, high-protein bowls & cold-pressed detox juices' },
+        'quick_bite': { name: 'Mood: 🍿 Quick Bites', emoji: '🍿', image: '/assets/images/moods/quick_bite.jpg', title: 'Showing Lazy & Quick Bites', desc: 'Crispy kathi rolls, quick snacks, dosas & sodas delivered in under 15 mins' },
+        'spicy': { name: 'Mood: 🔥 Fiery Spicy', emoji: '🔥', image: '/assets/images/moods/spicy.jpg', title: 'Showing Fiery & Spicy Adventures', desc: 'Authentic Andhra spices, fiery red chutneys & bold thrilling masalas' },
+        'sweet': { name: 'Mood: 💖 Sweet Craving', emoji: '💖', image: '/assets/images/moods/sweet.jpg', title: 'Showing Sweet Tooth Cravings', desc: 'Royal rasmalai, hot gulab jamun with rabri & chilled Alphonso mango lassi' }
+      };
+
+      const meta = moodMeta[activeMood] || moodMeta['all'];
+      const activeMoodFilterLabel = document.getElementById('activeMoodFilterLabel');
+      if (activeMoodFilterLabel) {
+        activeMoodFilterLabel.textContent = meta.name;
+      }
+
+      document.querySelectorAll('.mood-check').forEach(c => c.classList.add('d-none'));
+      const activeCheck = document.getElementById('check-mood-' + activeMood);
+      if (activeCheck) activeCheck.classList.remove('d-none');
+
+      // Banner Handling
+      const banner = document.getElementById('activeMoodBanner');
+      if (banner) {
+        if (activeMood === 'all') {
+          banner.style.display = 'none';
+        } else {
+          banner.style.display = 'flex';
+          const emojiEl = document.getElementById('activeMoodBannerEmoji');
+          const titleEl = document.getElementById('activeMoodBannerTitle');
+          const descEl = document.getElementById('activeMoodBannerDesc');
+          const imgEl = document.getElementById('activeMoodBannerImg');
+          if (emojiEl) emojiEl.textContent = meta.emoji;
+          if (titleEl) titleEl.textContent = meta.title;
+          if (descEl) descEl.textContent = meta.desc;
+          if (imgEl && meta.image) {
+            imgEl.src = (window.BASE_URL ? window.BASE_URL : '') + meta.image;
+          }
+        }
+      }
+
+      applyStorefrontDietaryFilters();
+
+      const dishesSec = document.getElementById('dishes');
+      if (dishesSec) {
+        dishesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    window.surpriseMyMood = function() {
+      const moods = ['comfort', 'party', 'healthy', 'quick_bite', 'spicy', 'sweet'];
+      const randomMood = moods[Math.floor(Math.random() * moods.length)];
+      const btn = document.getElementById('btnSurpriseMood');
+      if (btn) {
+        const origContent = btn.innerHTML;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span> Finding Vibe...`;
+        setTimeout(() => {
+          btn.innerHTML = origContent;
+          window.filterByMood(randomMood, null);
+        }, 300);
+      } else {
+        window.filterByMood(randomMood, null);
+      }
+    };
+
+    window.scrollToMoodSection = function() {
+      const moodSec = document.getElementById('moodSection');
+      if (moodSec) {
+        moodSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
     window.resetAllStorefrontFilters = function() {
       vegActive = false;
       healthyActive = false;
+      activeMood = 'all';
       activeCategorySlug = 'all';
       searchQuery = '';
       currentSort = 'recommended';
@@ -712,6 +1250,16 @@ function setupDietaryFilters() {
         badge.style.display = 'none';
         badge.textContent = '';
       }
+
+      const activeMoodFilterLabel = document.getElementById('activeMoodFilterLabel');
+      if (activeMoodFilterLabel) activeMoodFilterLabel.textContent = 'Mood: All';
+
+      const banner = document.getElementById('activeMoodBanner');
+      if (banner) banner.style.display = 'none';
+
+      document.querySelectorAll('.mood-card').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.mood-check').forEach(c => c.classList.add('d-none'));
+      document.getElementById('check-mood-all')?.classList.remove('d-none');
 
       const sortLabel = document.getElementById('sortLabel');
       if (sortLabel) sortLabel.textContent = 'Sort: Recommended';
@@ -797,14 +1345,16 @@ function setupDietaryFilters() {
     }
   };
 
-  // 2. Restaurant Page Switches (#vegOnlySwitch & #healthyOnlySwitch)
+  // 2. Restaurant Page Switches (#vegOnlySwitch, #healthyOnlySwitch & #restaurantMoodSelect)
   const vegSwitch = document.getElementById('vegOnlySwitch');
   const healthySwitch = document.getElementById('healthyOnlySwitch');
+  const moodSelect = document.getElementById('restaurantMoodSelect');
 
-  if (vegSwitch || healthySwitch) {
+  if (vegSwitch || healthySwitch || moodSelect) {
     function applyRestaurantFilters() {
       const isVegOnly = vegSwitch ? vegSwitch.checked : false;
       const isHealthyOnly = healthySwitch ? healthySwitch.checked : false;
+      const selectedMood = (moodSelect ? moodSelect.value : 'all').trim().toLowerCase();
 
       const categoryBlocks = document.querySelectorAll('.category-menu-block');
       categoryBlocks.forEach(block => {
@@ -814,10 +1364,15 @@ function setupDietaryFilters() {
         dishRows.forEach(row => {
           const isVeg = (row.getAttribute('data-is-veg') === 'true' || row.getAttribute('data-veg') === 'true');
           const isHealthy = row.getAttribute('data-healthy') === 'true';
+          const rowMood = (row.getAttribute('data-mood') || '').trim().toLowerCase();
 
           let show = true;
           if (isVegOnly && !isVeg) show = false;
           if (isHealthyOnly && !isHealthy) show = false;
+          if (selectedMood !== 'all') {
+            const moodList = rowMood.split(',').map(m => m.trim());
+            if (!moodList.includes(selectedMood)) show = false;
+          }
 
           row.style.display = show ? 'flex' : 'none';
           if (show) blockVisibleCount++;
@@ -830,6 +1385,7 @@ function setupDietaryFilters() {
 
     if (vegSwitch) vegSwitch.addEventListener('change', applyRestaurantFilters);
     if (healthySwitch) healthySwitch.addEventListener('change', applyRestaurantFilters);
+    if (moodSelect) moodSelect.addEventListener('change', applyRestaurantFilters);
   }
 }
 
@@ -903,6 +1459,12 @@ function renderCheckoutPage() {
     const isVeg = (item.isVeg === true || item.isVeg === 1 || item.isVeg === '1' || item.isVeg === 'true');
     const safeName = (item.name || '').replace(/'/g, "\\'");
     const itemImg = item.imageUrl || (window.DISH_IMAGES_MAP && window.DISH_IMAGES_MAP[item.id]) || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
+    const cartKey = item.cartItemId || item.id;
+    const customBadge = item.customizationText ? `
+      <div class="small text-muted text-truncate mt-1" style="font-size: 0.75rem; max-width: 220px;" title="${item.customizationText}">
+        <i class="bi bi-sliders2 me-1 text-success"></i>${item.customizationText}
+      </div>` : '';
+
     itemsHtml += `
       <div class="d-flex align-items-center justify-content-between py-2 border-bottom">
         <div class="d-flex align-items-center gap-2">
@@ -913,15 +1475,16 @@ function renderCheckoutPage() {
           <div>
             <h6 class="mb-0 fw-bold small">${item.name}</h6>
             <span class="text-muted" style="font-size: 0.75rem;">₹${Number(item.price).toFixed(2)} each</span>
+            ${customBadge}
           </div>
         </div>
         <div class="d-flex align-items-center gap-3">
           <div class="m3-stepper-control rounded-pill shadow-sm" role="group">
-            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${item.id}')" aria-label="Decrease quantity">
+            <button type="button" class="m3-stepper-btn" onclick="decrementCartItem('${cartKey}')" aria-label="Decrease quantity">
               <i class="bi bi-dash"></i>
             </button>
             <span class="m3-stepper-qty">${item.qty}</span>
-            <button type="button" class="m3-stepper-btn" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${isVeg ? 1 : 0}, 'Meghana Foods', '${itemImg}')" aria-label="Increase quantity">
+            <button type="button" class="m3-stepper-btn" onclick="incrementCartItem('${cartKey}')" aria-label="Increase quantity">
               <i class="bi bi-plus"></i>
             </button>
           </div>
@@ -1251,17 +1814,45 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
   fetch(apiUrl)
     .then(res => res.json())
     .then(data => {
-      if (data && data.success && data.reviews) {
-        if (data.reviews.length === 0) {
+      if (data && data.success) {
+        // Update dimension feedback breakdown meters
+        if (data.dimensions) {
+          const appVal = Number(data.dimensions.appearance || 4.8);
+          const tasteVal = Number(data.dimensions.taste || 4.9);
+          const portVal = Number(data.dimensions.portion || 4.7);
+          const valVal = Number(data.dimensions.value || 4.8);
+
+          const appEl = document.getElementById('dishDimAppearance');
+          const tasteEl = document.getElementById('dishDimTaste');
+          const portEl = document.getElementById('dishDimPortion');
+          const valEl = document.getElementById('dishDimValue');
+
+          if (appEl) appEl.textContent = `${appVal.toFixed(1)} ★`;
+          if (tasteEl) tasteEl.textContent = `${tasteVal.toFixed(1)} ★`;
+          if (portEl) portEl.textContent = `${portVal.toFixed(1)} ★`;
+          if (valEl) valEl.textContent = `${valVal.toFixed(1)} ★`;
+
+          const appB = document.getElementById('dishDimBarAppearance');
+          const tasteB = document.getElementById('dishDimBarTaste');
+          const portB = document.getElementById('dishDimBarPortion');
+          const valB = document.getElementById('dishDimBarValue');
+
+          if (appB) appB.style.width = `${Math.min(100, Math.round((appVal / 5) * 100))}%`;
+          if (tasteB) tasteB.style.width = `${Math.min(100, Math.round((tasteVal / 5) * 100))}%`;
+          if (portB) portB.style.width = `${Math.min(100, Math.round((portVal / 5) * 100))}%`;
+          if (valB) valB.style.width = `${Math.min(100, Math.round((valVal / 5) * 100))}%`;
+        }
+
+        if (data.reviews && data.reviews.length === 0) {
           reviewsFeed.innerHTML = `
             <div class="text-center py-4 text-muted bg-light rounded-3">
               <i class="bi bi-chat-heart fs-2 d-block mb-2 text-secondary opacity-50"></i>
               <div class="fw-bold small">No reviews yet for this dish</div>
-              <div class="small text-muted mb-2">Be the first to rate this food and share your experience! ⭐</div>
+              <div class="small text-muted mb-2">Be the first to rate this food on Appearance, Taste, Portion & Value! ⭐</div>
               <button class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="toggleDishReviewForm()">Write First Review</button>
             </div>
           `;
-        } else {
+        } else if (data.reviews) {
           let html = '';
           data.reviews.forEach(rev => {
             let stars = '';
@@ -1271,9 +1862,32 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
             const tagsHtml = (rev.tags || []).map(t => `<span class="badge bg-light text-forest border px-2 py-0" style="font-size:0.65rem;">${t}</span>`).join(' ');
             const initial = (rev.customer_name || 'F').charAt(0).toUpperCase();
 
+            // 4-Dimension Feedback Pills
+            const appRate = rev.appearance_rating || rev.rating || 5;
+            const tasteRate = rev.taste_rating || rev.rating || 5;
+            const portRate = rev.portion_rating || rev.rating || 5;
+            const valRate = rev.value_rating || rev.rating || 5;
+
+            const dimsHtml = `
+              <div class="d-flex flex-wrap gap-1 my-2">
+                <span class="badge bg-light text-dark border px-2 py-1" style="font-size:0.68rem;" title="Visual Presentation">
+                  <i class="bi bi-eye text-primary me-1"></i>Appearance: <strong>${appRate}★</strong>
+                </span>
+                <span class="badge bg-light text-dark border px-2 py-1" style="font-size:0.68rem;" title="Flavor & Deliciousness">
+                  <i class="bi bi-fire text-danger me-1"></i>Taste: <strong>${tasteRate}★</strong>
+                </span>
+                <span class="badge bg-light text-dark border px-2 py-1" style="font-size:0.68rem;" title="Portion Adequacy">
+                  <i class="bi bi-pie-chart text-warning me-1"></i>Portion: <strong>${portRate}★</strong>
+                </span>
+                <span class="badge bg-light text-dark border px-2 py-1" style="font-size:0.68rem;" title="Value for Price">
+                  <i class="bi bi-tag text-success me-1"></i>Value: <strong>${valRate}★</strong>
+                </span>
+              </div>
+            `;
+
             html += `
               <div class="card border rounded-3 p-3 bg-white shadow-none">
-                <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="d-flex justify-content-between align-items-start mb-1">
                   <div class="d-flex align-items-center gap-2">
                     <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold" style="width:34px; height:34px; background:#2E6F40; font-size:0.85rem;">
                       ${initial}
@@ -1287,6 +1901,7 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
                     ${stars}
                   </div>
                 </div>
+                ${dimsHtml}
                 ${tagsHtml ? `<div class="d-flex flex-wrap gap-1 mb-2">${tagsHtml}</div>` : ''}
                 <p class="small text-muted mb-0 font-italic">"${rev.review_text || 'Amazing and delicious meal! ⭐⭐⭐⭐⭐'}"</p>
               </div>
@@ -1326,38 +1941,82 @@ window.toggleDishReviewForm = function() {
 };
 
 function initInlineStarClickers() {
-  const container = document.getElementById('inlineModalStars');
-  const ratingInput = document.getElementById('inlineDishRating');
-  const label = document.getElementById('inlineRatingLabel');
-  if (!container) return;
+  const dimensions = ['appearance', 'taste', 'portion', 'value'];
+  
+  dimensions.forEach(dim => {
+    const container = document.getElementById('dimStars_' + dim);
+    const input = document.getElementById('inlineDish' + dim.charAt(0).toUpperCase() + dim.slice(1));
+    const label = document.getElementById('dimLabel_' + dim);
+    if (!container) return;
 
-  const stars = container.querySelectorAll('.inline-star');
-  stars.forEach(star => {
-    star.addEventListener('click', function() {
-      const val = parseInt(this.getAttribute('data-val'), 10);
-      if (ratingInput) ratingInput.value = val;
-      if (label) label.textContent = `${val} Star${val > 1 ? 's' : ''} ⭐`;
+    const stars = container.querySelectorAll('.inline-dim-star');
+    stars.forEach(star => {
+      star.addEventListener('click', function() {
+        const val = parseInt(this.getAttribute('data-val'), 10);
+        if (input) input.value = val;
+        if (label) label.textContent = `${val}.0 ★`;
 
-      stars.forEach(s => {
-        const sVal = parseInt(s.getAttribute('data-val'), 10);
-        if (sVal <= val) {
-          s.classList.remove('bi-star');
-          s.classList.add('bi-star-fill', 'text-warning');
-          s.style.color = '#FFB800';
-        } else {
-          s.classList.remove('bi-star-fill', 'text-warning');
-          s.classList.add('bi-star');
-          s.style.color = '#D1D5DB';
-        }
+        stars.forEach(s => {
+          const sVal = parseInt(s.getAttribute('data-val'), 10);
+          if (sVal <= val) {
+            s.classList.remove('bi-star');
+            s.classList.add('bi-star-fill', 'text-warning');
+            s.style.color = '#FFB800';
+          } else {
+            s.classList.remove('bi-star-fill', 'text-warning');
+            s.classList.add('bi-star');
+            s.style.color = '#D1D5DB';
+          }
+        });
+
+        // Compute overall average rating across the 4 dimensions
+        const app = parseInt(document.getElementById('inlineDishAppearance')?.value || '5', 10);
+        const taste = parseInt(document.getElementById('inlineDishTaste')?.value || '5', 10);
+        const portion = parseInt(document.getElementById('inlineDishPortion')?.value || '5', 10);
+        const value = parseInt(document.getElementById('inlineDishValue')?.value || '5', 10);
+        const avg = Math.round((app + taste + portion + value) / 4);
+        const overallInput = document.getElementById('inlineDishRating');
+        if (overallInput) overallInput.value = avg;
       });
     });
   });
+
+  // Legacy single clicker support
+  const legacyContainer = document.getElementById('inlineModalStars');
+  if (legacyContainer) {
+    const legacyStars = legacyContainer.querySelectorAll('.inline-star');
+    const ratingInput = document.getElementById('inlineDishRating');
+    const label = document.getElementById('inlineRatingLabel');
+    legacyStars.forEach(star => {
+      star.addEventListener('click', function() {
+        const val = parseInt(this.getAttribute('data-val'), 10);
+        if (ratingInput) ratingInput.value = val;
+        if (label) label.textContent = `${val} Star${val > 1 ? 's' : ''} ⭐`;
+        legacyStars.forEach(s => {
+          const sVal = parseInt(s.getAttribute('data-val'), 10);
+          if (sVal <= val) {
+            s.classList.remove('bi-star');
+            s.classList.add('bi-star-fill', 'text-warning');
+            s.style.color = '#FFB800';
+          } else {
+            s.classList.remove('bi-star-fill', 'text-warning');
+            s.classList.add('bi-star');
+            s.style.color = '#D1D5DB';
+          }
+        });
+      });
+    });
+  }
 }
 
 window.submitInlineDishReview = function(e) {
   e.preventDefault();
   const dishId = document.getElementById('inlineDishId')?.value || 0;
   const rating = document.getElementById('inlineDishRating')?.value || 5;
+  const appearance = document.getElementById('inlineDishAppearance')?.value || rating;
+  const taste = document.getElementById('inlineDishTaste')?.value || rating;
+  const portion = document.getElementById('inlineDishPortion')?.value || rating;
+  const value = document.getElementById('inlineDishValue')?.value || rating;
   const reviewText = document.getElementById('inlineReviewText')?.value || '';
 
   if (!dishId) return;
@@ -1366,8 +2025,12 @@ window.submitInlineDishReview = function(e) {
   formData.append('action', 'submit_review');
   formData.append('dish_id', dishId);
   formData.append('rating', rating);
+  formData.append('appearance_rating', appearance);
+  formData.append('taste_rating', taste);
+  formData.append('portion_rating', portion);
+  formData.append('value_rating', value);
   formData.append('review_text', reviewText);
-  formData.append('tags', 'Verified Customer,Delicious');
+  formData.append('tags', 'Verified Customer,Delicious Taste,Generous Portion');
 
   const apiUrl = (typeof BASE_URL !== 'undefined' ? BASE_URL : '') + '/api/dish-reviews.php';
   fetch(apiUrl, {
@@ -1377,7 +2040,9 @@ window.submitInlineDishReview = function(e) {
   .then(res => res.json())
   .then(data => {
     if (data && data.success) {
-      if (typeof showToast === 'function') showToast('Thank you! Your ' + rating + '★ food review has been posted! ⭐');
+      if (typeof showToast === 'function') {
+        showToast(`Thank you! Your dish feedback (Appearance: ${appearance}★, Taste: ${taste}★, Portion: ${portion}★, Value: ${value}★) has been posted! ⭐`);
+      }
       const formBox = document.getElementById('dishReviewFormBox');
       if (formBox) formBox.style.display = 'none';
       window.openDishReviewsModal(dishId, document.getElementById('dishReviewsModalLabel')?.textContent || 'Food', data.rating, data.total_reviews);
@@ -1386,7 +2051,7 @@ window.submitInlineDishReview = function(e) {
     }
   })
   .catch(() => {
-    if (typeof showToast === 'function') showToast('Your ' + rating + '★ review was recorded! ⭐');
+    if (typeof showToast === 'function') showToast('Your dish feedback was recorded! ⭐');
     const formBox = document.getElementById('dishReviewFormBox');
     if (formBox) formBox.style.display = 'none';
   });

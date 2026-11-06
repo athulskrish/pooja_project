@@ -130,6 +130,13 @@ $liveOrdersCount = $orderKpis['live'];
           </a>
         </li>
 
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/dish-customizations.php" class="admin-nav-link <?= ($activePage === 'dish_customizations') ? 'active' : '' ?>">
+            <i class="bi bi-sliders2"></i>
+            <span>Dish Customisations</span>
+          </a>
+        </li>
+
         <li class="m3-nav-subheader">Insights</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/reports.php" class="admin-nav-link <?= ($activePage === 'reports') ? 'active' : '' ?>">
@@ -143,6 +150,13 @@ $liveOrdersCount = $orderKpis['live'];
           <a href="<?= ADMIN_URL ?>/categories.php" class="admin-nav-link <?= ($activePage === 'categories') ? 'active' : '' ?>">
             <i class="bi bi-tags"></i>
             <span>Categories</span>
+          </a>
+        </li>
+
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/moods.php" class="admin-nav-link <?= ($activePage === 'moods') ? 'active' : '' ?>">
+            <i class="fa-solid fa-masks-theater text-mint"></i>
+            <span>Food Moods</span>
           </a>
         </li>
 

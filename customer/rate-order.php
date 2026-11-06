@@ -48,6 +48,15 @@ $orderItems = $orderId ? db_fetch_all("
 // Check if review already exists
 $existingReview = $orderId ? db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]) : null;
 
+// Fetch any existing dish-level reviews for this order
+$existingDishReviews = [];
+if ($orderId) {
+    $dishRevRows = db_fetch_all("SELECT * FROM `dish_reviews` WHERE `order_id` = :oid", [':oid' => $orderId]);
+    foreach ($dishRevRows as $dr) {
+        $existingDishReviews[$dr['item_id']] = $dr;
+    }
+}
+
 $submitted = false;
 
 // Handle Review Submission
@@ -109,23 +118,63 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) 
                     ':comm' => $comments
                 ]);
 
-                // Cascade food rating to ordered items in dish_reviews
+                // Cascade and persist dish-level feedback (Appearance, Taste, Portion Size, Value)
                 if (!empty($orderItems)) {
                     foreach ($orderItems as $item) {
                         $itemId = (int)$item['item_id'];
-                        $itemRating = isset($_POST['dish_rating_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_rating_' . $itemId])) : $foodRating;
+                        $dishApp = isset($_POST['dish_appearance_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_appearance_' . $itemId])) : $foodRating;
+                        $dishTaste = isset($_POST['dish_taste_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_taste_' . $itemId])) : $foodRating;
+                        $dishPortion = isset($_POST['dish_portion_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_portion_' . $itemId])) : $foodRating;
+                        $dishValue = isset($_POST['dish_value_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_value_' . $itemId])) : $foodRating;
                         
-                        db_query("
-                            INSERT INTO `dish_reviews` (`item_id`, `order_id`, `user_id`, `rating`, `review_text`, `tags`)
-                            VALUES (:iid, :oid, :uid, :r, :t, :tags)
+                        $itemRating = isset($_POST['dish_rating_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_rating_' . $itemId])) : (int)round(($dishApp + $dishTaste + $dishPortion + $dishValue) / 4);
+
+                        // Check if review already exists for this dish in this order
+                        $existingDishRev = db_fetch_one("
+                            SELECT dish_review_id FROM `dish_reviews`
+                            WHERE `item_id` = :iid AND `order_id` = :oid AND `user_id` = :uid
                         ", [
                             ':iid' => $itemId,
                             ':oid' => $orderId,
-                            ':uid' => $userId,
-                            ':r' => $itemRating,
-                            ':t' => $comments,
-                            ':tags' => ''
+                            ':uid' => $userId
                         ]);
+
+                        if ($existingDishRev) {
+                            db_query("
+                                UPDATE `dish_reviews`
+                                SET `rating` = :r,
+                                    `appearance_rating` = :a,
+                                    `taste_rating` = :t,
+                                    `portion_rating` = :p,
+                                    `value_rating` = :v,
+                                    `review_text` = :txt
+                                WHERE `dish_review_id` = :drid
+                            ", [
+                                ':r' => $itemRating,
+                                ':a' => $dishApp,
+                                ':t' => $dishTaste,
+                                ':p' => $dishPortion,
+                                ':v' => $dishValue,
+                                ':txt' => $comments,
+                                ':drid' => $existingDishRev['dish_review_id']
+                            ]);
+                        } else {
+                            db_query("
+                                INSERT INTO `dish_reviews` (`item_id`, `order_id`, `user_id`, `rating`, `appearance_rating`, `taste_rating`, `portion_rating`, `value_rating`, `review_text`, `tags`)
+                                VALUES (:iid, :oid, :uid, :r, :a, :t, :p, :v, :txt, :tags)
+                            ", [
+                                ':iid' => $itemId,
+                                ':oid' => $orderId,
+                                ':uid' => $userId,
+                                ':r' => $itemRating,
+                                ':a' => $dishApp,
+                                ':t' => $dishTaste,
+                                ':p' => $dishPortion,
+                                ':v' => $dishValue,
+                                ':txt' => $comments,
+                                ':tags' => 'Order Verified'
+                            ]);
+                        }
 
                         // Recalculate average rating & total reviews
                         $stats = db_fetch_one("
@@ -352,6 +401,30 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
               <?php endif; ?>
 
+              <!-- Dish-Level Breakdown in Saved View -->
+              <?php if (!empty($orderItems) && !empty($existingDishReviews)): ?>
+                <div class="col-12 pt-3 border-top">
+                  <div class="small fw-bold text-muted text-uppercase mb-2" style="font-size:0.75rem; letter-spacing: 0.5px;">Dish-Level Feedback Breakdown</div>
+                  <div class="d-flex flex-column gap-2">
+                    <?php foreach ($orderItems as $item): 
+                      $iid = (int)$item['item_id'];
+                      $edr = $existingDishReviews[$iid] ?? null;
+                      if (!$edr) continue;
+                    ?>
+                      <div class="p-2 px-3 rounded-3 bg-white border d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div class="fw-semibold text-dark small"><?= e($item['item_name']) ?></div>
+                        <div class="d-flex flex-wrap gap-2 small">
+                          <span class="badge bg-light text-primary border"><i class="bi bi-eye me-1"></i>Appearance: <?= (int)$edr['appearance_rating'] ?>★</span>
+                          <span class="badge bg-light text-danger border"><i class="bi bi-fire me-1"></i>Taste: <?= (int)$edr['taste_rating'] ?>★</span>
+                          <span class="badge bg-light text-warning text-dark border"><i class="bi bi-pie-chart me-1"></i>Portion: <?= (int)$edr['portion_rating'] ?>★</span>
+                          <span class="badge bg-light text-success border"><i class="bi bi-tag me-1"></i>Value: <?= (int)$edr['value_rating'] ?>★</span>
+                        </div>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php endif; ?>
+
             </div>
           </div>
 
@@ -388,8 +461,8 @@ require_once __DIR__ . '/includes/header.php';
                     <i class="bi bi-egg-fried fs-5"></i>
                   </span>
                   <div>
-                    <div class="fw-bold text-dark font-outfit">Food Quality &amp; Taste</div>
-                    <div class="small text-muted" style="font-size: 0.8rem;">Taste, freshness, and packaging</div>
+                    <div class="fw-bold text-dark font-outfit">Overall Food Quality &amp; Taste</div>
+                    <div class="small text-muted" style="font-size: 0.8rem;">General culinary satisfaction and packaging</div>
                   </div>
                 </div>
                 <span class="badge rounded-pill px-3 py-1 fw-bold fs-6" id="foodStarLabel" style="background: #FFF3CD; color: #856404;">
@@ -408,6 +481,109 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
               </div>
             </div>
+
+            <!-- 2. Dish-Level Detailed Feedback (Appearance, Taste, Portion Size, Value) -->
+            <?php if (!empty($orderItems)): ?>
+              <div class="p-3 p-sm-4 rounded-4 mb-3" style="background: #FFFFFF; border: 1px solid #E2ECE5; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom flex-wrap gap-2">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 34px; height: 34px; background: #CEFFDC; color: #2E6F40;">
+                      <i class="bi bi-stars"></i>
+                    </span>
+                    <div>
+                      <div class="fw-bold text-dark font-outfit" style="font-size: 0.95rem;">Dish-Level Feedback</div>
+                      <div class="small text-muted" style="font-size: 0.78rem;">Rate Appearance, Taste, Portion Size &amp; Value for each ordered dish</div>
+                    </div>
+                  </div>
+                  <span class="badge bg-light text-forest border rounded-pill px-2 py-1 small fw-semibold" style="font-size:0.72rem;">
+                    <?= count($orderItems) ?> <?= count($orderItems) === 1 ? 'Dish' : 'Dishes' ?>
+                  </span>
+                </div>
+
+                <div class="d-flex flex-column gap-3">
+                  <?php foreach ($orderItems as $item): 
+                    $iid = (int)$item['item_id'];
+                    $edr = $existingDishReviews[$iid] ?? null;
+                    $dishApp = (int)($edr['appearance_rating'] ?? $curFood);
+                    $dishTaste = (int)($edr['taste_rating'] ?? $curFood);
+                    $dishPortion = (int)($edr['portion_rating'] ?? $curFood);
+                    $dishValue = (int)($edr['value_rating'] ?? $curFood);
+                  ?>
+                    <div class="p-3 rounded-3 border bg-light bg-opacity-50">
+                      <div class="d-flex align-items-center gap-3 mb-2">
+                        <img src="<?= e(get_dish_image_url($item['image_url'])) ?>" class="rounded-3 object-fit-cover shadow-xs border" style="width: 44px; height: 44px;" alt="<?= e($item['item_name']) ?>">
+                        <div class="flex-grow-1">
+                          <div class="fw-bold text-dark small mb-0">
+                            <?= e($item['item_name']) ?>
+                            <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 py-0 ms-1" style="font-size:0.58rem;"><?= $item['is_veg'] ? 'VEG' : 'NON-VEG' ?></span>
+                          </div>
+                          <div class="small text-muted" style="font-size:0.72rem;">Qty: <?= (int)$item['quantity'] ?> &bull; <?= format_inr($item['unit_price']) ?></div>
+                        </div>
+                      </div>
+
+                      <!-- 4-Dimension Matrix for this Dish -->
+                      <div class="row g-2 pt-1">
+                        <!-- Appearance -->
+                        <div class="col-sm-6">
+                          <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border">
+                            <span class="small text-muted fw-semibold" style="font-size:0.75rem;"><i class="bi bi-eye text-primary me-1"></i>Appearance:</span>
+                            <input type="hidden" name="dish_appearance_<?= $iid ?>" id="dish_app_input_<?= $iid ?>" value="<?= $dishApp ?>">
+                            <div class="d-inline-flex gap-1 dish-dim-star-group" data-target="dish_app_input_<?= $iid ?>" data-label="dish_app_lbl_<?= $iid ?>">
+                              <?php for ($s = 1; $s <= 5; $s++): ?>
+                                <i class="bi bi-star-fill small star-crit <?= $s <= $dishApp ? 'text-warning' : 'text-muted opacity-50' ?>" data-val="<?= $s ?>" style="cursor:pointer; font-size:0.85rem;"></i>
+                              <?php endfor; ?>
+                            </div>
+                            <span class="small font-monospace text-dark fw-bold" id="dish_app_lbl_<?= $iid ?>" style="font-size:0.75rem; width:28px; text-align:right;"><?= $dishApp ?>★</span>
+                          </div>
+                        </div>
+
+                        <!-- Taste -->
+                        <div class="col-sm-6">
+                          <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border">
+                            <span class="small text-muted fw-semibold" style="font-size:0.75rem;"><i class="bi bi-fire text-danger me-1"></i>Taste:</span>
+                            <input type="hidden" name="dish_taste_<?= $iid ?>" id="dish_taste_input_<?= $iid ?>" value="<?= $dishTaste ?>">
+                            <div class="d-inline-flex gap-1 dish-dim-star-group" data-target="dish_taste_input_<?= $iid ?>" data-label="dish_taste_lbl_<?= $iid ?>">
+                              <?php for ($s = 1; $s <= 5; $s++): ?>
+                                <i class="bi bi-star-fill small star-crit <?= $s <= $dishTaste ? 'text-warning' : 'text-muted opacity-50' ?>" data-val="<?= $s ?>" style="cursor:pointer; font-size:0.85rem;"></i>
+                              <?php endfor; ?>
+                            </div>
+                            <span class="small font-monospace text-dark fw-bold" id="dish_taste_lbl_<?= $iid ?>" style="font-size:0.75rem; width:28px; text-align:right;"><?= $dishTaste ?>★</span>
+                          </div>
+                        </div>
+
+                        <!-- Portion Size -->
+                        <div class="col-sm-6">
+                          <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border">
+                            <span class="small text-muted fw-semibold" style="font-size:0.75rem;"><i class="bi bi-pie-chart text-warning me-1"></i>Portion:</span>
+                            <input type="hidden" name="dish_portion_<?= $iid ?>" id="dish_portion_input_<?= $iid ?>" value="<?= $dishPortion ?>">
+                            <div class="d-inline-flex gap-1 dish-dim-star-group" data-target="dish_portion_input_<?= $iid ?>" data-label="dish_portion_lbl_<?= $iid ?>">
+                              <?php for ($s = 1; $s <= 5; $s++): ?>
+                                <i class="bi bi-star-fill small star-crit <?= $s <= $dishPortion ? 'text-warning' : 'text-muted opacity-50' ?>" data-val="<?= $s ?>" style="cursor:pointer; font-size:0.85rem;"></i>
+                              <?php endfor; ?>
+                            </div>
+                            <span class="small font-monospace text-dark fw-bold" id="dish_portion_lbl_<?= $iid ?>" style="font-size:0.75rem; width:28px; text-align:right;"><?= $dishPortion ?>★</span>
+                          </div>
+                        </div>
+
+                        <!-- Value -->
+                        <div class="col-sm-6">
+                          <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border">
+                            <span class="small text-muted fw-semibold" style="font-size:0.75rem;"><i class="bi bi-tag text-success me-1"></i>Value:</span>
+                            <input type="hidden" name="dish_value_<?= $iid ?>" id="dish_value_input_<?= $iid ?>" value="<?= $dishValue ?>">
+                            <div class="d-inline-flex gap-1 dish-dim-star-group" data-target="dish_value_input_<?= $iid ?>" data-label="dish_value_lbl_<?= $iid ?>">
+                              <?php for ($s = 1; $s <= 5; $s++): ?>
+                                <i class="bi bi-star-fill small star-crit <?= $s <= $dishValue ? 'text-warning' : 'text-muted opacity-50' ?>" data-val="<?= $s ?>" style="cursor:pointer; font-size:0.85rem;"></i>
+                              <?php endfor; ?>
+                            </div>
+                            <span class="small font-monospace text-dark fw-bold" id="dish_value_lbl_<?= $iid ?>" style="font-size:0.75rem; width:28px; text-align:right;"><?= $dishValue ?>★</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+            <?php endif; ?>
 
             <!-- 2. Delivery Partner Rating Section -->
             <div class="p-3 p-sm-4 rounded-4 mb-4" style="background: #F7FAF8; border: 1px solid #E2ECE5;">
@@ -523,6 +699,33 @@ document.addEventListener('DOMContentLoaded', function() {
     group.addEventListener('mouseleave', () => {
       updateStars(group, selectedVal);
       if (label) label.textContent = labelMap[selectedVal] || `${selectedVal} Stars`;
+    });
+  });
+
+  // Setup individual dish-level dimension star clickers
+  document.querySelectorAll('.dish-dim-star-group').forEach(group => {
+    const targetInputId = group.getAttribute('data-target');
+    const labelId = group.getAttribute('data-label');
+    const input = document.getElementById(targetInputId);
+    const label = document.getElementById(labelId);
+    const stars = group.querySelectorAll('.star-crit');
+
+    stars.forEach(star => {
+      star.addEventListener('click', () => {
+        const val = parseInt(star.getAttribute('data-val'), 10);
+        if (input) input.value = val;
+        if (label) label.textContent = `${val}★`;
+        stars.forEach(s => {
+          const sVal = parseInt(s.getAttribute('data-val'), 10);
+          if (sVal <= val) {
+            s.classList.remove('text-muted', 'opacity-50');
+            s.classList.add('text-warning');
+          } else {
+            s.classList.remove('text-warning');
+            s.classList.add('text-muted', 'opacity-50');
+          }
+        });
+      });
     });
   });
 });

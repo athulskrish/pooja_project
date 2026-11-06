@@ -106,6 +106,9 @@ $sgst = round($order['tax_amount'] / 2, 2);
       <div class="small text-muted">Order ID: <strong>#ZIP-<?= (int)$order['order_id'] ?></strong></div>
       <div class="small text-muted">Date: <?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?></div>
       <div class="small text-muted">SAC Code: <strong>996331</strong> (Restaurant Services)</div>
+      <?php if (!empty($order['is_scheduled'])): ?>
+        <div class="small fw-bold" style="color:#7C3AED;"><i class="bi bi-calendar2-check-fill me-1"></i> Advance Order: <?= e($order['scheduled_slot'] ?: date('d-M-Y h:i A', strtotime($order['scheduled_for']))) ?></div>
+      <?php endif; ?>
       <div class="small text-muted">Payment: <span class="badge bg-success bg-opacity-25 text-success"><?= e($order['payment_mode']) ?> - <?= e($order['payment_status'] ?: 'PAID') ?></span></div>
       <?php if (!empty($order['transaction_reference'])): ?>
         <div class="small text-muted" style="font-size:0.75rem;">Txn Ref: <code class="text-dark"><?= e($order['transaction_reference']) ?></code></div>
@@ -147,7 +150,14 @@ $sgst = round($order['tax_amount'] / 2, 2);
         <?php foreach ($items as $idx => $item): ?>
           <tr>
             <td><?= $idx + 1 ?></td>
-            <td class="fw-bold text-dark"><?= e($item['item_name']) ?></td>
+            <td>
+              <div class="fw-bold text-dark"><?= e($item['item_name']) ?></div>
+              <?php if (!empty($item['customizations'])): ?>
+                <div class="small text-muted fst-italic" style="font-size: 0.75rem;">
+                  <i class="bi bi-sliders me-1"></i><?= e($item['customizations']) ?>
+                </div>
+              <?php endif; ?>
+            </td>
             <td class="font-monospace">996331</td>
             <td class="text-center fw-bold"><?= (int)$item['quantity'] ?></td>
             <td class="text-end"><?= format_inr($item['unit_price']) ?></td>
