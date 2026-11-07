@@ -14,7 +14,19 @@
   $$\text{Support}(A \cup B) = \frac{\text{Orders containing both } A \text{ and } B}{\text{Total Orders}}$$
   $$\text{Confidence}(A \to B) = \frac{\text{Support}(A \cup B)}{\text{Support}(A)}$$
   $$\text{Lift}(A \to B) = \frac{\text{Confidence}(A \to B)}{\text{Support}(B)}$$
-- **Thresholds:** Minimum support $\ge 0.05$, minimum confidence $\ge 0.20$.
+- **Thresholds:** Minimum support $\ge 0.05$, minimum confidence $\ge 0.20$, minimum lift $> 1.0$.
+- **Algorithmic Flow:**
+  1. **$L_1$ Generation:** Frequency counts of individual itemsets filtered by `minSupport`.
+  2. **Candidate Generation ($C_k$):** $(k-1)$-itemset join with Apriori downward-closure property subset pruning.
+  3. **Candidate Verification ($L_k$):** Transaction scanning and support filtering up to $k=3$.
+  4. **Rule Derivation:** Generates non-empty proper subsets $A \subset X$, evaluates Confidence & Lift, and ranks rules by $\text{Lift} > \text{Confidence} > \text{Support}$.
+  5. **Caching & Decoupling:** In-memory 60s TTL rule cache; standalone execution support via `runApriori($transactions)`.
+- **Public API:**
+  - `AprioriEngine::getRecommendations(array $cartItemIds, int $limit = 4, float $minSupport = 0.05, float $minConfidence = 0.20): array`
+  - `AprioriEngine::mineAssociationRules(float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0, bool $forceRefresh = false): array`
+  - `AprioriEngine::runApriori(array $transactions, float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0, int $maxK = 3): array`
+  - `AprioriEngine::getAssociationRulesReport(float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0): array`
+  - `AprioriEngine::getFallbackItems(array $excludeItemIds = [], int $limit = 4): array`
 
 ---
 
