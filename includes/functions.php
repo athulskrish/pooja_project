@@ -881,6 +881,44 @@ function get_available_delivery_partner(): ?array {
 }
 
 /**
+ * Compute the canonical state fingerprint for Kitchen Display System (KDS) & Delivery live synchronization
+ * Guarantees identical hash calculation across kitchen/index.php, kitchen/ajax/poll-orders.php, and api/live-stream.php.
+ */
+function get_kds_state_hash(): string {
+    $countNew = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` IN ('PLACED', 'CONFIRMED')");
+    $countCooking = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'COOKING'");
+    $countReady = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'READY'");
+    $countOutForDelivery = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'OUT_FOR_DELIVERY'");
+    $countDelivered = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED'");
+    
+    $latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
+    $latestDispatch = db_fetch_one("SELECT MAX(dispatch_id) AS max_disp, MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
+
+    // Fingerprint of ready orders and their assigned riders to detect allocation changes
+    $readyAllocFingerprint = (string)db_fetch_val("
+        SELECT GROUP_CONCAT(CONCAT(o.order_id, ':', COALESCE(d.rider_id, 0), ':', COALESCE(d.delivery_status, '')) ORDER BY o.order_id SEPARATOR '|')
+        FROM `orders` o
+        LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+        WHERE o.order_status = 'READY'
+    ");
+
+    return md5(json_encode([
+        'new' => $countNew,
+        'cooking' => $countCooking,
+        'ready' => $countReady,
+        'out' => $countOutForDelivery,
+        'delivered' => $countDelivered,
+        'max_audit' => $latestAudit['max_audit'] ?? 0,
+        'audit_time' => $latestAudit['max_time'] ?? '',
+        'max_disp' => $latestDispatch['max_disp'] ?? 0,
+        'disp_assigned' => $latestDispatch['max_assigned'] ?? '',
+        'disp_dispatched' => $latestDispatch['max_dispatched'] ?? '',
+        'disp_delivered' => $latestDispatch['max_delivered'] ?? '',
+        'ready_alloc' => $readyAllocFingerprint
+    ]));
+}
+
+/**
  * System Automated Parcel Allocation Engine:
  * Allocates READY parcels to available delivery drivers strictly on a First-Come, First-Served (FCFS / FIFO) basis
  * based on when the food preparation was finished (`ready_at`).
@@ -889,14 +927,21 @@ function get_available_delivery_partner(): ?array {
  * 1. "first item that is prepared should be first allocated"
  * 2. 1 Driver 1 Delivery Policy: only drivers who are currently free (0 active deliveries) can be allocated.
  * 3. Driver must be ON_DUTY.
+ * 4. A busy or offline driver CANNOT hold an allocated ready parcel; invalid assignments are reset.
+ * 5. Each available free driver is allocated at most 1 ready parcel at a time.
  */
 function auto_allocate_ready_orders_fcfs(): array {
-    // 1. Fetch available drivers (Riders who are ON_DUTY and have 0 active deliveries)
+    // 1. Fetch all registered drivers with their busy/duty status
     $allRiders = get_all_delivery_riders();
     $availableRiders = [];
+    $busyRiderIds = [];
+
     foreach ($allRiders as $r) {
+        $rId = (int)$r['user_id'];
         if ($r['duty_status'] === 'ON_DUTY' && empty($r['is_busy'])) {
             $availableRiders[] = $r;
+        } else {
+            $busyRiderIds[] = $rId;
         }
     }
 
@@ -914,37 +959,50 @@ function auto_allocate_ready_orders_fcfs(): array {
         return ['allocated' => 0, 'available_riders' => count($availableRiders), 'message' => 'No ready parcels waiting in queue.'];
     }
 
+    // 3. Purge invalid allocations from READY parcels:
+    // Any ready parcel currently assigned to a rider who is busy or offline must be unassigned
+    $assignedRiderIds = [];
+    foreach ($readyParcels as &$parcel) {
+        $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
+        if ($currentRiderId) {
+            // If rider is busy or off duty, or already assigned to another ready parcel earlier in the FCFS queue:
+            if (in_array($currentRiderId, $busyRiderIds) || in_array($currentRiderId, $assignedRiderIds)) {
+                db_query("
+                    UPDATE `delivery_dispatches` 
+                    SET `rider_id` = NULL, 
+                        `delivery_partner_name` = 'Zippy Express Rider', 
+                        `delivery_partner_phone` = '+91 98765 43210', 
+                        `delivery_status` = 'ASSIGNED' 
+                    WHERE `order_id` = :oid
+                ", [':oid' => $parcel['order_id']]);
+                $parcel['rider_id'] = null;
+                $parcel['delivery_status'] = 'ASSIGNED';
+            } else {
+                // Legitimate assignment to an available free driver
+                $assignedRiderIds[] = $currentRiderId;
+            }
+        }
+    }
+    unset($parcel);
+
+    // 4. If no available free drivers, all remaining ready parcels stay in FCFS queue
     if (empty($availableRiders)) {
-        return ['allocated' => 0, 'available_riders' => 0, 'message' => 'All riders are busy. Parcels queued in FCFS order.'];
+        return ['allocated' => count($assignedRiderIds), 'available_riders' => 0, 'message' => 'All riders are busy. Parcels queued in FCFS order.'];
     }
 
     $allocatedCount = 0;
     $allocations = [];
-    $assignedRiderIds = [];
 
-    // First check existing ASSIGNED parcels that already belong to a currently free rider
-    foreach ($readyParcels as $parcel) {
-        if (!empty($parcel['rider_id'])) {
-            $rId = (int)$parcel['rider_id'];
-            foreach ($availableRiders as $r) {
-                if ((int)$r['user_id'] === $rId && !in_array($rId, $assignedRiderIds)) {
-                    $assignedRiderIds[] = $rId;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Match unallocated ready parcels to remaining free available drivers in FCFS order
+    // 5. Match unallocated ready parcels to remaining free available drivers in FCFS order
     foreach ($readyParcels as $parcel) {
         $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
 
-        // If parcel already assigned to a free driver who has not exceeded 1 delivery, keep it
+        // If parcel already legitimately assigned to a free driver, keep it
         if ($currentRiderId && in_array($currentRiderId, $assignedRiderIds)) {
             continue;
         }
 
-        // Find the next available free driver who has not yet been assigned a parcel
+        // Find the next available free driver who has not yet been assigned a ready parcel
         $matchedRider = null;
         foreach ($availableRiders as $r) {
             $rId = (int)$r['user_id'];

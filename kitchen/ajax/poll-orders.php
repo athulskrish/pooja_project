@@ -36,23 +36,8 @@ $latestIncomingId = (int)db_fetch_val("
 // Total active in kitchen
 $totalActive = $countNew + $countCooking + $countReady;
 
-// Comprehensive State Fingerprint
-// Detects state transitions: Cooking -> Ready -> Out for delivery -> Delivered
-$latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
-$latestDispatch = db_fetch_one("SELECT MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
-
-$stateHash = md5(json_encode([
-    'new' => $countNew,
-    'cooking' => $countCooking,
-    'ready' => $countReady,
-    'handed_over' => $countHandedOver,
-    'delivered' => $countDeliveredToday,
-    'max_audit' => $latestAudit['max_audit'] ?? 0,
-    'audit_time' => $latestAudit['max_time'] ?? '',
-    'disp_assigned' => $latestDispatch['max_assigned'] ?? '',
-    'disp_dispatched' => $latestDispatch['max_dispatched'] ?? '',
-    'disp_delivered' => $latestDispatch['max_delivered'] ?? ''
-]));
+// Comprehensive Canonical State Fingerprint
+$stateHash = get_kds_state_hash();
 
 echo json_encode([
     'success' => true,

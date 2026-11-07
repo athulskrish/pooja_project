@@ -143,6 +143,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ':uid' => $currentUser['id']
             ]);
 
+            // Synchronize FCFS parcel allocation
+            auto_allocate_ready_orders_fcfs();
+
             if ($isAjax) {
                 header('Content-Type: application/json');
                 echo json_encode([

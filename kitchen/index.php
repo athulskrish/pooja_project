@@ -237,22 +237,8 @@ $countReady = count($laneReady);
 $countHandedOver = count($recentHandedOver);
 $totalActive = $countNew + $countCooking + $countReady;
 
-// State fingerprint for live synchronization
-$latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
-$latestDispatch = db_fetch_one("SELECT MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
-$countDeliveredToday = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED' AND DATE(`placed_at`) = CURDATE()");
-$kdsInitialStateHash = md5(json_encode([
-    'new' => $countNew,
-    'cooking' => $countCooking,
-    'ready' => $countReady,
-    'handed_over' => $countHandedOver,
-    'delivered' => $countDeliveredToday,
-    'max_audit' => $latestAudit['max_audit'] ?? 0,
-    'audit_time' => $latestAudit['max_time'] ?? '',
-    'disp_assigned' => $latestDispatch['max_assigned'] ?? '',
-    'disp_dispatched' => $latestDispatch['max_dispatched'] ?? '',
-    'disp_delivered' => $latestDispatch['max_delivered'] ?? ''
-]));
+// Canonical state fingerprint for live synchronization
+$kdsInitialStateHash = get_kds_state_hash();
 
 require_once __DIR__ . '/includes/header.php';
 ?>
