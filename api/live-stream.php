@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Real-Time Portal Stream & Multi-Actor Lifecycle Synchronization API
  * Zippy - Online Food Ordering Platform
@@ -16,12 +17,53 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-$portal = clean_input($_GET['portal'] ?? 'admin');
+if (!isLoggedIn()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized. Authentication required.']);
+    exit;
+}
+
+$portal = strtolower(trim((string)($_GET['portal'] ?? 'admin')));
 $orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+$currentUser = getCurrentUser();
+$loggedInUserId = (int)($currentUser['id'] ?? 0);
 
-$pdo = getDBConnection();
+// Strict per-stream RBAC enforcement
+if ($portal === 'kitchen') {
+    if (!hasRole(['KITCHEN', 'ADMIN'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. Kitchen or Admin role required.']);
+        exit;
+    }
+} elseif ($portal === 'delivery') {
+    if (!hasRole(['RIDER', 'ADMIN'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. Rider or Admin role required.']);
+        exit;
+    }
+    $requestedRiderId = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
+    if (!isAdmin() && $requestedRiderId > 0 && $requestedRiderId !== $loggedInUserId) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. You can only view your own rider stream.']);
+        exit;
+    }
+} elseif ($portal === 'admin') {
+    if (!hasRole('ADMIN')) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. Administrator role required.']);
+        exit;
+    }
+} else {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid stream portal requested.']);
+    exit;
+}
+
+$pdo = getDbConnection();
 if (!$pdo) {
+    http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Database connection failed']);
     exit;
 }
@@ -31,7 +73,7 @@ if (!$pdo) {
 // -----------------------------------------------------------------------------
 if ($portal === 'kitchen') {
     require_once __DIR__ . '/../includes/WSJFQueue.php';
-    auto_allocate_ready_orders_fcfs();
+    autoAllocateReadyOrdersFcfs();
     $prioritizedOrders = WSJFQueue::getPrioritizedOrders();
 
     $laneNew = [];
@@ -55,9 +97,9 @@ if ($portal === 'kitchen') {
     }
 
     // Sort ready orders strictly in FCFS order by food preparation time
-    usort($laneReady, function($a, $b) {
-        $timeA = !empty($a['ready_at']) ? strtotime($a['ready_at']) : strtotime($a['placed_at']);
-        $timeB = !empty($b['ready_at']) ? strtotime($b['ready_at']) : strtotime($b['placed_at']);
+    usort($laneReady, function (array $a, array $b): int {
+        $timeA = (int)(!empty($a['ready_at']) ? strtotime((string)$a['ready_at']) : strtotime((string)$a['placed_at']));
+        $timeB = (int)(!empty($b['ready_at']) ? strtotime((string)$b['ready_at']) : strtotime((string)$b['placed_at']));
         if ($timeA === $timeB) {
             return (int)$a['order_id'] <=> (int)$b['order_id'];
         }
@@ -67,7 +109,7 @@ if ($portal === 'kitchen') {
     $countNew = count($laneNew);
     $countCooking = count($laneCooking);
     $countReady = count($laneReady);
-    $stateHash = get_kds_state_hash();
+    $stateHash = getKdsStateHash();
 
     echo json_encode([
         'success' => true,
@@ -94,14 +136,27 @@ if ($portal === 'kitchen') {
 // -----------------------------------------------------------------------------
 if ($portal === 'delivery') {
     // 1. Run automatic FCFS parcel allocation
-    auto_allocate_ready_orders_fcfs();
+    autoAllocateReadyOrdersFcfs();
+
+    $requestedRiderId = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
+    if (!isAdmin()) {
+        if ($requestedRiderId > 0 && $requestedRiderId !== $loggedInUserId) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Forbidden. You can only view your own rider stream.']);
+            exit;
+        }
+        $riderIdParam = $loggedInUserId;
+    } else {
+        $riderIdParam = $requestedRiderId;
+    }
 
     // 2. Orders ready for pickup, sorted strictly in FCFS order by food preparation time
-    $readyOrders = db_fetch_all("
+    // Scrub sensitive OTP and phone fields for non-admin pool visibility
+    $readyOrders = dbFetchAll("
         SELECT o.order_id, o.order_number, o.total_amount, o.ready_at, o.placed_at,
-               u.full_name AS customer_name, u.phone_number AS customer_phone,
+               u.full_name AS customer_name,
                a.address_line, a.landmark, a.pincode,
-               p.payment_mode, d.delivery_otp, d.rider_id, d.delivery_status
+               p.payment_mode, d.rider_id, d.delivery_status
         FROM `orders` o
         JOIN `users` u ON o.user_id = u.user_id
         LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
@@ -111,52 +166,71 @@ if ($portal === 'delivery') {
         ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
     ");
 
-    // Orders currently in transit
-    $inTransitOrders = db_fetch_all("
-        SELECT o.order_id, o.order_number, o.total_amount, o.order_notes,
-               u.full_name AS customer_name, u.phone_number AS customer_phone,
-               a.address_line, a.pincode,
-               p.payment_mode, p.payment_status,
-               d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp,
-               d.current_latitude, d.current_longitude, d.route_progress,
-               d.distance_remaining_km, d.estimated_minutes_remaining, d.dispatched_at
-        FROM `orders` o
-        JOIN `users` u ON o.user_id = u.user_id
-        LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-        LEFT JOIN `payments` p ON o.order_id = p.order_id
-        LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-        WHERE o.order_status = 'OUT_FOR_DELIVERY'
-        ORDER BY d.dispatched_at DESC
-    ");
+    // Orders currently in transit (Admin sees fleet-wide; Riders see only their own assigned transit)
+    if (isAdmin()) {
+        $inTransitOrders = dbFetchAll("
+            SELECT o.order_id, o.order_number, o.total_amount, o.order_notes,
+                   u.full_name AS customer_name, u.phone_number AS customer_phone,
+                   a.address_line, a.pincode,
+                   p.payment_mode, p.payment_status,
+                   d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp,
+                   d.current_latitude, d.current_longitude, d.route_progress,
+                   d.distance_remaining_km, d.estimated_minutes_remaining, d.dispatched_at
+            FROM `orders` o
+            JOIN `users` u ON o.user_id = u.user_id
+            LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+            LEFT JOIN `payments` p ON o.order_id = p.order_id
+            LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+            WHERE o.order_status = 'OUT_FOR_DELIVERY'
+            ORDER BY d.dispatched_at DESC
+        ");
+    } else {
+        $inTransitOrders = dbFetchAll("
+            SELECT o.order_id, o.order_number, o.total_amount, o.order_notes,
+                   u.full_name AS customer_name, u.phone_number AS customer_phone,
+                   a.address_line, a.pincode,
+                   p.payment_mode, p.payment_status,
+                   d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp,
+                   d.current_latitude, d.current_longitude, d.route_progress,
+                   d.distance_remaining_km, d.estimated_minutes_remaining, d.dispatched_at
+            FROM `orders` o
+            JOIN `users` u ON o.user_id = u.user_id
+            LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+            LEFT JOIN `payments` p ON o.order_id = p.order_id
+            LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+            WHERE o.order_status = 'OUT_FOR_DELIVERY'
+              AND d.rider_id = :rid
+            ORDER BY d.dispatched_at DESC
+        ", [':rid' => $riderIdParam]);
+    }
 
     foreach ($readyOrders as &$ro) {
-        $ro['formatted_amount'] = format_inr($ro['total_amount']);
+        $ro['formatted_amount'] = formatInr($ro['total_amount']);
         $ro['address_display'] = ($ro['address_line'] ?: 'Indiranagar') . ($ro['pincode'] ? ' (PIN: ' . $ro['pincode'] . ')' : '');
     }
     unset($ro);
 
-    $riderIdParam = isset($_GET['rider_id']) ? (int)$_GET['rider_id'] : 0;
     $riderHasActive = false;
     $activeDelivery = null;
     $allocatedOrder = null;
 
     if ($riderIdParam > 0) {
-        $activeDelivery = get_driver_active_delivery($riderIdParam);
+        $activeDelivery = getDriverActiveDelivery($riderIdParam, $currentUser['name'] ?? null);
         $riderHasActive = !empty($activeDelivery);
         if ($activeDelivery) {
-            $items = db_fetch_all("
+            $items = dbFetchAll("
                 SELECT oi.*, m.item_name, m.is_veg 
                 FROM `order_items` oi
                 JOIN `menu_items` m ON oi.item_id = m.item_id
                 WHERE oi.order_id = :oid
             ", [':oid' => $activeDelivery['order_id']]);
             $activeDelivery['items'] = $items;
-            $activeDelivery['formatted_amount'] = format_inr($activeDelivery['total_amount']);
+            $activeDelivery['formatted_amount'] = formatInr($activeDelivery['total_amount']);
         } else {
             // If rider has no active delivery, get the parcel allocated to them
-            $allocatedOrder = get_driver_allocated_order($riderIdParam);
+            $allocatedOrder = getDriverAllocatedOrder($riderIdParam);
             if ($allocatedOrder) {
-                $allocatedOrder['formatted_amount'] = format_inr($allocatedOrder['total_amount']);
+                $allocatedOrder['formatted_amount'] = formatInr($allocatedOrder['total_amount']);
                 $allocatedOrder['address_display'] = ($allocatedOrder['address_line'] ?: 'Indiranagar') . ($allocatedOrder['pincode'] ? ' (PIN: ' . $allocatedOrder['pincode'] . ')' : '');
             }
         }
@@ -184,7 +258,7 @@ if ($portal === 'delivery') {
 // 3. ADMIN OPERATIONS CONTROL STREAM
 // -----------------------------------------------------------------------------
 // Count live orders by each stage
-$stageCounts = db_fetch_one("
+$stageCounts = dbFetchOne("
     SELECT 
         SUM(CASE WHEN `order_status` IN ('PLACED', 'CONFIRMED') THEN 1 ELSE 0 END) AS count_incoming,
         SUM(CASE WHEN `order_status` = 'COOKING' THEN 1 ELSE 0 END) AS count_cooking,
@@ -196,7 +270,7 @@ $stageCounts = db_fetch_one("
 ");
 
 // Fetch the 12 most recent live orders across the system
-$recentLiveOrders = db_fetch_all("
+$recentLiveOrders = dbFetchAll("
     SELECT o.order_id, o.order_number, o.order_status, o.total_amount, o.placed_at, o.estimated_delivery_time,
            u.full_name AS customer_name, u.phone_number AS customer_phone,
            a.address_line, a.pincode,
@@ -214,30 +288,18 @@ $recentLiveOrders = db_fetch_all("
     LIMIT 12
 ");
 
-// Relative time formatting is already provided by format_time_ago() in includes/functions.php
-if (!function_exists('format_time_ago')) {
-    function format_time_ago($datetime): string {
-        $ts = strtotime($datetime);
-        $diff = time() - $ts;
-        if ($diff < 60) return 'Just now';
-        if ($diff < 3600) return floor($diff / 60) . 'm ago';
-        if ($diff < 86400) return floor($diff / 3600) . 'h ago';
-        return date('d M, h:i A', $ts);
-    }
-}
-
 foreach ($recentLiveOrders as &$rOrder) {
-    $rOrder['badge_html'] = get_status_badge($rOrder['order_status']);
-    $rOrder['formatted_total'] = format_inr($rOrder['total_amount']);
-    $rOrder['time_ago'] = format_time_ago($rOrder['placed_at']);
+    $rOrder['badge_html'] = getStatusBadge($rOrder['order_status']);
+    $rOrder['formatted_total'] = formatInr($rOrder['total_amount']);
+    $rOrder['time_ago'] = formatTimeAgo($rOrder['placed_at']);
 }
 unset($rOrder);
 
 // Active on-duty riders & 1 Driver 1 Delivery metrics
-$allRiders = get_all_delivery_riders();
-$onDutyRiders = array_filter($allRiders, fn($r) => $r['duty_status'] === 'ON_DUTY');
-$busyRiders = array_filter($onDutyRiders, fn($r) => !empty($r['is_busy']));
-$availableRiders = array_filter($onDutyRiders, fn($r) => empty($r['is_busy']));
+$allRiders = getAllDeliveryRiders();
+$onDutyRiders = array_filter($allRiders, fn(array $r): bool => $r['duty_status'] === 'ON_DUTY');
+$busyRiders = array_filter($onDutyRiders, fn(array $r): bool => !empty($r['is_busy']));
+$availableRiders = array_filter($onDutyRiders, fn(array $r): bool => empty($r['is_busy']));
 
 echo json_encode([
     'success' => true,

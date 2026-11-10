@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Console Header & Responsive Sidebar
  * Zippy - Online Food Ordering Platform
@@ -14,17 +15,17 @@ header("Expires: 0");
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-$currentUser = current_user();
+$currentUser = getCurrentUser();
 $pageTitle = $pageTitle ?? 'Admin Console - Zippy';
 $activePage = $activePage ?? 'dashboard';
 
 // Enforce strict Role-Based Access Control: Administrator privileges required (Role 1: ADMIN)
 if (!str_contains($_SERVER['SCRIPT_NAME'], 'login.php')) {
-    require_admin();
+    requireAdmin();
 }
 
-// Live Operations counts (Single optimized query via get_order_kpis())
-$orderKpis = get_order_kpis();
+// Live Operations counts (Single optimized query via getOrderKpis())
+$orderKpis = getOrderKpis();
 $liveOrdersCount = $orderKpis['live'];
 ?>
 <!DOCTYPE html>
@@ -32,6 +33,7 @@ $liveOrdersCount = $orderKpis['live'];
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<?= csrfToken() ?>">
   
   <!-- Anti-Cache Meta Directives -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -288,4 +290,4 @@ $liveOrdersCount = $orderKpis['live'];
 
       <!-- Main Body Container -->
       <div class="admin-content p-4">
-        <?php display_flash(); ?>
+        <?php displayFlash(); ?>

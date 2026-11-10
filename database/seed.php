@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Database Seed & Installation Utility
  * Zippy - Online Food Ordering Platform
@@ -23,10 +24,15 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
     ]);
 
-    $pdo->exec("DROP DATABASE IF EXISTS `" . DB_NAME . "`;");
-    $pdo->exec("CREATE DATABASE `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-    $pdo->exec("USE `" . DB_NAME . "`;");
-    $messages[] = "Database `" . DB_NAME . "` dropped, recreated & verified successfully.";
+    $dbName = (string)DB_NAME;
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $dbName)) {
+        throw new InvalidArgumentException("Invalid database identifier: {$dbName}");
+    }
+
+    $pdo->exec("DROP DATABASE IF EXISTS `{$dbName}`;");
+    $pdo->exec("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+    $pdo->exec("USE `{$dbName}`;");
+    $messages[] = "Database `{$dbName}` dropped, recreated & verified successfully.";
 
     // Read schema.sql
     $sqlFile = __DIR__ . '/schema.sql';
@@ -56,10 +62,16 @@ try {
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
     $messages[] = "All 19 Relational Tables (3NF), 25 Food Catalog Dishes & 50 Customisation Groups imported successfully.";
 
-    // Update demo user passwords with fresh system bcrypt hash
-    $updateStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash");
-    $updateStmt->execute([':hash' => $hashedPassword]);
-    $messages[] = "Standardized demo accounts with active password hash: '{$demoPassword}'";
+    // Update demo user passwords and default security questions with fresh system bcrypt hash
+    $defaultSecQ = 'What was the name of your first school?';
+    $defaultSecAHash = password_hash('zippy', PASSWORD_DEFAULT);
+    $updateStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash, `security_question` = :sq, `security_answer_hash` = :sa");
+    $updateStmt->execute([
+        ':hash' => $hashedPassword,
+        ':sq'   => $defaultSecQ,
+        ':sa'   => $defaultSecAHash
+    ]);
+    $messages[] = "Standardized demo accounts with active password hash ('{$demoPassword}') and recovery security question ('zippy')";
 
     // Ensure core identities: Admin = Pooja, Customers = Athul, Amal, Abhijith, Chef = Sajeev, Drivers = Shaji, Kichu, Abhi
     $userConfigs = [
@@ -81,17 +93,6 @@ try {
     // Attempt to register triggers
     try {
         $pdo->exec("DROP TRIGGER IF EXISTS `trg_after_order_status_update`;");
-        $pdo->exec("
-            CREATE TRIGGER `trg_after_order_status_update`
-            AFTER UPDATE ON `orders`
-            FOR EACH ROW
-            BEGIN
-                IF OLD.order_status <> NEW.order_status THEN
-                    INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
-                    VALUES (NEW.order_id, OLD.order_status, NEW.order_status, NEW.user_id, NOW());
-                END IF;
-            END;
-        ");
 
         $pdo->exec("DROP TRIGGER IF EXISTS `trg_after_menu_stock_update`;");
         $pdo->exec("

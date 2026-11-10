@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Storefront Home Page
  * Zippy - Online Food Ordering Platform
@@ -11,62 +12,17 @@ $activePage = 'home';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/../includes/AprioriEngine.php';
 
-// Fetch Active Categories
-$categories = db_fetch_all("
-    SELECT c.*, COUNT(m.item_id) AS total_dishes 
-    FROM `categories` c 
-    LEFT JOIN `menu_items` m ON c.category_id = m.category_id AND m.is_available = 1
-    WHERE c.is_active = 1 
-    GROUP BY c.category_id 
-    ORDER BY c.display_order ASC
-");
-
-// Fetch Menu Items
-$menuItems = db_fetch_all("
-    SELECT m.*, c.category_name, c.category_slug 
-    FROM `menu_items` m
-    JOIN `categories` c ON m.category_id = c.category_id
-    WHERE m.is_available = 1
-    ORDER BY m.stock_quantity DESC, m.item_id ASC
-");
-
-$customSummaryMap = get_all_dishes_customization_counts();
-$foodMoods = get_food_moods();
-
-// Algorithm 1: Apriori Association Rule Dynamic Recommendations
-$aprioriCombos = AprioriEngine::getRecommendations([], 4);
-
-// Active Order Tracker for Logged-In Customers
-$activeOrder = null;
-$statusBadge = null;
-if ($currentUser && !empty($currentUser['id'])) {
-    $activeOrder = db_fetch_one("
-        SELECT o.*, d.delivery_partner_name, d.delivery_partner_phone
-        FROM `orders` o
-        LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-        WHERE o.user_id = :uid 
-          AND o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')
-        ORDER BY o.order_id DESC
-        LIMIT 1
-    ", [':uid' => (int)$currentUser['id']]);
-
-    if ($activeOrder) {
-        $statusBadge = match($activeOrder['order_status']) {
-            'PLACED' => ['badge' => 'bg-secondary', 'icon' => 'bi-hourglass-split', 'text' => 'Order Received', 'desc' => 'Waiting for kitchen team confirmation'],
-            'CONFIRMED' => ['badge' => 'bg-info text-dark', 'icon' => 'bi-check2-circle', 'text' => 'Order Confirmed', 'desc' => 'Kitchen has queued your order for cooking'],
-            'COOKING' => ['badge' => 'bg-warning text-dark', 'icon' => 'fa-solid fa-fire-burner', 'text' => 'Cooking on Fire', 'desc' => 'Chef is preparing your meal with fresh ingredients'],
-            'READY' => ['badge' => 'bg-primary', 'icon' => 'bi-box-seam', 'text' => 'Ready for Pickup', 'desc' => 'Meal packed hot and waiting for delivery partner pickup'],
-            'OUT_FOR_DELIVERY' => ['badge' => 'bg-success', 'icon' => 'bi-bicycle', 'text' => 'Out for Delivery', 'desc' => 'Delivery partner is en route to your doorstep'],
-            default => ['badge' => 'bg-success', 'icon' => 'bi-bag-check', 'text' => 'In Progress', 'desc' => 'Your order is being handled']
-        };
-    }
-}
-
-// Fetch Previous Meal for 1-Tap Reorder (Prioritizes Delivered, falls back to recent)
-$previousMeal = null;
-if ($currentUser && !empty($currentUser['id'])) {
-    $previousMeal = get_customer_previous_meal((int)$currentUser['id']);
-}
+$homeData = CatalogService::getStorefrontHomeData(
+    ($currentUser && !empty($currentUser['id'])) ? (int)$currentUser['id'] : null
+);
+$categories = $homeData['categories'];
+$menuItems = $homeData['menuItems'];
+$customSummaryMap = $homeData['customSummaryMap'];
+$foodMoods = $homeData['foodMoods'];
+$aprioriCombos = $homeData['aprioriCombos'];
+$activeOrder = $homeData['activeOrder'];
+$statusBadge = $homeData['statusBadge'];
+$previousMeal = $homeData['previousMeal'];
 ?>
 
 <main>
@@ -106,7 +62,7 @@ if ($currentUser && !empty($currentUser['id'])) {
                   <?php endif; ?>
                 </h6>
                 <div class="small text-muted mt-1">
-                  Amount: <strong><?= format_inr($activeOrder['total_amount']) ?></strong> &bull; Placed at <?= date('h:i A', strtotime($activeOrder['placed_at'])) ?>
+                  Amount: <strong><?= formatInr($activeOrder['total_amount']) ?></strong> &bull; Placed at <?= date('h:i A', strtotime($activeOrder['placed_at'])) ?>
                 </div>
               </div>
             </div>
@@ -357,7 +313,7 @@ if ($currentUser && !empty($currentUser['id'])) {
               <div class="d-inline-flex flex-column align-items-lg-end w-100">
                 <div class="mb-2">
                   <span class="text-muted small d-block">Meal Total (<?= $previousMeal['items_count'] ?> <?= $previousMeal['items_count'] === 1 ? 'item' : 'items' ?>)</span>
-                  <span class="fs-4 fw-bold text-forest font-outfit"><?= format_inr($pmOrder['total_amount']) ?></span>
+                  <span class="fs-4 fw-bold text-forest font-outfit"><?= formatInr($pmOrder['total_amount']) ?></span>
                 </div>
 
                 <div class="d-flex flex-wrap gap-2 justify-content-lg-end w-100">
@@ -455,7 +411,7 @@ if ($currentUser && !empty($currentUser['id'])) {
              data-cat-slug="<?= e($cat['category_slug']) ?>" 
              onclick="filterByCategory('<?= e($cat['category_slug']) ?>', this, event)">
             <div class="category-pill-img-wrap rounded-circle shadow-sm mx-auto mb-2 overflow-hidden" style="width: 80px; height: 80px;">
-              <img src="<?= e(get_category_image_url($cat['image_url'])) ?>" alt="<?= e($cat['category_name']) ?>" class="w-100 h-100 object-fit-cover" loading="lazy">
+              <img src="<?= e(getCategoryImageUrl($cat['image_url'])) ?>" alt="<?= e($cat['category_name']) ?>" class="w-100 h-100 object-fit-cover" loading="lazy">
             </div>
             <span class="category-name d-block fw-bold small text-dark text-truncate" style="max-width: 90px;"><?= e($cat['category_name']) ?></span>
             <span class="text-muted" style="font-size: 0.65rem;"><?= (int)$cat['total_dishes'] ?> items</span>
@@ -517,9 +473,9 @@ if ($currentUser && !empty($currentUser['id'])) {
                   </div>
 
                   <div class="d-flex align-items-center justify-content-between pt-2 border-top">
-                    <span class="fw-bold text-forest fs-6"><?= format_inr($rec['price']) ?></span>
-                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$rec['item_id'] ?>" data-dish-name="<?= addslashes(e($rec['item_name'])) ?>" data-dish-price="<?= (float)$rec['price'] ?>" data-dish-veg="<?= $rec['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e($rec['image_url']) ?>">
-                      <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold" onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= addslashes(e($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e($rec['image_url']) ?>')">
+                    <span class="fw-bold text-forest fs-6"><?= formatInr($rec['price']) ?></span>
+                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$rec['item_id'] ?>" data-dish-name="<?= e($rec['item_name']) ?>" data-dish-price="<?= (float)$rec['price'] ?>" data-dish-veg="<?= $rec['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e($rec['image_url']) ?>">
+                      <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold" onclick="addToCart(<?= (int)$rec['item_id'] ?>, <?= e(jsJson((string)$rec['item_name'])) ?>, <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', <?= e(jsJson((string)$rec['image_url'])) ?>)">
                         ADD +
                       </button>
                     </div>
@@ -572,18 +528,18 @@ if ($currentUser && !empty($currentUser['id'])) {
             <div class="col-6 col-md-4 col-lg-2">
               <div class="mood-card p-3 text-center h-100 d-flex flex-column align-items-center justify-content-between shadow-xs" 
                    data-mood-id="<?= e($mKey) ?>" 
-                   onclick="filterByMood('<?= e($mKey) ?>', this, event)">
+                   onclick="filterByMood(<?= e(jsJson((string)$mKey)) ?>, this, event)">
                 <div class="mood-img-wrap mb-2 position-relative">
-                  <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="<?= e($mInfo['name']) ?>" class="mood-food-img" loading="lazy">
-                  <span class="mood-badge-mini" style="background: <?= $mInfo['badge_bg'] ?>;" title="<?= e($mInfo['name']) ?>">
-                    <?= $mInfo['emoji'] ?>
+                  <img src="<?= e(getMoodImageUrl($mKey)) ?>" alt="<?= e($mInfo['name']) ?>" class="mood-food-img" loading="lazy">
+                  <span class="mood-badge-mini" style="background: <?= e($mInfo['badge_bg']) ?>;" title="<?= e($mInfo['name']) ?>">
+                    <?= e($mInfo['emoji']) ?>
                   </span>
                 </div>
                 <div class="fw-bold text-dark small mb-1 line-clamp-1"><?= e($mInfo['name']) ?></div>
                 <p class="text-muted mb-2 text-center" style="font-size: 0.7rem; line-height: 1.25; min-height: 2.5em;">
                   <?= e($mInfo['tagline']) ?>
                 </p>
-                <span class="badge rounded-pill fw-semibold px-2 py-1 mood-explore-btn" style="background: <?= $mInfo['badge_bg'] ?>; color: <?= $mInfo['badge_color'] ?>; font-size: 0.65rem; border: 1px solid <?= $mInfo['border_color'] ?>;">
+                <span class="badge rounded-pill fw-semibold px-2 py-1 mood-explore-btn" style="background: <?= e($mInfo['badge_bg']) ?>; color: <?= e($mInfo['badge_color']) ?>; font-size: 0.65rem; border: 1px solid <?= e($mInfo['border_color']) ?>;">
                   Explore Vibe &rarr;
                 </span>
               </div>
@@ -642,10 +598,10 @@ if ($currentUser && !empty($currentUser['id'])) {
               <li><hr class="dropdown-divider my-1"></li>
               <?php foreach ($foodMoods as $mKey => $mInfo): ?>
                 <li>
-                  <button class="dropdown-item small py-2 d-flex align-items-center justify-content-between" type="button" onclick="filterByMood('<?= e($mKey) ?>', null, event)">
+                  <button class="dropdown-item small py-2 d-flex align-items-center justify-content-between" type="button" onclick="filterByMood(<?= e(jsJson((string)$mKey)) ?>, null, event)">
                     <span class="d-flex align-items-center gap-2">
-                      <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
-                      <span><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></span>
+                      <img src="<?= e(getMoodImageUrl($mKey)) ?>" alt="" style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+                      <span><?= e($mInfo['emoji']) ?> <?= e($mInfo['name']) ?></span>
                     </span>
                     <i class="bi bi-check2 text-success mood-check d-none" id="check-mood-<?= e($mKey) ?>"></i>
                   </button>
@@ -684,7 +640,7 @@ if ($currentUser && !empty($currentUser['id'])) {
       <div id="activeMoodBanner" class="alert alert-light border rounded-4 p-3 mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-xs" style="display:none; background: linear-gradient(135deg, #FFF9E6 0%, #FFF2D6 100%); border-color: #FFE69C !important;">
         <div class="d-flex align-items-center gap-3">
           <div class="position-relative" style="width: 52px; height: 52px; flex-shrink: 0;">
-            <img id="activeMoodBannerImg" src="<?= e(get_mood_image_url('comfort')) ?>" alt="Mood Food" class="w-100 h-100 rounded-circle object-fit-cover shadow-xs border border-2 border-white">
+            <img id="activeMoodBannerImg" src="<?= e(getMoodImageUrl('comfort')) ?>" alt="Mood Food" class="w-100 h-100 rounded-circle object-fit-cover shadow-xs border border-2 border-white">
             <span id="activeMoodBannerEmoji" class="position-absolute rounded-circle shadow-xs bg-white px-1 d-flex align-items-center justify-content-center" style="bottom: -2px; right: -2px; width: 22px; height: 22px; font-size: 0.75rem;">🛋️</span>
           </div>
           <div>
@@ -706,7 +662,7 @@ if ($currentUser && !empty($currentUser['id'])) {
           <?php foreach ($menuItems as $dish): ?>
             <?php 
               $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
-              $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
+              $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
             ?>
             <div class="col-12 col-sm-6 col-lg-4 col-xl-3 dish-card-wrapper" 
                  data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" 
@@ -722,7 +678,7 @@ if ($currentUser && !empty($currentUser['id'])) {
                 
                 <!-- Dish Image Box -->
                 <div class="dish-card-img-container position-relative overflow-hidden" style="height: 190px;">
-                  <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
+                  <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover dish-thumbnail" loading="lazy">
                   
                   <!-- Indicators (Veg/Non-Veg + Healthy + Mood) -->
                   <div class="position-absolute top-0 start-0 m-2 d-flex flex-column gap-1 align-items-start">
@@ -745,9 +701,9 @@ if ($currentUser && !empty($currentUser['id'])) {
                     <?php endif; ?>
 
                     <?php if ($dishPrimaryMood): ?>
-                      <span class="badge shadow-sm px-2 py-1 d-inline-flex align-items-center gap-1" style="background: <?= $dishPrimaryMood['badge_bg'] ?>; color: <?= $dishPrimaryMood['badge_color'] ?>; font-size: 0.65rem; border: 1px solid <?= $dishPrimaryMood['border_color'] ?>;" title="Curated for <?= e($dishPrimaryMood['name']) ?> vibe">
-                        <img src="<?= e(get_mood_image_url($dishPrimaryMood['id'])) ?>" alt="" style="width: 13px; height: 13px; border-radius: 50%; object-fit: cover;">
-                        <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
+                      <span class="badge shadow-sm px-2 py-1 d-inline-flex align-items-center gap-1" style="background: <?= e($dishPrimaryMood['badge_bg']) ?>; color: <?= e($dishPrimaryMood['badge_color']) ?>; font-size: 0.65rem; border: 1px solid <?= e($dishPrimaryMood['border_color']) ?>;" title="Curated for <?= e($dishPrimaryMood['name']) ?> vibe">
+                        <img src="<?= e(getMoodImageUrl($dishPrimaryMood['id'])) ?>" alt="" style="width: 13px; height: 13px; border-radius: 50%; object-fit: cover;">
+                        <?= e($dishPrimaryMood['emoji']) ?> <?= e($dishPrimaryMood['short_name']) ?>
                       </span>
                     <?php endif; ?>
                   </div>
@@ -787,7 +743,7 @@ if ($currentUser && !empty($currentUser['id'])) {
                       </span>
                       <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                               style="font-size: 0.75rem;" 
-                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                         (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                       </button>
                     </div>
@@ -800,18 +756,18 @@ if ($currentUser && !empty($currentUser['id'])) {
                   <!-- Pricing & Add to Cart Controls -->
                   <div class="d-flex align-items-center justify-content-between pt-2 border-top">
                     <div>
-                      <span class="fs-5 fw-bold text-forest"><?= format_inr($dish['price']) ?></span>
+                      <span class="fs-5 fw-bold text-forest"><?= formatInr($dish['price']) ?></span>
                       <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
                         <div class="text-success small fw-medium" style="font-size:0.68rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
                       <?php endif; ?>
                     </div>
 
                     <!-- Client JS Synchronized ADD Button -->
-                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(get_dish_image_url($dish['image_url'])) ?>">
+                    <div class="dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= e($dish['item_name']) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(getDishImageUrl($dish['image_url'])) ?>">
                       <button 
                         type="button" 
                         class="btn m3-add-btn rounded-pill px-3 py-1 fw-bold shadow-sm"
-                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', <?= e(jsJson((string)getDishImageUrl($dish['image_url']))) ?>)"
                       >
                         ADD <i class="bi bi-plus-lg ms-1"></i>
                       </button>

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * First-Come, First-Served (FCFS / FIFO) Queue Engine with Dynamic SLA Escalation
  * Zippy - Online Food Ordering Platform
@@ -10,7 +11,8 @@
 
 require_once __DIR__ . '/functions.php';
 
-class FCFSQueue {
+class FCFSQueue
+{
 
     /**
      * Get active kitchen orders sorted strictly by First-Come, First-Served (FIFO)
@@ -19,10 +21,11 @@ class FCFSQueue {
      * @param string|null $filterStatus Optional status filter (e.g., 'COOKING', 'CONFIRMED', 'READY')
      * @return array Chronologically sorted orders enriched with SLA metrics
      */
-    public static function getPrioritizedOrders(?string $filterStatus = null): array {
-        $statusClause = $filterStatus 
-            ? "AND o.order_status = :status" 
-            : "AND o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY')";
+    public static function getPrioritizedOrders(?string $filterStatus = null): array
+    {
+        $statusCondition = $filterStatus
+            ? "o.order_status = :status"
+            : "o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY')";
 
         $sql = "
             SELECT 
@@ -37,13 +40,13 @@ class FCFSQueue {
             JOIN `users` u ON o.user_id = u.user_id
             JOIN `order_items` oi ON o.order_id = oi.order_id
             JOIN `menu_items` m ON oi.item_id = m.item_id
-            WHERE 1=1 $statusClause
+            WHERE {$statusCondition}
             GROUP BY o.order_id
             ORDER BY o.placed_at ASC, o.order_id ASC
         ";
 
         $params = $filterStatus ? [':status' => $filterStatus] : [];
-        $orders = db_fetch_all($sql, $params);
+        $orders = dbFetchAll($sql, $params);
 
         if (empty($orders)) {
             return [];
@@ -61,7 +64,7 @@ class FCFSQueue {
             ORDER BY oi.order_item_id ASC
         ";
         
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         $itemsByOrder = [];
         if ($pdo) {
             $itemStmt = $pdo->prepare($itemSql);
@@ -88,7 +91,7 @@ class FCFSQueue {
             $order['items'] = $itemsByOrder[$order['order_id']] ?? [];
 
             // Compute backward-compatible WSJF score
-            $urgencyWeight = match($order['order_status']) {
+            $urgencyWeight = match ($order['order_status']) {
                 'PLACED', 'CONFIRMED' => 1.5,
                 'COOKING' => 1.2,
                 'READY' => 0.5,
@@ -157,11 +160,12 @@ class FCFSQueue {
      *
      * @return array List of operational exceptions requiring admin intervention
      */
-    public static function getTriageExceptions(): array {
+    public static function getTriageExceptions(): array
+    {
         $exceptions = [];
 
         // 1. Overdue Cooking Orders (elapsed > max prep time)
-        $overdueCooking = db_fetch_all("
+        $overdueCooking = dbFetchAll("
             SELECT * FROM (
                 SELECT o.order_id, u.full_name,
                        TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed,
@@ -191,7 +195,7 @@ class FCFSQueue {
         }
 
         // 2. Stalled Unconfirmed Orders (placed > 5 mins ago and still in PLACED or CONFIRMED)
-        $stalledPrep = db_fetch_all("
+        $stalledPrep = dbFetchAll("
             SELECT o.order_id, u.full_name,
                    TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed
             FROM `orders` o
@@ -214,7 +218,7 @@ class FCFSQueue {
         }
 
         // 3. Stalled Ready Orders (Ready > 5 mins without being dispatched)
-        $stalledReady = db_fetch_all("
+        $stalledReady = dbFetchAll("
             SELECT o.order_id, u.full_name,
                    TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed
             FROM `orders` o
@@ -236,7 +240,7 @@ class FCFSQueue {
         }
 
         // 4. Couriers Holding High COD Cash (>= ₹3,000)
-        $highCodRiders = db_fetch_all("
+        $highCodRiders = dbFetchAll("
             SELECT sp.profile_id, sp.cod_balance, u.full_name
             FROM `staff_profiles` sp
             JOIN `users` u ON sp.user_id = u.user_id
@@ -248,7 +252,7 @@ class FCFSQueue {
             $exceptions[] = [
                 'severity' => 'WARNING',
                 'type' => 'HIGH COD IN FLEET',
-                'title' => "Rider {$hr['full_name']} holds " . format_inr($hr['cod_balance']) . " cash",
+                'title' => "Rider {$hr['full_name']} holds " . formatInr($hr['cod_balance']) . " cash",
                 'badge_class' => 'bg-warning text-dark',
                 'icon' => 'bi-cash-stack',
                 'action_url' => ADMIN_URL . "/delivery-view.php"
@@ -256,7 +260,7 @@ class FCFSQueue {
         }
 
         // 5. Critical Stockouts (<= 5 portions)
-        $lowStockDishes = db_fetch_all("
+        $lowStockDishes = dbFetchAll("
             SELECT item_id, item_name, stock_quantity
             FROM `menu_items`
             WHERE stock_quantity <= 5 AND is_available = 1

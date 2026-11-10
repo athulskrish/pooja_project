@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Delivery Partner Fleet Web App
  * Zippy - Online Food Ordering Platform
@@ -21,8 +22,8 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 
 // Enforce Rider Authentication
-require_rider();
-$currentUser = current_user();
+requireRider();
+$currentUser = getCurrentUser();
 
 // Initialize or read rider duty state (default: online)
 if (!isset($_SESSION['rider_on_duty'])) {
@@ -35,316 +36,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
               || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
 
+    if (!verifyRequestCsrf()) {
+        http_response_code(403);
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid or expired CSRF token.']);
+            exit;
+        }
+        setFlash('danger', 'Invalid or expired CSRF token. Please refresh and try again.');
+        die('Invalid or expired CSRF token.');
+    }
+
     // 1. Toggle Duty Status
     if ($action === 'toggle_duty') {
         $newDuty = !empty($_POST['duty']) && $_POST['duty'] === '1';
-        $_SESSION['rider_on_duty'] = $newDuty;
-        if ($newDuty) {
-            auto_allocate_ready_orders_fcfs();
-        }
+        $res = FleetService::toggleRiderDuty($newDuty);
         if ($isAjax) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'on_duty' => $newDuty]);
+            echo json_encode(['success' => true, 'on_duty' => $res['on_duty']]);
             exit;
         }
-        set_flash('info', $newDuty ? 'You are now ONLINE and accepting dispatches.' : 'You are now OFFLINE. Dispatches paused.');
+        setFlash('info', $res['message']);
         header("Location: " . DELIVERY_URL . "/index.php");
         exit;
     }
 
     // 2. Claim / Pick Up Order from Kitchen
     if ($action === 'claim_order') {
-        // Enforce online duty status check (UC-14 Alternative Flow)
-        if (empty($_SESSION['rider_on_duty'])) {
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'You are currently OFFLINE. Please toggle duty to ONLINE before claiming orders.']);
-                exit;
-            }
-            set_flash('danger', 'You are currently OFFLINE. Please toggle your duty to ONLINE before claiming orders.');
-            header("Location: " . DELIVERY_URL . "/index.php");
-            exit;
-        }
+        $claimResult = FleetService::claimOrder(
+            (int)($_POST['order_id'] ?? 0),
+            $currentUser,
+            !empty($_SESSION['rider_on_duty'])
+        );
 
-        // ONE DRIVER ONE DELIVERY RULE: Enforce that this driver can only have 1 active delivery
-        $activeExisting = get_driver_active_delivery((int)$currentUser['id'], $currentUser['name'] ?? '');
-        if ($activeExisting) {
-            $policyMsg = "Policy Restriction (1 Driver, 1 Delivery): You are already fulfilling active delivery #ZIP-{$activeExisting['order_id']}. Please complete your current delivery before accepting another order.";
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => $policyMsg]);
-                exit;
-            }
-            set_flash('warning', $policyMsg);
-            header("Location: " . DELIVERY_URL . "/index.php");
-            exit;
-        }
-
-        $orderId = (int)($_POST['order_id'] ?? 0);
-        if ($orderId <= 0) {
-            $alloc = get_driver_allocated_order((int)$currentUser['id']);
-            if ($alloc) {
-                $orderId = (int)$alloc['order_id'];
-            }
-        }
-        $order = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
-
-        if ($order && in_array($order['order_status'], ['READY', 'CONFIRMED', 'COOKING'])) {
-            $riderName = $currentUser['name'] ?? 'Suresh Kumar (Rider)';
-            $riderPhone = $_SESSION['user_phone'] ?? '+91 96320 98765';
-
-            // Advance status to OUT_FOR_DELIVERY
-            db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = :id", [':id' => $orderId]);
-
-            // Ensure dispatch record exists & update with rider_id
-            $dispatch = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
-            if ($dispatch) {
-                db_query("
-                    UPDATE `delivery_dispatches` 
-                    SET `rider_id` = :rid,
-                        `delivery_partner_name` = :rname,
-                        `delivery_partner_phone` = :rphone,
-                        `dispatched_at` = NOW(),
-                        `delivery_status` = 'IN_TRANSIT',
-                        `current_latitude` = 12.97840000,
-                        `current_longitude` = 77.64080000,
-                        `route_progress` = 0,
-                        `distance_remaining_km` = 2.40,
-                        `estimated_minutes_remaining` = 15
-                    WHERE `order_id` = :id
-                ", [
-                    ':rid' => $currentUser['id'],
-                    ':rname' => $riderName,
-                    ':rphone' => $riderPhone,
-                    ':id' => $orderId
-                ]);
-            } else {
-                $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-                db_query("
-                    INSERT INTO `delivery_dispatches` 
-                    (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`, `current_latitude`, `current_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`)
-                    VALUES (:id, :rid, :rname, :rphone, :otp, NOW(), NOW(), 'IN_TRANSIT', 12.97840000, 77.64080000, 0, 2.40, 15)
-                ", [
-                    ':id' => $orderId,
-                    ':rid' => $currentUser['id'],
-                    ':rname' => $riderName,
-                    ':rphone' => $riderPhone,
-                    ':otp' => $newOtp
-                ]);
-            }
-
-            // Audit Trail
-            db_query("
-                INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
-                VALUES (:oid, :old, 'OUT_FOR_DELIVERY', :uid, NOW())
-            ", [
-                ':oid' => $orderId,
-                ':old' => $order['order_status'],
-                ':uid' => $currentUser['id']
-            ]);
-
-            // Synchronize FCFS parcel allocation
-            auto_allocate_ready_orders_fcfs();
-
+        if ($claimResult['ok']) {
             if ($isAjax) {
                 header('Content-Type: application/json');
                 echo json_encode([
-                    'success' => true, 
-                    'message' => "Order #ZIP-{$orderId} claimed and picked up!",
-                    'order_id' => $orderId
+                    'success' => true,
+                    'message' => $claimResult['message'],
+                    'order_id' => $claimResult['order_id']
                 ]);
                 exit;
             }
-            set_flash('success', "Order #ZIP-{$orderId} picked up. Please follow GPS to customer address.");
-            header("Location: " . DELIVERY_URL . "/index.php");
-            exit;
-        } else {
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Order is not ready for pickup yet.']);
-                exit;
-            }
-            set_flash('danger', 'Order is not ready for pickup.');
+            setFlash('success', "Order #ZIP-{$claimResult['order_id']} picked up. Please follow GPS to customer address.");
             header("Location: " . DELIVERY_URL . "/index.php");
             exit;
         }
+
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => $claimResult['message']]);
+            exit;
+        }
+        setFlash($claimResult['flash_type'] ?? 'danger', $claimResult['message']);
+        header("Location: " . DELIVERY_URL . "/index.php");
+        exit;
     }
 
     // 3. Verify Customer OTP & Finish Delivery
     if ($action === 'verify_otp') {
-        $orderId = (int)($_POST['order_id'] ?? 0);
-        $enteredOtp = trim($_POST['otp'] ?? '');
+        $verifyResult = FleetService::verifyDeliveryOtp(
+            (int)($_POST['order_id'] ?? 0),
+            (string)($_POST['otp'] ?? ''),
+            $currentUser
+        );
 
-        $dispatch = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
-        $expectedOtp = $dispatch['delivery_otp'] ?? '';
-
-        if (!empty($expectedOtp) && $enteredOtp === $expectedOtp) {
-            // Update order to DELIVERED
-            db_query("UPDATE `orders` SET `order_status` = 'DELIVERED' WHERE `order_id` = :id", [':id' => $orderId]);
-
-            // Update dispatch
-            db_query("
-                UPDATE `delivery_dispatches` 
-                SET `delivery_status` = 'DELIVERED', `delivered_at` = NOW() 
-                WHERE `order_id` = :id
-            ", [':id' => $orderId]);
-
-            // If COD, mark payment as SUCCESSFUL
-            db_query("
-                UPDATE `payments` 
-                SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() 
-                WHERE `order_id` = :id AND `payment_status` = 'PENDING'
-            ", [':id' => $orderId]);
-
-            // Update money_transactions for COD
-            $payRec = db_fetch_one("SELECT * FROM `payments` WHERE `order_id` = :id", [':id' => $orderId]);
-            if ($payRec && $payRec['payment_mode'] === 'COD') {
-                $orderTotal = (float)($payRec['amount_paid'] ?? 0);
-                // Mark transaction as COMPLETED
-                db_query("
-                    UPDATE `money_transactions` 
-                    SET `status` = 'COMPLETED', `handled_by` = :hby, `notes` = CONCAT(COALESCE(notes, ''), ' [Cash collected by rider at doorstep]') 
-                    WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
-                ", [
-                    ':hby' => 'Rider: ' . ($currentUser['name'] ?? 'Delivery Partner'),
-                    ':id'  => $orderId
-                ]);
-                // Increase rider's cash-in-hand balance and count
-                db_query("
-                    UPDATE `staff_profiles` 
-                    SET `cod_balance` = `cod_balance` + :amt, `total_orders_handled` = `total_orders_handled` + 1 
-                    WHERE `user_id` = :uid
-                ", [
-                    ':amt' => $orderTotal,
-                    ':uid' => $currentUser['id']
-                ]);
-            }
-
-            // Insert into audit trail
-            db_query("
-                INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
-                VALUES (:oid, 'OUT_FOR_DELIVERY', 'DELIVERED', :uid, NOW())
-            ", [
-                ':oid' => $orderId,
-                ':uid' => $currentUser['id']
-            ]);
-
-            // Trigger FCFS auto-allocation for next waiting parcel
-            auto_allocate_ready_orders_fcfs();
-
+        if ($verifyResult['ok']) {
             if ($isAjax) {
                 header('Content-Type: application/json');
                 echo json_encode([
-                    'success' => true, 
-                    'message' => "OTP verified! Order #ZIP-{$orderId} delivered successfully. ₹55.00 credited to your fleet wallet."
+                    'success' => true,
+                    'message' => $verifyResult['ajax_message']
                 ]);
                 exit;
             }
-            set_flash('success', "Order #ZIP-{$orderId} successfully DELIVERED! ₹55.00 payout credited.");
-            header("Location: " . DELIVERY_URL . "/index.php");
-            exit;
-        } else {
-            // Intelligent error message: check if the entered OTP belongs to another order
-            $otherDispatch = db_fetch_one("
-                SELECT d.*, o.order_status, o.order_id 
-                FROM `delivery_dispatches` d 
-                JOIN `orders` o ON d.order_id = o.order_id 
-                WHERE d.delivery_otp = :otp
-            ", [':otp' => $enteredOtp]);
-
-            if ($otherDispatch) {
-                if ($otherDispatch['order_id'] != $orderId) {
-                    if ($otherDispatch['order_status'] === 'DELIVERED') {
-                        $deliveredTime = !empty($otherDispatch['delivered_at']) ? date('h:i A', strtotime($otherDispatch['delivered_at'])) : 'earlier';
-                        $msg = "Incorrect OTP for Order #ZIP-{$orderId}! You entered '{$enteredOtp}', which belongs to Order #ZIP-{$otherDispatch['order_id']} (which was already delivered at {$deliveredTime}). The correct OTP for Order #ZIP-{$orderId} is '{$expectedOtp}'.";
-                    } else {
-                        $msg = "Notice: The entered OTP '{$enteredOtp}' belongs to Order #ZIP-{$otherDispatch['order_id']} (Status: {$otherDispatch['order_status']}). The correct OTP for Order #ZIP-{$orderId} is '{$expectedOtp}'.";
-                    }
-                } else {
-                    $msg = "Incorrect OTP code. The OTP for Order #ZIP-{$orderId} is '{$expectedOtp}'.";
-                }
-            } else {
-                $msg = "Incorrect OTP code '{$enteredOtp}'. The correct OTP for Order #ZIP-{$orderId} is '{$expectedOtp}'. Please check the customer screen for Order #ZIP-{$orderId}.";
-            }
-
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => $msg]);
-                exit;
-            }
-            set_flash('danger', $msg);
+            setFlash($verifyResult['flash_type'], $verifyResult['flash_message']);
             header("Location: " . DELIVERY_URL . "/index.php");
             exit;
         }
+
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => $verifyResult['ajax_message']]);
+            exit;
+        }
+        setFlash($verifyResult['flash_type'], $verifyResult['flash_message']);
+        header("Location: " . DELIVERY_URL . "/index.php");
+        exit;
     }
 }
 
-// Fetch Active In-Transit Orders FOR THIS RIDER ONLY (1 driver 1 delivery rule)
-$activeDelivery = get_driver_active_delivery((int)$currentUser['id'], $currentUser['name'] ?? '');
-$activeOrders = $activeDelivery ? [$activeDelivery] : [];
-
-// Fetch Line Items for Active Order
-$activeOrderItems = [];
-if (!empty($activeOrders)) {
-    $orderIds = array_column($activeOrders, 'order_id');
-    $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
-    $rawItems = db_fetch_all("
-        SELECT oi.*, m.item_name, m.is_veg 
-        FROM `order_items` oi
-        JOIN `menu_items` m ON oi.item_id = m.item_id
-        WHERE oi.order_id IN ($placeholders)
-    ", $orderIds);
-
-    foreach ($rawItems as $it) {
-        $activeOrderItems[$it['order_id']][] = $it;
-    }
-}
-
-// Ensure latest FCFS parcel allocation is up-to-date
-auto_allocate_ready_orders_fcfs();
-$allocatedOrder = empty($activeOrders) ? get_driver_allocated_order((int)$currentUser['id']) : null;
-
-// Fetch Available Orders Waiting for Pickup (Status: READY) strictly in FCFS order by preparation time
-$readyOrders = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-           a.address_line, a.landmark, a.pincode,
-           p.payment_mode,
-           d.delivery_otp, d.rider_id, d.delivery_status
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_status = 'READY'
-    ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
-");
-
-// Fetch Delivered Trip History FOR THIS RIDER
-$firstWord = trim(explode(' ', trim($currentUser['name'] ?? 'Rider'))[0]);
-$historyOrders = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name,
-           a.address_line, a.pincode,
-           p.payment_mode, p.amount_paid,
-           d.delivered_at, d.delivery_otp
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_status = 'DELIVERED'
-      AND (d.rider_id = :rid OR (d.rider_id IS NULL AND d.delivery_partner_name LIKE :rname))
-    ORDER BY d.delivered_at DESC, o.placed_at DESC
-    LIMIT 20
-", [
-    ':rid' => $currentUser['id'],
-    ':rname' => '%' . $firstWord . '%'
-]);
-
-// Calculate shift earnings
-$deliveredCount = count($historyOrders);
-$baseFare = 45.00;
-$todayEarnings = ($deliveredCount * $baseFare) + ($deliveredCount * 15.00); // base + distance incentive
-$totalTips = $deliveredCount * 20.00;
+$riderData = FleetService::getRiderDashboardData($currentUser);
+$activeOrders = $riderData['activeOrders'];
+$activeOrderItems = $riderData['activeOrderItems'];
+$allocatedOrder = $riderData['allocatedOrder'];
+$readyOrders = $riderData['readyOrders'];
+$historyOrders = $riderData['historyOrders'];
+$earningsSummary = $riderData['earningsSummary'];
+$deliveredCount = $riderData['deliveredCount'];
+$baseFare = $riderData['baseFare'];
+$todayEarnings = $riderData['todayEarnings'];
+$totalTips = $riderData['totalTips'];
+$totalEarned = $riderData['totalEarned'];
+$totalCashedOut = $riderData['totalCashedOut'];
+$availableBalance = $riderData['availableBalance'];
+$cashoutHistory = $riderData['cashoutHistory'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -375,9 +172,8 @@ require_once __DIR__ . '/includes/header.php';
       </div>
 
       <form method="POST" action="<?= DELIVERY_URL ?>/index.php" id="dutyToggleForm" class="m-0">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="toggle_duty">
-        <input type="hidden" name="is_ajax" value="1">
         <input type="hidden" name="duty" id="dutyHiddenInput" value="<?= $_SESSION['rider_on_duty'] ? '0' : '1' ?>">
         <div class="form-check form-switch fs-4 m-0">
           <input class="form-check-input cursor-pointer" type="checkbox" id="dutyToggleSwitch" <?= $_SESSION['rider_on_duty'] ? 'checked' : '' ?> onchange="toggleDutyAjax(this.checked);">
@@ -390,7 +186,7 @@ require_once __DIR__ . '/includes/header.php';
       <div class="col-6 col-md-3">
         <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
           <div class="small text-muted fw-bold">Today's Earnings</div>
-          <div class="fs-4 fw-bold text-success font-monospace"><?= format_inr($todayEarnings) ?></div>
+          <div class="fs-4 fw-bold text-success font-monospace"><?= formatInr($todayEarnings) ?></div>
         </div>
       </div>
       <div class="col-6 col-md-3">
@@ -402,7 +198,7 @@ require_once __DIR__ . '/includes/header.php';
       <div class="col-6 col-md-3">
         <div class="card border-0 rounded-4 p-3 shadow-xs bg-white text-center">
           <div class="small text-muted fw-bold">Customer Tips</div>
-          <div class="fs-4 fw-bold text-primary font-monospace"><?= format_inr($totalTips) ?></div>
+          <div class="fs-4 fw-bold text-primary font-monospace"><?= formatInr($totalTips) ?></div>
         </div>
       </div>
       <div class="col-6 col-md-3">
@@ -557,7 +353,7 @@ require_once __DIR__ . '/includes/header.php';
                       <div>
                         <?php if ($order['payment_mode'] === 'COD'): ?>
                           <span class="badge bg-warning text-dark border fw-bold">
-                            <i class="bi bi-cash me-1"></i> COD: Collect <?= format_inr($order['total_amount']) ?>
+                            <i class="bi bi-cash me-1"></i> COD: Collect <?= formatInr($order['total_amount']) ?>
                           </span>
                         <?php else: ?>
                           <span class="badge bg-success bg-opacity-10 text-success border border-success small fw-bold">
@@ -578,7 +374,7 @@ require_once __DIR__ . '/includes/header.php';
 
                   <!-- Action Buttons: GPS Navigation, Google Maps & OTP Verification -->
                   <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
-                    <button type="button" class="btn btn-outline-secondary rounded-pill py-2 px-3 fw-bold flex-grow-1" onclick="openGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['customer_name'])) ?>', '<?= e(addslashes($order['address_line'] ?: 'Indiranagar 100ft Road')) ?>')">
+                    <button type="button" class="btn btn-outline-secondary rounded-pill py-2 px-3 fw-bold flex-grow-1" onclick="openGpsModal(<?= (int)$order['order_id'] ?>, <?= e(jsJson((string)($order['customer_name'] ?? ''))) ?>, <?= e(jsJson((string)($order['address_line'] ?: 'Indiranagar 100ft Road'))) ?>)">
                       <i class="fa-solid fa-location-arrow me-1 text-primary"></i> Live Route Simulator
                     </button>
 
@@ -586,7 +382,7 @@ require_once __DIR__ . '/includes/header.php';
                       <i class="bi bi-geo-alt-fill text-danger"></i> Google Maps
                     </a>
                     
-                    <button type="button" class="btn btn-rider-primary py-2 px-3 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(<?= (int)$order['order_id'] ?>, '<?= e($order['delivery_otp']) ?>', '<?= e(addslashes($order['customer_name'])) ?>', '<?= $order['payment_mode'] ?>', '<?= format_inr($order['total_amount']) ?>')">
+                    <button type="button" class="btn btn-rider-primary py-2 px-3 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(<?= (int)$order['order_id'] ?>, <?= e(jsJson((string)($order['delivery_otp'] ?? ''))) ?>, <?= e(jsJson((string)($order['customer_name'] ?? ''))) ?>, <?= e(jsJson((string)($order['payment_mode'] ?? 'ONLINE'))) ?>, <?= e(jsJson((string)formatInr($order['total_amount']))) ?>)">
                       <i class="bi bi-shield-check me-1"></i> Verify OTP & Finish
                     </button>
                   </div>
@@ -653,7 +449,7 @@ require_once __DIR__ . '/includes/header.php';
                   <span class="fw-bold font-monospace text-dark fs-6">#ZIP-<?= (int)$allocatedOrder['order_id'] ?></span>
                 </div>
                 <div class="small text-muted mb-2">
-                  <i class="bi bi-clock-history me-1 text-success"></i> Prepared at <strong><?= !empty($allocatedOrder['ready_at']) ? date('h:i A', strtotime($allocatedOrder['ready_at'])) : date('h:i A', strtotime($allocatedOrder['placed_at'])) ?></strong> • Allocated to you on First-Come, First-Served basis
+                  <i class="bi bi-clock-history me-1 text-success"></i> Prepared at <strong><?= !empty($allocatedOrder['ready_at']) ? date('h:i A', (int)strtotime((string)$allocatedOrder['ready_at'])) : date('h:i A', (int)strtotime((string)$allocatedOrder['placed_at'])) ?></strong> • Allocated to you on First-Come, First-Served basis
                 </div>
                 <h5 class="fw-bold text-dark mb-1">Customer: <?= e($allocatedOrder['customer_name']) ?></h5>
                 <p class="small text-muted mb-2">
@@ -664,7 +460,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <form method="POST" action="<?= DELIVERY_URL ?>/index.php" class="m-0 claim-order-form" onsubmit="event.preventDefault(); takeReadyFood(<?= (int)$allocatedOrder['order_id'] ?>);">
-                  <?= csrf_field() ?>
+                  <?= csrfField() ?>
                   <input type="hidden" name="action" value="claim_order">
                   <input type="hidden" name="order_id" value="<?= (int)$allocatedOrder['order_id'] ?>">
                   <button type="submit" id="btnClaimOrder<?= (int)$allocatedOrder['order_id'] ?>" class="btn btn-success w-100 rounded-pill fw-bold py-2 shadow-xs" style="background:#2E6F40; border-color:#2E6F40;">
@@ -674,7 +470,7 @@ require_once __DIR__ . '/includes/header.php';
               </div>
 
               <?php 
-                $otherReady = array_filter($readyOrders, fn($ro) => (int)$ro['order_id'] !== (int)$allocatedOrder['order_id']); 
+                $otherReady = array_filter($readyOrders, fn(array $ro): bool => (int)$ro['order_id'] !== (int)$allocatedOrder['order_id']); 
               ?>
               <?php if (!empty($otherReady)): ?>
                 <div class="mt-3">
@@ -690,7 +486,7 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="font-mono fw-bold">#ZIP-<?= (int)$oro['order_id'] ?></span>
                           </div>
                           <div class="text-truncate text-muted mt-1">Customer: <?= e($oro['customer_name']) ?></div>
-                          <div class="text-muted" style="font-size:0.7rem;">Prepared: <?= !empty($oro['ready_at']) ? date('h:i A', strtotime($oro['ready_at'])) : 'Recently' ?></div>
+                          <div class="text-muted" style="font-size:0.7rem;">Prepared: <?= !empty($oro['ready_at']) ? date('h:i A', (int)strtotime((string)$oro['ready_at'])) : 'Recently' ?></div>
                         </div>
                       </div>
                     <?php endforeach; ?>
@@ -751,7 +547,7 @@ require_once __DIR__ . '/includes/header.php';
               </div>
               <div class="d-flex justify-content-between align-items-center border-top pt-2 small flex-wrap gap-1">
                 <span class="text-muted">Payment: <?= e($ho['payment_mode']) ?> • OTP Verified (Code: <?= e($ho['delivery_otp']) ?>)</span>
-                <span class="fw-bold text-success font-monospace">Earned: ₹45.00 + ₹15 Distance = ₹60.00</span>
+                <span class="fw-bold text-success font-monospace">Earned: <?= formatInr($baseFare) ?> + <?= formatInr($earningsSummary['distance_rate']) ?> Distance + <?= formatInr($earningsSummary['tip_rate']) ?> Tip = <?= formatInr($earningsSummary['trip_payout_rate']) ?></span>
               </div>
             </div>
           <?php endforeach; ?>
@@ -768,34 +564,42 @@ require_once __DIR__ . '/includes/header.php';
       <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-3 border-bottom">
           <div>
-            <div class="small text-muted text-uppercase fw-bold">Current Cycle Balance</div>
-            <div class="display-6 fw-bold text-success font-monospace"><?= format_inr($todayEarnings + $totalTips) ?></div>
+            <div class="small text-muted text-uppercase fw-bold">Available Payout Balance</div>
+            <div class="display-6 fw-bold text-success font-monospace" id="riderAvailableBalance" data-amount="<?= number_format($availableBalance, 2, '.', '') ?>"><?= formatInr($availableBalance) ?></div>
           </div>
-          <button class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;" onclick="handleCashOut()">
-            <i class="bi bi-cash-stack me-1"></i> Instant Payout / Cash Out
+          <button type="button" id="btnCashOutMain" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;" onclick="handleCashOut()" <?= $availableBalance <= 0 ? 'disabled' : '' ?>>
+            <i class="bi bi-cash-stack me-1"></i> <?= $availableBalance > 0 ? 'Instant Payout / Cash Out' : 'All Earnings Settled' ?>
           </button>
         </div>
 
-        <h6 class="fw-bold text-dark mb-3">Earnings Breakdown for Today</h6>
+        <h6 class="fw-bold text-dark mb-3">Earnings Breakdown &amp; Settlement Ledger</h6>
         <div class="d-flex justify-content-between py-2 border-bottom small">
-          <span class="text-muted">Base Delivery Fees (<?= (int)$deliveredCount ?> Trips @ ₹45.00)</span>
-          <span class="fw-bold font-monospace"><?= format_inr($deliveredCount * 45.00) ?></span>
+          <span class="text-muted">Base Delivery Fees (<?= (int)$deliveredCount ?> Trips @ <?= formatInr($baseFare) ?>)</span>
+          <span class="fw-bold font-monospace"><?= formatInr($earningsSummary['base_fare_total']) ?></span>
         </div>
         <div class="d-flex justify-content-between py-2 border-bottom small">
-          <span class="text-muted">Distance Surcharge (> 2.5 km)</span>
-          <span class="fw-bold font-monospace"><?= format_inr($deliveredCount * 15.00) ?></span>
+          <span class="text-muted">Distance Surcharge (> 2.5 km @ <?= formatInr($earningsSummary['distance_rate']) ?>)</span>
+          <span class="fw-bold font-monospace"><?= formatInr($earningsSummary['distance_total']) ?></span>
         </div>
         <div class="d-flex justify-content-between py-2 border-bottom small">
-          <span class="text-muted">Direct Customer Tips (100% pass-through)</span>
-          <span class="fw-bold font-monospace text-primary"><?= format_inr($totalTips) ?></span>
+          <span class="text-muted">Direct Customer Tips (100% pass-through @ <?= formatInr($earningsSummary['tip_rate']) ?>)</span>
+          <span class="fw-bold font-monospace text-primary"><?= formatInr($totalTips) ?></span>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom small">
+          <span class="text-dark fw-semibold">Gross Accumulated Trip Earnings</span>
+          <span class="fw-bold font-monospace text-dark"><?= formatInr($totalEarned) ?></span>
+        </div>
+        <div class="d-flex justify-content-between py-2 border-bottom small">
+          <span class="text-muted">Less: Settled Instant IMPS Cashouts</span>
+          <span class="fw-bold font-monospace text-danger" id="riderTotalCashedOut">-<?= formatInr($totalCashedOut) ?></span>
         </div>
         <div class="d-flex justify-content-between pt-3 fw-bold fs-6">
-          <span>Net Payable Total</span>
-          <span class="text-success font-monospace"><?= format_inr($todayEarnings + $totalTips) ?></span>
+          <span>Net Available Payout Balance</span>
+          <span class="text-success font-monospace" id="riderNetAvailableSummary"><?= formatInr($availableBalance) ?></span>
         </div>
       </div>
 
-      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
         <h6 class="fw-bold text-dark mb-3"><i class="bi bi-bank me-2 text-success"></i>Direct Deposit Bank Account</h6>
         <div class="d-flex justify-content-between align-items-center">
           <div>
@@ -803,6 +607,48 @@ require_once __DIR__ . '/includes/header.php';
             <div class="small text-muted">A/C: ••••••••••4019 • IFSC: HDFC0001234 • Status: <span class="badge bg-success">Verified</span></div>
           </div>
           <span class="badge bg-light text-dark border">Primary</span>
+        </div>
+      </div>
+
+      <!-- Recent IMPS Cashouts Table -->
+      <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold text-dark mb-0"><i class="bi bi-receipt-cutoff me-2 text-success"></i>Recent Instant IMPS Cashouts</h6>
+          <span class="badge bg-light text-dark border rounded-pill" id="cashoutCountBadge"><?= count($cashoutHistory) ?> Transfers</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0 small" id="cashoutHistoryTable">
+            <thead class="table-light text-muted">
+              <tr>
+                <th>Reference ID</th>
+                <th>Date &amp; Time</th>
+                <th>Bank Destination</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Status</th>
+              </tr>
+            </thead>
+            <tbody id="cashoutHistoryBody">
+              <?php if (empty($cashoutHistory)): ?>
+                <tr id="emptyCashoutRow">
+                  <td colspan="5" class="text-center text-muted py-4">No instant IMPS cashouts initiated yet.</td>
+                </tr>
+              <?php else: ?>
+                <?php foreach ($cashoutHistory as $ch): ?>
+                  <tr>
+                    <td class="font-monospace fw-bold text-dark"><?= e($ch['transaction_reference']) ?></td>
+                    <td class="text-muted"><?= date('d M Y, h:i A', strtotime($ch['paid_at'])) ?></td>
+                    <td class="text-muted">HDFC Bank ••••4019</td>
+                    <td class="text-end font-monospace fw-bold text-success"><?= formatInr((float)$ch['net_paid']) ?></td>
+                    <td class="text-end">
+                      <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2">
+                        <i class="bi bi-check-circle-fill me-1"></i><?= e($ch['payout_status']) ?>
+                      </span>
+                    </td>
+                  </tr>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </tbody>
+          </table>
         </div>
       </div>
 

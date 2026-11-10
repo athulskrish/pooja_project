@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Saved Addresses Management (3NF Relational Model)
  * Zippy - Online Food Ordering Platform
@@ -11,60 +12,30 @@ $activePage = 'profile';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
-$currentUser = current_user();
-require_login();
+$currentUser = getCurrentUser();
+requireLogin();
 
-$userId = $currentUser['id'];
+$userId = (int)$currentUser['id'];
 
-// Handle Add Address
+// Handle Add / Set Default / Soft Delete Address Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } elseif ($_POST['action'] === 'add_address') {
-        $type = clean_input($_POST['address_type'] ?? 'HOME');
-        $line = clean_input($_POST['address_line'] ?? '');
-        $landmark = clean_input($_POST['landmark'] ?? '');
-        $pincode = clean_input($_POST['pincode'] ?? '560038');
-        $isDefault = !empty($_POST['is_default']) ? 1 : 0;
-
-        if (!empty($line)) {
-            if ($isDefault) {
-                db_query("UPDATE `user_addresses` SET `is_default` = 0 WHERE `user_id` = :uid", [':uid' => $userId]);
-            }
-            db_query("
-                INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `is_default`) 
-                VALUES (:uid, :type, :line, :lm, :pin, :def)
-            ", [
-                ':uid' => $userId,
-                ':type' => $type,
-                ':line' => $line,
-                ':lm' => $landmark,
-                ':pin' => $pincode,
-                ':def' => $isDefault
-            ]);
-            set_flash('success', 'New delivery address added successfully.');
+        $res = OrderService::addCustomerAddress($userId, $_POST);
+        setFlash($res['type'], $res['message']);
+        if (!empty($res['should_redirect'])) {
             header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
             exit;
-        } else {
-            set_flash('danger', 'Please enter a complete address line.');
         }
     } elseif ($_POST['action'] === 'set_default') {
-        $addressId = (int)$_POST['address_id'];
-        db_query("UPDATE `user_addresses` SET `is_default` = 0 WHERE `user_id` = :uid", [':uid' => $userId]);
-        db_query("UPDATE `user_addresses` SET `is_default` = 1 WHERE `address_id` = :aid AND `user_id` = :uid", [
-            ':aid' => $addressId,
-            ':uid' => $userId
-        ]);
-        set_flash('success', 'Default delivery destination updated.');
+        $res = OrderService::setDefaultCustomerAddress($userId, (int)($_POST['address_id'] ?? 0));
+        setFlash($res['type'], $res['message']);
         header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
         exit;
     } elseif ($_POST['action'] === 'delete_address') {
-        $addressId = (int)$_POST['address_id'];
-        db_query("DELETE FROM `user_addresses` WHERE `address_id` = :aid AND `user_id` = :uid", [
-            ':aid' => $addressId,
-            ':uid' => $userId
-        ]);
-        set_flash('success', 'Address removed from your address book.');
+        $res = OrderService::softDeleteCustomerAddress($userId, (int)($_POST['address_id'] ?? 0));
+        setFlash($res['type'], $res['message']);
         header("Location: " . CUSTOMER_URL . "/manage-addresses.php");
         exit;
     }
@@ -72,12 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch all addresses
-$addresses = db_fetch_all("
-    SELECT * FROM `user_addresses` 
-    WHERE `user_id` = :uid 
-    ORDER BY `is_default` DESC, `address_id` DESC
-", [':uid' => $userId]);
+// Fetch active saved addresses
+$addresses = OrderService::getCustomerAddresses($userId);
 ?>
 
 <main class="py-4">
@@ -129,7 +96,7 @@ $addresses = db_fetch_all("
               <div class="border-top pt-3 mt-3 d-flex align-items-center justify-content-between">
                 <?php if (!$addr['is_default']): ?>
                   <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="set_default">
                     <input type="hidden" name="address_id" value="<?= (int)$addr['address_id'] ?>">
                     <button type="submit" class="btn btn-link text-success btn-sm p-0 fw-bold text-decoration-none">
@@ -141,7 +108,7 @@ $addresses = db_fetch_all("
                 <?php endif; ?>
 
                 <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php" class="m-0" onsubmit="return confirm('Are you sure you want to delete this address?');">
-                  <?= csrf_field() ?>
+                  <?= csrfField() ?>
                   <input type="hidden" name="action" value="delete_address">
                   <input type="hidden" name="address_id" value="<?= (int)$addr['address_id'] ?>">
                   <button type="submit" class="btn btn-link text-danger btn-sm p-0 text-decoration-none">
@@ -169,7 +136,7 @@ $addresses = db_fetch_all("
       </div>
       
       <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_address">
         
         <div class="modal-body p-4">

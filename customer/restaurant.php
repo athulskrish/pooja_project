@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Restaurant Menu & Ordering Page
  * Zippy - Online Food Ordering Platform
@@ -10,30 +11,11 @@ $activePage = 'restaurant';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/../includes/AprioriEngine.php';
 
-// Algorithm 1: Apriori Market Basket Analysis Dynamic Cross-Selling
-$aprioriRecs = AprioriEngine::getRecommendations([1], 4);
-
-// Fetch Categories and Menu Items
-$categories = db_fetch_all("
-    SELECT c.*, COUNT(m.item_id) AS total_items
-    FROM `categories` c
-    JOIN `menu_items` m ON c.category_id = m.category_id
-    WHERE c.is_active = 1 AND m.is_available = 1
-    GROUP BY c.category_id
-    ORDER BY c.display_order ASC
-");
-
-// Group menu items by category
-$itemsByCategory = [];
-foreach ($categories as $cat) {
-    $itemsByCategory[$cat['category_id']] = db_fetch_all("
-        SELECT * FROM `menu_items` 
-        WHERE `category_id` = :cid AND `is_available` = 1 
-        ORDER BY `price` ASC
-    ", [':cid' => $cat['category_id']]);
-}
-
-$customSummaryMap = get_all_dishes_customization_counts();
+$catalogData = CatalogService::getRestaurantCatalog();
+$aprioriRecs = $catalogData['aprioriRecs'];
+$categories = $catalogData['categories'];
+$itemsByCategory = $catalogData['itemsByCategory'];
+$customSummaryMap = $catalogData['customSummaryMap'];
 ?>
 
 <main class="py-4">
@@ -157,7 +139,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
               <div class="col-sm-6 col-md-3">
                 <div class="card h-100 border rounded-3 p-2 bg-light bg-opacity-50 text-center d-flex flex-column justify-content-between">
                   <div class="position-relative mb-2">
-                    <img src="<?= e(get_dish_image_url($rec['image_url'] ?? '')) ?>" 
+                    <img src="<?= e(getDishImageUrl($rec['image_url'] ?? '')) ?>" 
                          alt="<?= e($rec['item_name']) ?>" 
                          class="rounded-3 w-100 object-fit-cover" 
                          style="height: 100px;">
@@ -172,7 +154,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
                       <span class="rating-val"><?= number_format((float)(!empty($rec['rating']) ? $rec['rating'] : 4.8), 1) ?></span>
                     </span>
                   </div>
-                  <div class="text-muted small mb-1"><?= format_inr($rec['price']) ?></div>
+                  <div class="text-muted small mb-1"><?= formatInr($rec['price']) ?></div>
                   <?php if (!empty($customSummaryMap[$rec['item_id']]['group_count'])): ?>
                     <div class="text-success small fw-medium mb-2" style="font-size:0.65rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
                   <?php else: ?>
@@ -180,7 +162,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
                   <?php endif; ?>
                   <button type="button" 
                           class="btn btn-sm btn-outline-success rounded-pill fw-bold w-100 py-1"
-                          onclick="addToCart(<?= (int)$rec['item_id'] ?>, '<?= e(addslashes($rec['item_name'])) ?>', <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>, 'Meghana Foods', '<?= e(get_dish_image_url($rec['image_url'] ?? '')) ?>'); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
+                          onclick="addToCart(<?= (int)$rec['item_id'] ?>, <?= e(jsJson((string)$rec['item_name'])) ?>, <?= (float)$rec['price'] ?>, <?= $rec['is_veg'] ? 'true' : 'false' ?>, 'Meghana Foods', <?= e(jsJson((string)getDishImageUrl($rec['image_url'] ?? ''))) ?>); if (typeof refreshAprioriRecommendations === 'function') refreshAprioriRecommendations();">
                     <i class="bi bi-plus-lg me-1"></i> Add
                   </button>
                 </div>
@@ -207,7 +189,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
               <?php foreach ($catItems as $dish): ?>
                 <?php 
                   $isHealthyDish = (!empty($dish['is_healthy']) || ($cat['category_slug'] ?? '') === 'healthy' || stripos($cat['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
-                  $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
+                  $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
                 ?>
                 <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
                   
@@ -231,9 +213,9 @@ $customSummaryMap = get_all_dishes_customization_counts();
                       <?php endif; ?>
 
                       <?php if ($dishPrimaryMood): ?>
-                        <span class="badge px-2 py-0 fw-semibold d-inline-flex align-items-center gap-1" style="background:<?= $dishPrimaryMood['badge_bg'] ?>; color:<?= $dishPrimaryMood['badge_color'] ?>; font-size:0.65rem; border:1px solid <?= $dishPrimaryMood['border_color'] ?>;">
-                          <img src="<?= e(get_mood_image_url($dishPrimaryMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
-                          <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
+                        <span class="badge px-2 py-0 fw-semibold d-inline-flex align-items-center gap-1" style="background:<?= e($dishPrimaryMood['badge_bg']) ?>; color:<?= e($dishPrimaryMood['badge_color']) ?>; font-size:0.65rem; border:1px solid <?= e($dishPrimaryMood['border_color']) ?>;">
+                          <img src="<?= e(getMoodImageUrl($dishPrimaryMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
+                          <?= e($dishPrimaryMood['emoji']) ?> <?= e($dishPrimaryMood['short_name']) ?>
                         </span>
                       <?php endif; ?>
 
@@ -250,13 +232,13 @@ $customSummaryMap = get_all_dishes_customization_counts();
                       </span>
                       <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                               style="font-size: 0.72rem;" 
-                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                              onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                         (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                       </button>
                     </div>
 
                     <div class="d-flex align-items-center gap-2 mb-1">
-                      <span class="fw-bold text-forest fs-5"><?= format_inr($dish['price']) ?></span>
+                      <span class="fw-bold text-forest fs-5"><?= formatInr($dish['price']) ?></span>
                       <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
                         <span class="badge rounded-pill text-success bg-success-subtle border border-success-subtle" style="font-size: 0.68rem; font-weight: 500;">
                           <i class="bi bi-sliders me-1"></i>Customisable
@@ -270,13 +252,13 @@ $customSummaryMap = get_all_dishes_customization_counts();
 
                   <!-- Dish Image & ADD Control -->
                   <div class="position-relative text-center flex-shrink-0" style="width: 130px;">
-                    <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
+                    <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
                     
-                    <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= addslashes(e($dish['item_name'])) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(get_dish_image_url($dish['image_url'])) ?>" style="margin-bottom: -14px;">
+                    <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= e($dish['item_name']) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(getDishImageUrl($dish['image_url'])) ?>" style="margin-bottom: -14px;">
                       <button 
                         type="button" 
                         class="btn m3-add-btn rounded-pill shadow-sm px-3 py-1 fw-bold"
-                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
+                        onclick="addToCart(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', <?= e(jsJson((string)getDishImageUrl($dish['image_url']))) ?>)"
                       >
                         ADD <i class="bi bi-plus-lg ms-1"></i>
                       </button>

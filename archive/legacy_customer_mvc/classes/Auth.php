@@ -55,50 +55,32 @@ class Auth {
         $email = trim(strtolower($email));
         $pdo = Database::getInstance();
 
-        if ($pdo) {
-            try {
-                $stmt = $pdo->prepare("SELECT u.*, r.role_name 
-                                       FROM users u 
-                                       JOIN roles r ON u.role_id = r.role_id 
-                                       WHERE LOWER(u.email) = ? AND u.is_active = 1 LIMIT 1");
-                $stmt->execute([$email]);
-                $user = $stmt->fetch();
-
-                if ($user && password_verify($password, $user['password_hash'])) {
-                    // Regenerate session id to prevent fixation attacks
-                    session_regenerate_id(true);
-
-                    $_SESSION['user_id'] = (int)$user['user_id'];
-                    $_SESSION['user_name'] = $user['full_name'];
-                    $_SESSION['user_email'] = $user['email'];
-                    $_SESSION['user_phone'] = $user['phone_number'];
-                    $_SESSION['user_role_id'] = (int)$user['role_id'];
-                    $_SESSION['user_role_name'] = $user['role_name'];
-
-                    return ['success' => true, 'user' => $user];
-                }
-            } catch (PDOException $e) {
-                // fall through to mock demo check
-            }
+        if (!$pdo) {
+            return ['success' => false, 'message' => 'Database connection unavailable.'];
         }
 
-        // Demo fallback accounts for viva defense and evaluation
-        $demoAccounts = [
-            'athul@zippy.test' => ['id' => 1, 'name' => 'Athul', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
-            'customer@zippy.test' => ['id' => 1, 'name' => 'Athul', 'phone' => '+91 9876543210', 'role' => 'CUSTOMER'],
-            'rahul@zippy.test' => ['id' => 2, 'name' => 'Rahul Sharma', 'phone' => '+91 9876543211', 'role' => 'CUSTOMER']
-        ];
+        try {
+            $stmt = $pdo->prepare("SELECT u.*, r.role_name 
+                                   FROM users u 
+                                   JOIN roles r ON u.role_id = r.role_id 
+                                   WHERE LOWER(u.email) = ? AND u.is_active = 1 LIMIT 1");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch();
 
-        if (isset($demoAccounts[$email]) && ($password === 'password123' || $password === 'admin123')) {
-            session_regenerate_id(true);
-            $u = $demoAccounts[$email];
-            $_SESSION['user_id'] = $u['id'];
-            $_SESSION['user_name'] = $u['name'];
-            $_SESSION['user_email'] = $email;
-            $_SESSION['user_phone'] = $u['phone'];
-            $_SESSION['user_role_id'] = 1;
-            $_SESSION['user_role_name'] = $u['role'];
-            return ['success' => true, 'user' => $u];
+            if ($user && password_verify($password, $user['password_hash'])) {
+                session_regenerate_id(true);
+
+                $_SESSION['user_id'] = (int)$user['user_id'];
+                $_SESSION['user_name'] = $user['full_name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_phone'] = $user['phone_number'];
+                $_SESSION['user_role_id'] = (int)$user['role_id'];
+                $_SESSION['user_role_name'] = $user['role_name'];
+
+                return ['success' => true, 'user' => $user];
+            }
+        } catch (PDOException $e) {
+            return ['success' => false, 'message' => 'Authentication failed due to database error.'];
         }
 
         return ['success' => false, 'message' => 'Invalid email address or password.'];
@@ -121,57 +103,49 @@ class Auth {
         $hash = password_hash($password, $algo);
 
         $pdo = Database::getInstance();
-        if ($pdo) {
-            try {
-                // Check if user exists
-                $stmt = $pdo->prepare("SELECT user_id FROM users WHERE LOWER(email) = ? OR phone_number = ? LIMIT 1");
-                $stmt->execute([$email, $phone]);
-                if ($stmt->fetch()) {
-                    return ['success' => false, 'message' => 'An account with this email or phone number already exists.'];
-                }
-
-                $pdo->beginTransaction();
-
-                // Role 1 is CUSTOMER
-                $stmt = $pdo->prepare("INSERT INTO users (role_id, full_name, email, phone_number, password_hash, is_active) 
-                                       VALUES (1, ?, ?, ?, ?, 1)");
-                $stmt->execute([$name, $email, $phone, $hash]);
-                $newUserId = (int)$pdo->lastInsertId();
-
-                // Insert default address if provided
-                if (!empty($addressLine)) {
-                    $stmtAddr = $pdo->prepare("INSERT INTO user_addresses (user_id, address_type, address_line, landmark, pincode, is_default) 
-                                               VALUES (?, 'HOME', ?, 'Bengaluru', ?, 1)");
-                    $stmtAddr->execute([$newUserId, $addressLine, $pincode]);
-                }
-
-                $pdo->commit();
-
-                // Auto login after registration
-                session_regenerate_id(true);
-                $_SESSION['user_id'] = $newUserId;
-                $_SESSION['user_name'] = $name;
-                $_SESSION['user_email'] = $email;
-                $_SESSION['user_phone'] = $phone;
-                $_SESSION['user_role_id'] = 1;
-                $_SESSION['user_role_name'] = 'CUSTOMER';
-
-                return ['success' => true, 'message' => 'Registration successful! Welcome to Zippy.'];
-            } catch (PDOException $e) {
-                if ($pdo->inTransaction()) $pdo->rollBack();
-                return ['success' => false, 'message' => 'Registration failed: ' . $e->getMessage()];
-            }
+        if (!$pdo) {
+            return ['success' => false, 'message' => 'Database connection unavailable. Cannot complete registration.'];
         }
 
-        // Mock fallback registration
-        session_regenerate_id(true);
-        $_SESSION['user_id'] = 99;
-        $_SESSION['user_name'] = $name;
-        $_SESSION['user_email'] = $email;
-        $_SESSION['user_phone'] = $phone;
-        $_SESSION['user_role_id'] = 1;
-        $_SESSION['user_role_name'] = 'CUSTOMER';
-        return ['success' => true, 'message' => 'Registration successful! (Demo session active)'];
+        try {
+            // Check if user exists
+            $stmt = $pdo->prepare("SELECT user_id FROM users WHERE LOWER(email) = ? OR phone_number = ? LIMIT 1");
+            $stmt->execute([$email, $phone]);
+            if ($stmt->fetch()) {
+                return ['success' => false, 'message' => 'An account with this email or phone number already exists.'];
+            }
+
+            $pdo->beginTransaction();
+
+            // Role 2 is CUSTOMER in canonical roles table
+            $stmt = $pdo->prepare("INSERT INTO users (role_id, full_name, email, phone_number, password_hash, is_active) 
+                                   VALUES (2, ?, ?, ?, ?, 1)");
+            $stmt->execute([$name, $email, $phone, $hash]);
+            $newUserId = (int)$pdo->lastInsertId();
+
+            // Insert default address if provided
+            if (!empty($addressLine)) {
+                $stmtAddr = $pdo->prepare("INSERT INTO user_addresses (user_id, address_type, address_line, landmark, pincode, is_default) 
+                                           VALUES (?, 'HOME', ?, 'Bengaluru', ?, 1)");
+                $stmtAddr->execute([$newUserId, $addressLine, $pincode]);
+            }
+
+            $pdo->commit();
+
+            // Auto login after registration
+            session_regenerate_id(true);
+            $_SESSION['user_id'] = $newUserId;
+            $_SESSION['user_name'] = $name;
+            $_SESSION['user_email'] = $email;
+            $_SESSION['user_phone'] = $phone;
+            $_SESSION['user_role_id'] = 2;
+            $_SESSION['user_role_name'] = 'CUSTOMER';
+
+            return ['success' => true, 'message' => 'Registration successful! Welcome to Zippy.'];
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            return ['success' => false, 'message' => 'Registration failed: ' . $e->getMessage()];
+        }
     }
 
     /**

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Console Footer
  * Zippy - Online Food Ordering Platform

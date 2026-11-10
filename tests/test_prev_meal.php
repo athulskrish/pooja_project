@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pm = get_customer_previous_meal(2);
+$pm = getCustomerPreviousMeal(2);
 if (!$pm) {
     echo "NO PREVIOUS MEAL FOUND\n";
     exit(1);

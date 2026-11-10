@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$orders = db_fetch_all("
+$orders = dbFetchAll("
     SELECT o.order_id, o.order_status, o.placed_at, o.ready_at,
            d.rider_id, d.delivery_partner_name, d.delivery_status, d.dispatched_at, d.delivered_at
     FROM `orders` o 
@@ -25,7 +26,7 @@ foreach ($orders as $o) {
 }
 
 echo "\n--- RIDERS STATUS ---\n";
-$riders = get_all_delivery_riders();
+$riders = getAllDeliveryRiders();
 foreach ($riders as $r) {
     echo sprintf(
         "Rider: %-10s (ID: %d) | Duty: %-7s | Busy: %-5s | ActiveOrder: %s\n",

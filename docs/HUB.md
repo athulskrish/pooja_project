@@ -1,84 +1,55 @@
-# 🧭 Zippy Master Context Router (HUB.md)
+# Zippy Project Hub — Master Navigation & Architectural Map
 
-> **Purpose:** Single entry point for AI-assisted problem solving. By referencing this document, the AI deterministically routes to the exact source files, data tables, and architectural rules needed for a task—eliminating broad codebase scans and keeping context token usage minimal (~2k–5k tokens).
+Welcome to the central index for the **Zippy Online Food Ordering Platform** (MCSP-232 MCA Major Project). This document serves as the primary navigation hub and architectural truth for both developers and AI coding assistants.
 
 ---
 
-## 1. System Topology Quick-Map
+## 1. Documentation Index
+- **[PHP_STANDARDS.md](./PHP_STANDARDS.md)** *(Rules)*: Strict types (`declare(strict_types=1)`), PDO prepared statements, ACID transaction + `FOR UPDATE` locking, PSR-12 brace/spacing rules, `camelCase` helpers/methods, and view-service separation.
+- **[DATA_DICTIONARY.md](./DATA_DICTIONARY.md)** *(Truth)*: Complete 3NF relational schema across all **21 tables** (`schema.sql` + `food_moods`), soft-delete `is_active` governance, `order_status` state machine, and audit trail structure.
+- **[TASK_LOG.md](./TASK_LOG.md)** *(Changelog)*: Chronological record of all implemented features, bug fixes, audits, and compliance phases.
 
-| Layer / Portal | Directory | Primary Role & Responsibilities | Core Entry File |
+### Module Specifications (`docs/modules/`)
+1. [Authentication & RBAC System](./modules/auth_rbac.md)
+2. [Customer Storefront & Discovery Engine](./modules/customer_storefront.md)
+3. [Order Lifecycle, Cart & ACID Checkout](./modules/order_lifecycle.md)
+4. [Kitchen Display System (KDS) & Queue Routing](./modules/kitchen_kds.md)
+5. [Delivery Partner Fleet & Live Tracking](./modules/delivery_fleet.md)
+6. [Admin Operations, Analytics & Finance](./modules/admin_operations.md)
+7. [Computational Algorithms (Apriori, SES, WSJF, FCFS)](./modules/computational_algorithms.md)
+
+---
+
+## 2. Active Application Architecture & Routing Matrix
+
+### Core Configuration, Helpers & Services
+- **Core Bootstrap:** `config/config.php`, `config/database.php` (`getDbConnection()`, `checkDbStatus()`)
+- **Shared Auth & Utilities:** `includes/auth.php` (`loginUser()`, `registerCustomer()`, `logoutUser()`), `includes/functions.php` (`dbQuery()`, `dbTransactional()`, `transitionOrderStatus()`, `autoAllocateReadyOrdersFcfs()`), `includes/view_helpers.php` (`getUserInitials()`, `renderOrderCard()`, `renderEmptyState()`, `formatKdsWaitTime()`, `getKdsPriorityBadge()`)
+- **Algorithm Engines:** `includes/AprioriEngine.php`, `includes/WSJFQueue.php`, `includes/FCFSQueue.php`, `includes/SESDemandForecast.php`
+- **Domain Services (`includes/Services/`):**
+  - `CatalogService.php` — storefront menu/search/header state, admin categories/dishes/customizations/moods CRUD & soft archival
+  - `OrderService.php` — customer checkout, 60s cancel, history, invoice, rating, FAQ/tickets, KDS dashboard/KOT/stock toggle, admin order batches/COD capture
+  - `FleetService.php` — GPS route interpolation (`interpolateRoute()`), rider duty toggle, FCFS/manual claim, OTP delivery fulfillment, admin fleet payouts & COD settlements
+  - `FinanceService.php` — money transactions ledger, daily Z-report cash drawer closure, kitchen payroll disbursement, executive BI reports
+  - `AdminService.php` — operations dashboard KPIs, audit log export & filters, FAQ CRUD, review moderation/export, user directory & RBAC management, customer profile updates
+- **Launchpad:** `index.php`
+
+### Portal Routes & JSON/AJAX Endpoints
+
+| Actor / Portal | Guard / Middleware | Entry Views | AJAX / API Endpoints |
 | :--- | :--- | :--- | :--- |
-| **System Config** | `config/` | App constants, PDO database singleton, session security, CSRF | `config/config.php` |
-| **Data & Migrations**| `database/` | 3NF MySQL schema (20 tables), seeders, table migrations | `database/schema.sql` |
-| **Shared Engine** | `includes/` | Auth/RBAC, order calculations, computational algorithms | `includes/functions.php` |
-| **Customer Portal** | `customer/` | Browsing, cart, checkout, customization, order tracking | `customer/index.php` |
-| **Kitchen (KDS)** | `kitchen/` | WSJF queue, prep status, live order polling, KOT | `kitchen/index.php` |
-| **Delivery Fleet** | `delivery/` | FCFS dispatch, live GPS telemetry, OTP fulfillment | `delivery/index.php` |
-| **Admin Console** | `admin/` | Catalog CRUD, analytics, staff payroll, cash registers, audit | `admin/index.php` |
-| **Public API** | `api/` | Webhooks, telemetry, catalog sync, live stream | `api/` |
+| **Customer Portal** (`/customer/`) | `requireCustomer()` (`customer/includes/auth_guard.php`) for private account/order/checkout routes | `index.php`, `restaurant.php`, `search.php`, `cart.php`, `checkout.php`, `order-success.php`, `order-status.php`, `order-history.php`, `invoice.php`, `rate-order.php`, `manage-addresses.php`, `profile.php`, `offers.php`, `help.php`, `login.php`, `signup.php`, `forgot-password.php`, `logout.php`, `privacy.php`, `terms.php`, `404.php` | `customer/ajax/apriori-api.php`, `customer/ajax/get-dish-customizations.php`, `customer/ajax/order-status-api.php` |
+| **Kitchen KDS** (`/kitchen/`) | `requireKitchen()` | `kitchen/index.php`, `kitchen/kot.php`, `kitchen/login.php`, `kitchen/logout.php` | `kitchen/ajax/poll-orders.php`, `kitchen/ajax/update-status.php`, `kitchen/ajax/toggle-stock.php` |
+| **Delivery Fleet** (`/delivery/`) | `requireRider()` | `delivery/index.php`, `delivery/login.php`, `delivery/logout.php` | `delivery/ajax/cashout.php` |
+| **Admin Dashboard** (`/admin/`) | `requireAdmin()` | `admin/index.php`, `admin/orders.php`, `admin/dishes.php`, `admin/categories.php`, `admin/moods.php`, `admin/dish-customizations.php`, `admin/kitchen-view.php`, `admin/delivery-view.php`, `admin/financial-transactions.php`, `admin/reports.php`, `admin/reviews.php`, `admin/faqs.php`, `admin/users.php`, `admin/audit-logs.php`, `admin/login.php`, `admin/logout.php` | `admin/ajax/adjust-stock.php`, `admin/ajax/bulk-dishes.php`, `admin/ajax/command-search.php`, `admin/ajax/get-fleet-telemetry.php`, `admin/ajax/get-order-audit-trail.php`, `admin/ajax/toggle-stock.php`, `admin/ajax/update-order-status.php` |
+| **Shared Platform API** (`/api/`) | Role-scoped session / HMAC-SHA256 webhook signature | — | `api/catalog-sync.php`, `api/dish-reviews.php`, `api/live-location.php`, `api/live-stream.php`, `api/payment-webhook.php` |
+| **Database & Verification** | CLI / Admin maintenance | `database/schema.sql`, `database/seed.php`, `database/ensure_seed_orders.php`, `database/migrate_*.php` (`11` migrations) | `tests/*.php` (`13` test/verification scripts) |
 
 ---
 
-## 2. Problem-to-Resource Routing Matrix
-
-When a problem is presented, locate the matching row below. Load **only** the specified Source Files, Data Tables, and Module Doc:
-
-| Domain / Issue Category | Primary Source Files | Database Tables Involved | Secondary Module Doc |
-| :--- | :--- | :--- | :--- |
-| **Authentication & RBAC** | `includes/auth.php`<br>`customer/includes/auth_guard.php` | `users`<br>`roles` | [auth_rbac.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/auth_rbac.md) |
-| **Storefront & Menu Catalog** | `customer/index.php`<br>`customer/restaurant.php`<br>`customer/search.php` | `categories`<br>`menu_items`<br>`dish_customization_*` | [customer_storefront.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/customer_storefront.md) |
-| **Cart, Checkout & Coupons** | `customer/cart.php`<br>`customer/checkout.php`<br>`includes/functions.php` | `orders`<br>`order_items`<br>`payments`<br>`user_addresses` | [order_lifecycle.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/order_lifecycle.md) |
-| **Order Lifecycle & Tracking**| `customer/order-status.php`<br>`api/payment-webhook.php`<br>`customer/invoice.php` | `orders`<br>`order_items`<br>`order_audit_trail`<br>`payments` | [order_lifecycle.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/order_lifecycle.md) |
-| **Kitchen Display (KDS)** | `kitchen/index.php`<br>`kitchen/kot.php`<br>`kitchen/ajax/update-status.php` | `orders`<br>`order_items`<br>`menu_items` | [kitchen_kds.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/kitchen_kds.md) |
-| **Delivery Fleet & Dispatch** | `delivery/index.php`<br>`api/live-location.php`<br>`includes/FCFSQueue.php` | `delivery_dispatches`<br>`orders`<br>`users` | [delivery_fleet.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/delivery_fleet.md) |
-| **Algorithms (WSJF, Apriori, SES)** | `includes/AprioriEngine.php`<br>`includes/WSJFQueue.php`<br>`includes/SESDemandForecast.php` | `orders`<br>`order_items`<br>`menu_items` | [computational_algorithms.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/computational_algorithms.md) |
-| **Admin Operations & Finance**| `admin/dishes.php`<br>`admin/financial-transactions.php`<br>`admin/audit-logs.php` | `money_transactions`<br>`staff_salary_payouts`<br>`cash_register_closures` | [admin_operations.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/modules/admin_operations.md) |
-| **Database & Schema Setup** | `config/database.php`<br>`database/schema.sql`<br>`database/seed.php` | All 20 tables | [DATA_DICTIONARY.md](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/DATA_DICTIONARY.md) |
-
----
-
-## 3. Mandatory Governance & Quality Gates
-
-Any code analysis, bugfix, or enhancement proposed by AI MUST comply with:
-- **Code Standards & Architecture:** [`PHP_STANDARDS.md`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/PHP_STANDARDS.md)
-- **Data Schema & Locking:** [`DATA_DICTIONARY.md`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/DATA_DICTIONARY.md)
-- **Living Session History:** [`TASK_LOG.md`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/TASK_LOG.md)
-
----
-
-## 4. AI Operating Protocol (System Process)
-
-When the user initiates a task with:
-```text
-Problem: <User problem statement>
-Main Doc: HUB.md
-```
-
-The AI must follow this strict 4-Phase execution loop:
-
-```mermaid
-flowchart TD
-    P1["Phase 1: Route Resolution<br>Read HUB.md only & declare identified route"] --> P2["Phase 2: Targeted Inspection<br>Read specific PHP files + Domain Doc + PHP_STANDARDS.md"]
-    P2 --> P3["Phase 3: Quality Gate<br>Validate against PHP 8.1+, strict types, PDO binding, CSRF, RBAC"]
-    P3 --> P4["Phase 4: Doc Sync-Back<br>Append session entry to TASK_LOG.md & update HUB.md if needed"]
-```
-
-### Phase 1: Context Routing Statement
-The AI begins by stating:
-> *"Route Resolved: Domain `[Domain Name]`. Loading `docs/modules/[doc].md`, `docs/PHP_STANDARDS.md`, and source files `[path1]`, `[path2]`. Skipping full-repo scan."*
-
-### Phase 2: Surgical Inspection
-Read **only** the target files identified in the matrix. Do not read unrelated portals or large document sets.
-
-### Phase 3: Code Verification Against Standards
-Ensure code satisfies:
-1. `declare(strict_types=1);` at top of file.
-2. Parameter & return type declarations on all functions/methods.
-3. Prepared statements with bound parameters (zero raw SQL interpolation).
-4. Explicit transaction boundaries (`beginTransaction`, `commit`, `rollBack`) with pessimistic locking for state changes.
-5. CSRF token validation and XSS escaping on dynamic output.
-
-### Phase 4: Post-Process Doc Synchronization
-Before finishing, the AI must:
-1. Append a formatted entry to [`TASK_LOG.md`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/TASK_LOG.md).
-2. If new endpoints, classes, or database tables were introduced, update the routing matrix in [`HUB.md`](file:///e:/2026%20project/2026%20july/Pooja/pooja_project/docs/HUB.md).
+## 3. Compliance Rollout Roadmap
+1. **Phase 0 & 1 *(Completed)*:** CSRF header standardization, repaired `auth_guard.php`, removed password fallback / gated demo mode, closed API/customer RBAC & IDOR gaps, enforced fail-closed CSRF + HMAC webhook signature verification, and eliminated XSS/JS sinks (`TASK-006`, `TASK-007`).
+2. **Phase 2 *(Completed)*:** Wrapped checkout, claim, OTP delivery, inventory adjustments, financial settlements, and reviews inside `dbTransactional()` + `FOR UPDATE`, retired duplicate audit DB trigger, and eliminated raw SQL interpolation (`TASK-007`).
+3. **Phase 3 *(Completed)*:** Enabled `declare(strict_types=1);` and complete parameter/return/closure type declarations across all active PHP files (`TASK-008`).
+4. **Phase 4 *(Completed)*:** Extracted all portal queries/business logic into `includes/Services/*` and `includes/view_helpers.php`, and enforced soft-delete (`is_active = 0`) governance across catalog, customizations, moods, FAQs, and addresses (`TASK-009`).
+5. **Phase 5 *(Completed)*:** Applied PSR-12 formatting sweep (`class`/`function` braces on new line, control spacing), standardized all functions/methods to `camelCase`, and synchronized all governance/module docs (`TASK-010`).

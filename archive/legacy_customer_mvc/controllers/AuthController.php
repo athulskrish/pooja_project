@@ -26,7 +26,7 @@ class AuthController {
                 header("Location: {$redirect}");
                 exit;
             } else {
-                setFlash('danger', 'Invalid email or password. Please try demo credentials.');
+                setFlash('danger', 'Invalid email or password. Please check your credentials and try again.');
             }
         }
     }

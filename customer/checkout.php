@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * ACID Transactional Order Checkout & Payment Processing
  * Zippy - Online Food Ordering Platform
@@ -10,435 +11,36 @@
 $pageTitle = 'Secure Checkout & Payment';
 $activePage = 'cart';
 
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-$currentUser = current_user();
+requireCustomer(CUSTOMER_URL . '/login.php?redirect=checkout');
+$currentUser = getCurrentUser();
+
+require_once __DIR__ . '/includes/header.php';
 
 // Saved addresses for current user
-$savedAddresses = [];
-if ($currentUser) {
-    $savedAddresses = db_fetch_all("
-        SELECT * FROM `user_addresses` 
-        WHERE `user_id` = :uid 
-        ORDER BY `is_default` DESC, `address_id` DESC
-    ", [':uid' => $currentUser['id']]);
-}
+$savedAddresses = $currentUser ? OrderService::getCustomerAddresses((int)$currentUser['id']) : [];
 
 $errorMessage = null;
 
 // Handle Checkout Form Submission (ACID Database Transaction)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'process_order') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $errorMessage = 'Invalid or expired session token. Please try again.';
     } else {
-        $rawCartJson = $_POST['cart_json'] ?? '[]';
-        $cartItems = json_decode($rawCartJson, true);
-        $couponCode = clean_input($_POST['coupon_code'] ?? '');
-        $paymentMode = clean_input($_POST['payment_mode'] ?? 'UPI');
-        $razorpayPaymentId = clean_input($_POST['razorpay_payment_id'] ?? '');
-        $orderNotes = clean_input($_POST['order_notes'] ?? '');
-        $selectedAddressId = !empty($_POST['address_id']) ? (int)$_POST['address_id'] : null;
-
-        // Advance Order Scheduling parameters
-        $deliveryType = clean_input($_POST['delivery_type'] ?? 'now');
-        $isScheduled = ($deliveryType === 'schedule') ? 1 : 0;
-        $scheduledFor = null;
-        $scheduledSlot = null;
-
-        if ($isScheduled) {
-            $scheduledDate = clean_input($_POST['scheduled_date'] ?? date('Y-m-d'));
-            $scheduledTime = clean_input($_POST['scheduled_time'] ?? '13:00');
-            $scheduledSlotInput = clean_input($_POST['scheduled_slot'] ?? '');
-
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $scheduledDate)) {
-                $scheduledDate = date('Y-m-d');
-            }
-            if (!preg_match('/^\d{2}:\d{2}$/', $scheduledTime)) {
-                $scheduledTime = '13:00';
-            }
-
-            $combinedDateTimeStr = $scheduledDate . ' ' . $scheduledTime . ':00';
-            $scheduledTimestamp = strtotime($combinedDateTimeStr);
-
-            // If scheduled time is past or within next 20 mins, ensure at least 45 mins in future
-            if (!$scheduledTimestamp || $scheduledTimestamp < time() + 1200) {
-                $scheduledTimestamp = strtotime('+1 hour');
-            }
-
-            $scheduledFor = date('Y-m-d H:i:s', $scheduledTimestamp);
-
-            if (!empty($scheduledSlotInput)) {
-                $scheduledSlot = $scheduledSlotInput;
-            } else {
-                $dateLabel = (date('Y-m-d', $scheduledTimestamp) === date('Y-m-d')) 
-                    ? 'Today' 
-                    : ((date('Y-m-d', $scheduledTimestamp) === date('Y-m-d', strtotime('+1 day'))) ? 'Tomorrow' : date('D, d M', $scheduledTimestamp));
-                $scheduledSlot = $dateLabel . ' (' . date('h:i A', $scheduledTimestamp) . ')';
-            }
-
-            $orderNotes = trim($orderNotes . " [ADVANCE ORDER: Scheduled for {$scheduledSlot}]");
+        $checkoutRes = OrderService::processCheckout((int)$currentUser['id'], $_POST);
+        if (!empty($checkoutRes['ok'])) {
+            $orderId = (int)$checkoutRes['order_id'];
+            echo "<script>
+                localStorage.removeItem('pooja_zippy_cart');
+                localStorage.removeItem('pooja_active_coupon');
+                window.location.href = '" . CUSTOMER_URL . "/order-success.php?order_id=" . $orderId . "';
+            </script>";
+            exit;
         }
-
-        // Guest address input fallback
-        $guestName = clean_input($_POST['guest_name'] ?? '');
-        $guestPhone = clean_input($_POST['guest_phone'] ?? '');
-        $guestEmail = clean_input($_POST['guest_email'] ?? '');
-        $newAddressLine = clean_input($_POST['new_address_line'] ?? '');
-        $newPincode = clean_input($_POST['new_pincode'] ?? '560038');
-
-        if (empty($cartItems)) {
-            $errorMessage = 'Your cart is empty. Please add items before checking out.';
-        } else {
-            $pdo = getDBConnection();
-            if (!$pdo) {
-                $errorMessage = 'Database connection failed. Cannot process checkout.';
-            } else {
-                try {
-                    // BEGIN ACID TRANSACTION
-                    $pdo->beginTransaction();
-
-                    // Step 1: Ensure User exists (or register guest user)
-                    $userId = $currentUser ? $currentUser['id'] : null;
-                    if (!$userId) {
-                        if (empty($guestEmail) || empty($guestName) || empty($guestPhone)) {
-                            throw new Exception("Please provide your contact information (Name, Email, Phone) to place the order.");
-                        }
-
-                        // Check if guest email already exists in users table
-                        $userStmt = $pdo->prepare("SELECT user_id FROM `users` WHERE LOWER(email) = LOWER(:email) LIMIT 1");
-                        $userStmt->execute([':email' => $guestEmail]);
-                        $existingUid = $userStmt->fetchColumn();
-
-                        if ($existingUid) {
-                            $userId = (int)$existingUid;
-                        } else {
-                            $dummyHash = password_hash('password123', PASSWORD_DEFAULT);
-                            $regStmt = $pdo->prepare("
-                                INSERT INTO `users` (`role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) 
-                                VALUES (2, :name, :email, :phone, :hash, 1)
-                            ");
-                            $regStmt->execute([
-                                ':name' => $guestName,
-                                ':email' => $guestEmail,
-                                ':phone' => $guestPhone,
-                                ':hash' => $dummyHash
-                            ]);
-                            $userId = (int)$pdo->lastInsertId();
-                        }
-                    }
-
-                    // Step 2: Ensure Delivery Address exists
-                    if (!$selectedAddressId) {
-                        if (empty($newAddressLine)) {
-                            throw new Exception("Please select or enter a delivery address.");
-                        }
-                        $addrStmt = $pdo->prepare("
-                            INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `pincode`, `is_default`) 
-                            VALUES (:uid, 'HOME', :line, :pin, 1)
-                        ");
-                        $addrStmt->execute([
-                            ':uid' => $userId,
-                            ':line' => $newAddressLine,
-                            ':pin' => $newPincode
-                        ]);
-                        $selectedAddressId = (int)$pdo->lastInsertId();
-                    }
-
-                    // Step 3: Concurrency Control - Lock & Verify Stock via SELECT ... FOR UPDATE
-                    $verifiedItems = [];
-                    $subtotal = 0.00;
-                    $maxPrepTime = 0;
-
-                    $lockStmt = $pdo->prepare("
-                        SELECT `item_id`, `item_name`, `price`, `stock_quantity`, `is_available`, `prep_time_minutes` 
-                        FROM `menu_items` 
-                        WHERE `item_id` = :id 
-                        FOR UPDATE
-                    ");
-
-                    foreach ($cartItems as $item) {
-                        $itemId = (int)($item['id'] ?? $item['item_id'] ?? 0);
-                        $qty = max(1, (int)($item['qty'] ?? $item['quantity'] ?? 1));
-
-                        $lockStmt->execute([':id' => $itemId]);
-                        $dish = $lockStmt->fetch();
-
-                        if (!$dish) {
-                            throw new Exception("Dish item #{$itemId} not found in catalog.");
-                        }
-
-                        if (!$dish['is_available'] || $dish['stock_quantity'] < $qty) {
-                            throw new Exception("Insufficient stock for '{$dish['item_name']}'. Only {$dish['stock_quantity']} portions remaining.");
-                        }
-
-                        $basePrice = (float)$dish['price'];
-                        $addonTotal = 0.00;
-                        $customParts = [];
-
-                        // Verify and calculate customizations if present
-                        if (!empty($item['customizations']) && is_array($item['customizations'])) {
-                            $optIds = [];
-                            foreach ($item['customizations'] as $c) {
-                                if (!empty($c['optionId'])) {
-                                    $optIds[] = (int)$c['optionId'];
-                                } elseif (!empty($c['option_id'])) {
-                                    $optIds[] = (int)$c['option_id'];
-                                }
-                            }
-
-                            if (!empty($optIds)) {
-                                $inList = implode(',', array_map('intval', $optIds));
-                                $validOptions = db_fetch_all("
-                                    SELECT o.*, g.group_name 
-                                    FROM `dish_customization_options` o
-                                    JOIN `dish_customization_groups` g ON o.group_id = g.group_id
-                                    WHERE o.option_id IN ({$inList}) AND g.item_id = :iid AND o.is_available = 1
-                                ", [':iid' => $itemId]);
-
-                                foreach ($validOptions as $vo) {
-                                    $optPrice = (float)$vo['price'];
-                                    $addonTotal += $optPrice;
-                                    $priceTag = ($optPrice > 0) ? " (+₹" . number_format($optPrice, 2) . ")" : "";
-                                    $customParts[] = $vo['option_name'] . $priceTag;
-                                }
-                            }
-                        }
-
-                        $customText = !empty($customParts) ? implode(', ', $customParts) : (!empty($item['customizationText']) ? clean_input($item['customizationText']) : null);
-                        $unitPrice = $basePrice + $addonTotal;
-                        $lineTotal = round($unitPrice * $qty, 2);
-                        $subtotal += $lineTotal;
-                        $maxPrepTime = max($maxPrepTime, (int)$dish['prep_time_minutes']);
-
-                        $verifiedItems[] = [
-                            'item_id' => $dish['item_id'],
-                            'item_name' => $dish['item_name'],
-                            'price' => $unitPrice,
-                            'base_price' => $basePrice,
-                            'customization_total' => $addonTotal,
-                            'customizations' => $customText,
-                            'qty' => $qty,
-                            'line_total' => $lineTotal
-                        ];
-                    }
-
-                    // Step 4: Compute final bill amounts
-                    $bill = calculate_bill_totals($verifiedItems, $couponCode);
-                    $taxAmount = $bill['gst_amount'];
-                    $deliveryFee = $bill['delivery_fee'];
-                    $discountAmount = $bill['discount'];
-                    $totalAmount = $bill['final_total'];
-
-                    // Dynamic ETA: Current time + Max Prep + 15 mins travel
-                    $etaMinutes = $maxPrepTime + 15;
-
-                    // Step 5: Insert Order Header
-                    $orderStmt = $pdo->prepare("
-                        INSERT INTO `orders` (
-                            `user_id`, `address_id`, `subtotal`, `tax_amount`, 
-                            `delivery_fee`, `platform_fee`, `discount_amount`, `total_amount`, 
-                            `coupon_code`, `order_status`, `is_scheduled`, `scheduled_for`, `scheduled_slot`,
-                            `order_notes`, `placed_at`, `estimated_delivery_time`
-                        ) VALUES (
-                            :uid, :aid, :sub, :tax, 
-                            :del, :plat, :disc, :tot, 
-                            :coupon, 'CONFIRMED', :is_sched, :sched_for, :sched_slot,
-                            :notes, NOW(), :est_delivery
-                        )
-                    ");
-                    $appliedCoupon = !empty($bill['coupon_code']) ? $bill['coupon_code'] : (!empty($couponCode) ? strtoupper(trim($couponCode)) : null);
-                    $platformFee = (float)($bill['platform_fee'] ?? 5.00);
-                    $estimatedDelivery = $scheduledFor ?: date('Y-m-d H:i:s', strtotime("+{$etaMinutes} minutes"));
-
-                    $orderStmt->execute([
-                        ':uid' => $userId,
-                        ':aid' => $selectedAddressId,
-                        ':sub' => $subtotal,
-                        ':tax' => $taxAmount,
-                        ':del' => $deliveryFee,
-                        ':plat' => $platformFee,
-                        ':disc' => $discountAmount,
-                        ':tot' => $totalAmount,
-                        ':coupon' => $appliedCoupon,
-                        ':is_sched' => $isScheduled,
-                        ':sched_for' => $scheduledFor,
-                        ':sched_slot' => $scheduledSlot,
-                        ':notes' => $orderNotes,
-                        ':est_delivery' => $estimatedDelivery
-                    ]);
-                    $orderId = (int)$pdo->lastInsertId();
-
-                    // Store standardized human-friendly tracking number (#ZIP-xxxx)
-                    $orderNumber = '#ZIP-' . $orderId;
-                    $pdo->prepare("UPDATE `orders` SET `order_number` = :onum WHERE `order_id` = :oid")->execute([
-                        ':onum' => $orderNumber,
-                        ':oid' => $orderId
-                    ]);
-
-                    // Step 6: Insert Order Items & Deduct Stock
-                    $itemInsertStmt = $pdo->prepare("
-                        INSERT INTO `order_items` (`order_id`, `item_id`, `quantity`, `unit_price`, `line_total`, `customizations`, `customization_total`) 
-                        VALUES (:oid, :iid, :qty, :price, :ltot, :custom, :ctot)
-                    ");
-                    $stockUpdateStmt = $pdo->prepare("
-                        UPDATE `menu_items` 
-                        SET `stock_quantity` = `stock_quantity` - :qty 
-                        WHERE `item_id` = :iid
-                    ");
-
-                    foreach ($verifiedItems as $vItem) {
-                        $itemInsertStmt->execute([
-                            ':oid' => $orderId,
-                            ':iid' => $vItem['item_id'],
-                            ':qty' => $vItem['qty'],
-                            ':price' => $vItem['price'],
-                            ':ltot' => $vItem['line_total'],
-                            ':custom' => $vItem['customizations'] ?? null,
-                            ':ctot' => $vItem['customization_total'] ?? 0.00
-                        ]);
-
-                        $stockUpdateStmt->execute([
-                            ':qty' => $vItem['qty'],
-                            ':iid' => $vItem['item_id']
-                        ]);
-                    }
-
-                    // Step 7: Record Payment Entry
-                    $validModes = ['UPI', 'CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING', 'COD'];
-                    if (!in_array($paymentMode, $validModes)) {
-                        $paymentMode = 'UPI';
-                    }
-
-                    if ($paymentMode === 'COD') {
-                        $txRef = 'COD-' . strtoupper(bin2hex(random_bytes(5)));
-                        $payStatus = 'PENDING';
-                    } else {
-                        // Razorpay Online Sandbox Payment
-                        if (!empty($razorpayPaymentId)) {
-                            $txRef = $razorpayPaymentId;
-                        } else {
-                            $txRef = 'pay_test_' . substr(bin2hex(random_bytes(7)), 0, 14);
-                        }
-                        $payStatus = 'SUCCESSFUL';
-                    }
-
-                    $payStmt = $pdo->prepare("
-                        INSERT INTO `payments` (`order_id`, `payment_mode`, `transaction_reference`, `amount_paid`, `payment_status`, `payment_timestamp`) 
-                        VALUES (:oid, :mode, :tx, :amt, :pstat, NOW())
-                    ");
-                    $payStmt->execute([
-                        ':oid' => $orderId,
-                        ':mode' => $paymentMode,
-                        ':tx' => $txRef,
-                        ':amt' => $totalAmount,
-                        ':pstat' => $payStatus
-                    ]);
-
-                    // Step 8: Create Delivery Dispatch Ticket with 6-digit Secret OTP & Geolocation (1 Driver 1 Delivery Policy)
-                    $availableRider = get_available_delivery_partner();
-                    $assignedRiderId = $availableRider ? (int)$availableRider['user_id'] : null;
-                    $assignedRiderName = $availableRider ? $availableRider['full_name'] : 'Zippy Fleet Courier Pool';
-                    $assignedRiderPhone = $availableRider ? ($availableRider['phone_number'] ?? '+91 96320 98765') : '+91 96320 98765';
-
-                    $deliveryOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-                    $dispStmt = $pdo->prepare("
-                        INSERT INTO `delivery_dispatches` (
-                            `order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, 
-                            `delivery_otp`, `assigned_at`, `delivery_status`,
-                            `current_latitude`, `current_longitude`, `delivery_latitude`, `delivery_longitude`,
-                            `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`
-                        ) VALUES (
-                            :oid, :rid, :rname, :rphone, 
-                            :otp, NOW(), 'ASSIGNED',
-                            12.97840000, 77.64080000, 12.96980000, 77.64990000,
-                            0, 2.40, :eta
-                        )
-                    ");
-                    $dispStmt->execute([
-                        ':oid'   => $orderId,
-                        ':rid'   => $assignedRiderId,
-                        ':rname' => $assignedRiderName,
-                        ':rphone'=> $assignedRiderPhone,
-                        ':otp'   => $deliveryOtp,
-                        ':eta'   => $etaMinutes
-                    ]);
-
-                    // Step 9: Audit Trail Logging
-                    $auditNewStatus = $isScheduled ? "CONFIRMED [Scheduled: {$scheduledSlot}]" : 'CONFIRMED';
-                    $auditStmt = $pdo->prepare("
-                        INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) 
-                        VALUES (:oid, 'PLACED', :astat, :uid, NOW())
-                    ");
-                    $auditStmt->execute([
-                        ':oid' => $orderId,
-                        ':astat' => $auditNewStatus,
-                        ':uid' => $userId
-                    ]);
-
-                    // COMMIT ACID TRANSACTION
-                    $pdo->commit();
-
-                    // Step 10: Record Money Transaction in Financial Ledger
-                    try {
-                        if ($paymentMode === 'COD') {
-                            record_money_transaction(
-                                $orderId,
-                                $userId,
-                                'CUSTOMER_PAYMENT_COD',
-                                'INWARD',
-                                'COD_CASH',
-                                (float)$totalAmount,
-                                'PENDING',
-                                $txRef,
-                                'Pending Delivery Courier',
-                                "Order {$orderNumber} Cash on Delivery pending doorstep collection."
-                            );
-                        } else {
-                            $mappedMethod = in_array($paymentMode, ['CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING']) ? $paymentMode : 'UPI';
-                            record_money_transaction(
-                                $orderId,
-                                $userId,
-                                'CUSTOMER_PAYMENT_ONLINE',
-                                'INWARD',
-                                $mappedMethod,
-                                (float)$totalAmount,
-                                'COMPLETED',
-                                $txRef,
-                                'Razorpay Gateway / Online Pay',
-                                "Order {$orderNumber} online prepayment received from customer."
-                            );
-                        }
-                    } catch (Throwable $te) {
-                        error_log("Money transaction recording error for Order #{$orderId}: " . $te->getMessage());
-                    }
-
-                    // If user was guest, log them in
-                    if (!$currentUser) {
-                        $_SESSION['user_id'] = $userId;
-                        $_SESSION['user_name'] = $guestName;
-                        $_SESSION['user_email'] = $guestEmail;
-                        $_SESSION['user_phone'] = $guestPhone;
-                        $_SESSION['role_id'] = 2;
-                        $_SESSION['role_name'] = 'CUSTOMER';
-                    }
-
-                    // Redirect to Success page with client script to clear cart
-                    echo "<script>
-                        localStorage.removeItem('pooja_zippy_cart');
-                        localStorage.removeItem('pooja_active_coupon');
-                        window.location.href = '" . CUSTOMER_URL . "/order-success.php?order_id=" . $orderId . "';
-                    </script>";
-                    exit;
-
-                } catch (Exception $e) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
-                    $errorMessage = "Transaction Rolled Back: " . $e->getMessage();
-                }
-            }
-        }
+        $errorMessage = $checkoutRes['error'] ?? 'Checkout failed. Please try again.';
     }
 }
 ?>
@@ -459,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <?php endif; ?>
 
     <form method="POST" action="<?= CUSTOMER_URL ?>/checkout.php" id="checkoutForm">
-      <?= csrf_field() ?>
+      <?= csrfField() ?>
       <input type="hidden" name="action" value="process_order">
       <input type="hidden" name="cart_json" id="checkoutCartJsonInput" value="[]">
       <input type="hidden" name="coupon_code" id="checkoutCouponInput" value="">
@@ -472,46 +74,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <!-- Left Column: Delivery Address & Payment Method -->
         <div class="col-lg-8">
           
-          <!-- Section 1: Customer Contact / Authentication -->
-          <?php if (!$currentUser): ?>
-            <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-person-fill text-success me-2"></i>1. Contact Information</h5>
-                <a href="<?= CUSTOMER_URL ?>/login.php?redirect=checkout" class="btn btn-outline-success btn-sm rounded-pill px-3">
-                  Have an account? Sign In
-                </a>
-              </div>
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label small fw-bold">Full Name *</label>
-                  <input type="text" name="guest_name" class="form-control rounded-3" placeholder="Athul" required>
+          <!-- Section 1: Authenticated Customer Account -->
+          <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center gap-3">
+                <div class="rounded-circle bg-success bg-opacity-10 p-3 text-success">
+                  <i class="bi bi-person-check-fill fs-4"></i>
                 </div>
-                <div class="col-md-4">
-                  <label class="form-label small fw-bold">Email Address *</label>
-                  <input type="email" name="guest_email" class="form-control rounded-3" placeholder="athul@example.com" required>
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label small fw-bold">Phone Number *</label>
-                  <input type="tel" name="guest_phone" class="form-control rounded-3" placeholder="+91 98860 12345" required>
+                <div>
+                  <h5 class="fw-bold text-dark mb-0">Logged in as <?= e($currentUser['name']) ?></h5>
+                  <div class="small text-muted"><?= e($currentUser['email']) ?> | Phone: <?= e($_SESSION['user_phone'] ?? 'Verified') ?></div>
                 </div>
               </div>
+              <span class="badge bg-success bg-opacity-25 text-success px-3 py-2 rounded-pill">Verified Account</span>
             </div>
-          <?php else: ?>
-            <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-              <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                  <div class="rounded-circle bg-success bg-opacity-10 p-3 text-success">
-                    <i class="bi bi-person-check-fill fs-4"></i>
-                  </div>
-                  <div>
-                    <h5 class="fw-bold text-dark mb-0">Logged in as <?= e($currentUser['name']) ?></h5>
-                    <div class="small text-muted"><?= e($currentUser['email']) ?> | Phone: <?= e($_SESSION['user_phone'] ?? 'Verified') ?></div>
-                  </div>
-                </div>
-                <span class="badge bg-success bg-opacity-25 text-success px-3 py-2 rounded-pill">Verified Account</span>
-              </div>
-            </div>
-          <?php endif; ?>
+          </div>
 
           <!-- Section 2: Delivery Address -->
           <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
@@ -1772,14 +1349,10 @@ document.addEventListener('DOMContentLoaded', () => {
       el.textContent = formattedAmt;
     });
 
-    // Customer details
-    const guestNameInput = document.querySelector('input[name="guest_name"]');
-    const guestEmailInput = document.querySelector('input[name="guest_email"]');
-    const guestPhoneInput = document.querySelector('input[name="guest_phone"]');
-
-    const customerName = guestNameInput ? guestNameInput.value.trim() : '<?= addslashes($currentUser['name'] ?? 'Athul') ?>';
-    const customerEmail = guestEmailInput ? guestEmailInput.value.trim() : '<?= addslashes($currentUser['email'] ?? 'athul@example.com') ?>';
-    const customerPhone = guestPhoneInput ? guestPhoneInput.value.trim() : '<?= addslashes($currentUser['phone'] ?? $_SESSION['user_phone'] ?? '9876543210') ?>';
+    // Authenticated customer details (context-escaped JSON for inline script)
+    const customerName = <?= json_encode((string)($currentUser['name'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    const customerEmail = <?= json_encode((string)($currentUser['email'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    const customerPhone = <?= json_encode((string)($currentUser['phone'] ?? $_SESSION['user_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 
     document.getElementById('rzpCustomerSummary').textContent = customerName;
     document.getElementById('rzpCustomerContact').textContent = `${customerEmail} • ${customerPhone}`;

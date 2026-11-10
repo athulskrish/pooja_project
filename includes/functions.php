@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Shared Helper Functions & Business Logic
  * Zippy - Online Food Ordering Platform
@@ -9,34 +10,112 @@ require_once __DIR__ . '/../config/config.php';
 /**
  * Execute a query with parameters and return PDOStatement
  */
-function db_query(string $sql, array $params = []): ?PDOStatement {
-    $pdo = getDBConnection();
+function dbQuery(string $sql, array $params = []): ?PDOStatement
+{
+    $pdo = getDbConnection();
     if (!$pdo) {
         return null;
     }
     try {
         $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
+        $pos = 1;
+        foreach ($params as $key => $value) {
+            if (is_int($value)) {
+                $type = PDO::PARAM_INT;
+            } elseif (is_null($value)) {
+                $type = PDO::PARAM_NULL;
+            } elseif (is_bool($value)) {
+                $type = PDO::PARAM_INT;
+                $value = $value ? 1 : 0;
+            } else {
+                $type = PDO::PARAM_STR;
+            }
+
+            if (is_int($key)) {
+                $stmt->bindValue($pos++, $value, $type);
+            } else {
+                $stmt->bindValue($key, $value, $type);
+            }
+        }
+        $stmt->execute();
         return $stmt;
     } catch (PDOException $e) {
         error_log("Database Query Error: " . $e->getMessage() . " | SQL: " . $sql);
+        if ($pdo->inTransaction()) {
+            throw $e;
+        }
         return null;
     }
 }
 
 /**
+ * Execute a callback within an ACID database transaction.
+ * Supports safe nesting by reusing an existing active transaction when present.
+ *
+ * @template T
+ * @param callable(PDO): T $callback
+ * @return T
+ */
+function dbTransactional(callable $callback): mixed
+{
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        throw new RuntimeException('Database connection unavailable.');
+    }
+
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) {
+        $pdo->beginTransaction();
+    }
+
+    try {
+        $result = $callback($pdo);
+        if ($ownsTransaction && $pdo->inTransaction()) {
+            $pdo->commit();
+        }
+        return $result;
+    } catch (Throwable $e) {
+        if ($ownsTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * Validate an unquoted SQL identifier (database, table, or column name).
+ */
+function isValidSqlIdentifier(string $identifier): bool
+{
+    return (bool)preg_match('/^[a-zA-Z0-9_]+$/', $identifier);
+}
+
+/**
+ * Validate a SQL identifier and return it, or throw InvalidArgumentException.
+ */
+function assertSqlIdentifier(string $identifier, string $context = 'SQL identifier'): string
+{
+    if (!isValidSqlIdentifier($identifier)) {
+        throw new InvalidArgumentException("Invalid {$context}: {$identifier}");
+    }
+    return $identifier;
+}
+
+/**
  * Fetch all rows
  */
-function db_fetch_all(string $sql, array $params = []): array {
-    $stmt = db_query($sql, $params);
+function dbFetchAll(string $sql, array $params = []): array
+{
+    $stmt = dbQuery($sql, $params);
     return $stmt ? $stmt->fetchAll() : [];
 }
 
 /**
  * Fetch single row
  */
-function db_fetch_one(string $sql, array $params = []): ?array {
-    $stmt = db_query($sql, $params);
+function dbFetchOne(string $sql, array $params = []): ?array
+{
+    $stmt = dbQuery($sql, $params);
     $res = $stmt ? $stmt->fetch() : null;
     return $res ?: null;
 }
@@ -44,15 +123,17 @@ function db_fetch_one(string $sql, array $params = []): ?array {
 /**
  * Fetch single scalar value
  */
-function db_fetch_val(string $sql, array $params = []) {
-    $stmt = db_query($sql, $params);
+function dbFetchVal(string $sql, array $params = []): mixed
+{
+    $stmt = dbQuery($sql, $params);
     return $stmt ? $stmt->fetchColumn() : null;
 }
 
 /**
  * Get active coupon definitions
  */
-function get_available_coupons(): array {
+function getAvailableCoupons(): array
+{
     return [
         'LUSHFOREST' => [
             'code' => 'LUSHFOREST',
@@ -88,7 +169,8 @@ function get_available_coupons(): array {
  * @param string|null $couponCode
  * @return array
  */
-function calculate_bill_totals(array $cartItems, ?string $couponCode = null): array {
+function calculateBillTotals(array $cartItems, ?string $couponCode = null): array
+{
     $subtotal = 0.00;
     $totalQty = 0;
 
@@ -111,7 +193,7 @@ function calculate_bill_totals(array $cartItems, ?string $couponCode = null): ar
     $couponError = null;
 
     if (!empty($couponCode)) {
-        $coupons = get_available_coupons();
+        $coupons = getAvailableCoupons();
         $code = strtoupper(trim($couponCode));
         if (isset($coupons[$code])) {
             $cp = $coupons[$code];
@@ -157,21 +239,24 @@ function calculate_bill_totals(array $cartItems, ?string $couponCode = null): ar
 /**
  * Get active session cart array
  */
-function get_session_cart(): array {
+function getSessionCart(): array
+{
     return $_SESSION['cart'] ?? [];
 }
 
 /**
  * Save session cart array
  */
-function set_session_cart(array $cart): void {
+function setSessionCart(array $cart): void
+{
     $_SESSION['cart'] = $cart;
 }
 
 /**
  * Clear session cart
  */
-function clear_session_cart(): void {
+function clearSessionCart(): void
+{
     unset($_SESSION['cart']);
     unset($_SESSION['applied_coupon']);
 }
@@ -179,7 +264,8 @@ function clear_session_cart(): void {
 /**
  * Resolves dish / food image URL safely across domains, ports, relative assets, and fallbacks.
  */
-function get_dish_image_url(?string $url): string {
+function getDishImageUrl(?string $url): string
+{
     if (empty($url)) {
         return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
     }
@@ -207,7 +293,8 @@ function get_dish_image_url(?string $url): string {
 /**
  * Resolves category image URL safely across domains, ports, relative assets, and fallbacks.
  */
-function get_category_image_url(?string $url): string {
+function getCategoryImageUrl(?string $url): string
+{
     if (empty($url)) {
         return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
     }
@@ -231,12 +318,13 @@ function get_category_image_url(?string $url): string {
 /**
  * Resolves mood photo image URL safely across assets, relative paths, and fallbacks.
  */
-function get_mood_image_url(?string $moodKeyOrUrl): string {
+function getMoodImageUrl(?string $moodKeyOrUrl): string
+{
     if (empty($moodKeyOrUrl)) {
         return ASSETS_URL . '/images/moods/comfort.jpg';
     }
 
-    $moods = get_food_moods(true);
+    $moods = getFoodMoods(true);
     if (isset($moods[$moodKeyOrUrl]) && !empty($moods[$moodKeyOrUrl]['image'])) {
         $img = $moods[$moodKeyOrUrl]['image'];
         if (preg_match('#^https?://#i', $img)) {
@@ -269,9 +357,15 @@ function get_mood_image_url(?string $moodKeyOrUrl): string {
  * @param bool $includeInactive If true, returns all moods including disabled ones
  * @return array
  */
-function get_food_moods(bool $includeInactive = false): array {
+function getFoodMoods(bool $includeInactive = false, bool $refreshCache = false): array
+{
     static $cacheActive = null;
     static $cacheAll = null;
+
+    if ($refreshCache) {
+        $cacheActive = null;
+        $cacheAll = null;
+    }
 
     if ($includeInactive && $cacheAll !== null) {
         return $cacheAll;
@@ -286,7 +380,7 @@ function get_food_moods(bool $includeInactive = false): array {
             $sql .= " WHERE `is_active` = 1";
         }
         $sql .= " ORDER BY `display_order` ASC, `mood_id` ASC";
-        $rows = db_fetch_all($sql);
+        $rows = dbFetchAll($sql);
         if (!empty($rows)) {
             $moods = [];
             foreach ($rows as $r) {
@@ -409,19 +503,22 @@ function get_food_moods(bool $includeInactive = false): array {
 /**
  * Upload mood photo from multipart form data.
  */
-function handle_mood_photo_upload(string $fileKey = 'mood_image'): ?array {
-    return handle_image_upload($fileKey, 'moods', 'mood');
+function handleMoodPhotoUpload(string $fileKey = 'mood_image'): ?array
+{
+    return handleImageUpload($fileKey, 'moods', 'mood');
 }
 
 /**
  * Count how many dishes are tagged with a specific food mood.
  */
-function get_mood_dish_count(string $moodKey): int {
+function getMoodDishCount(string $moodKey): int
+{
     $moodKey = trim($moodKey);
     if (empty($moodKey)) return 0;
-    $count = db_fetch_val("
+    $count = dbFetchVal("
         SELECT COUNT(*) FROM `menu_items` 
-        WHERE FIND_IN_SET(:key, REPLACE(`mood`, ' ', '')) > 0
+        WHERE `is_active` = 1
+          AND FIND_IN_SET(:key, REPLACE(`mood`, ' ', '')) > 0
     ", [':key' => $moodKey]);
     return (int)$count;
 }
@@ -429,14 +526,16 @@ function get_mood_dish_count(string $moodKey): int {
 /**
  * Return all dishes assigned to a specific mood.
  */
-function get_dishes_by_mood(string $moodKey): array {
+function getDishesByMood(string $moodKey): array
+{
     $moodKey = trim($moodKey);
     if (empty($moodKey)) return [];
-    return db_fetch_all("
+    return dbFetchAll("
         SELECT m.*, c.category_name 
         FROM `menu_items` m
         LEFT JOIN `categories` c ON m.category_id = c.category_id
-        WHERE FIND_IN_SET(:key, REPLACE(m.`mood`, ' ', '')) > 0
+        WHERE m.is_active = 1
+          AND FIND_IN_SET(:key, REPLACE(m.`mood`, ' ', '')) > 0
         ORDER BY m.item_name ASC
     ", [':key' => $moodKey]);
 }
@@ -444,11 +543,12 @@ function get_dishes_by_mood(string $moodKey): array {
 /**
  * Assign an exact list of dishes to a mood (updates menu_items.mood accordingly).
  */
-function set_mood_dishes(string $moodKey, array $itemIds): bool {
+function setMoodDishes(string $moodKey, array $itemIds): bool
+{
     $moodKey = trim($moodKey);
     if (empty($moodKey)) return false;
 
-    $allDishes = db_fetch_all("SELECT `item_id`, `mood` FROM `menu_items`");
+    $allDishes = dbFetchAll("SELECT `item_id`, `mood` FROM `menu_items` WHERE `is_active` = 1");
     $selectedMap = array_flip(array_map('intval', $itemIds));
 
     foreach ($allDishes as $d) {
@@ -460,14 +560,14 @@ function set_mood_dishes(string $moodKey, array $itemIds): bool {
         if ($shouldHave && !$hasMood) {
             $currentMoods[] = $moodKey;
             $newMoodStr = implode(',', array_unique($currentMoods));
-            db_query("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
+            dbQuery("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
                 ':m' => $newMoodStr,
                 ':id' => $id
             ]);
         } elseif (!$shouldHave && $hasMood) {
-            $currentMoods = array_values(array_filter($currentMoods, fn($m) => $m !== $moodKey));
+            $currentMoods = array_values(array_filter($currentMoods, fn(string $m): bool => $m !== $moodKey));
             $newMoodStr = !empty($currentMoods) ? implode(',', array_unique($currentMoods)) : 'comfort';
-            db_query("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
+            dbQuery("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
                 ':m' => $newMoodStr,
                 ':id' => $id
             ]);
@@ -479,16 +579,17 @@ function set_mood_dishes(string $moodKey, array $itemIds): bool {
 /**
  * Add a single dish to a mood.
  */
-function add_dish_to_mood(int $itemId, string $moodKey): bool {
+function addDishToMood(int $itemId, string $moodKey): bool
+{
     $moodKey = trim($moodKey);
     if (empty($moodKey) || $itemId <= 0) return false;
-    $d = db_fetch_one("SELECT `mood` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
+    $d = dbFetchOne("SELECT `mood` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
     if (!$d) return false;
     $currentMoods = array_filter(array_map('trim', explode(',', $d['mood'] ?? '')));
     if (!in_array($moodKey, $currentMoods, true)) {
         $currentMoods[] = $moodKey;
         $newMoodStr = implode(',', array_unique($currentMoods));
-        db_query("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
+        dbQuery("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
             ':m' => $newMoodStr,
             ':id' => $itemId
         ]);
@@ -499,15 +600,16 @@ function add_dish_to_mood(int $itemId, string $moodKey): bool {
 /**
  * Remove a single dish from a mood.
  */
-function remove_dish_from_mood(int $itemId, string $moodKey): bool {
+function removeDishFromMood(int $itemId, string $moodKey): bool
+{
     $moodKey = trim($moodKey);
     if (empty($moodKey) || $itemId <= 0) return false;
-    $d = db_fetch_one("SELECT `mood` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
+    $d = dbFetchOne("SELECT `mood` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
     if (!$d) return false;
     $currentMoods = array_filter(array_map('trim', explode(',', $d['mood'] ?? '')));
-    $currentMoods = array_values(array_filter($currentMoods, fn($m) => $m !== $moodKey));
+    $currentMoods = array_values(array_filter($currentMoods, fn(string $m): bool => $m !== $moodKey));
     $newMoodStr = !empty($currentMoods) ? implode(',', array_unique($currentMoods)) : 'comfort';
-    db_query("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
+    dbQuery("UPDATE `menu_items` SET `mood` = :m WHERE `item_id` = :id", [
         ':m' => $newMoodStr,
         ':id' => $itemId
     ]);
@@ -517,11 +619,12 @@ function remove_dish_from_mood(int $itemId, string $moodKey): bool {
 /**
  * Get mood definition by key or comma-separated string (returns the first matching primary mood)
  */
-function get_dish_primary_mood(?string $moodStr): ?array {
+function getDishPrimaryMood(?string $moodStr): ?array
+{
     if (empty($moodStr)) {
         return null;
     }
-    $moods = get_food_moods();
+    $moods = getFoodMoods();
     $parts = explode(',', $moodStr);
     foreach ($parts as $p) {
         $p = trim($p);
@@ -543,7 +646,8 @@ function get_dish_primary_mood(?string $moodStr): ?array {
  *                    ['error' => ...] on validation failure, 
  *                    or null if no file was uploaded.
  */
-function handle_image_upload(string $fileKey, string $subfolder = 'dishes', string $prefix = 'img'): ?array {
+function handleImageUpload(string $fileKey, string $subfolder = 'dishes', string $prefix = 'img'): ?array
+{
     if (!isset($_FILES[$fileKey]) || empty($_FILES[$fileKey]['name'])) {
         return null;
     }
@@ -633,8 +737,9 @@ function handle_image_upload(string $fileKey, string $subfolder = 'dishes', stri
  * @param string $fileKey Key name in $_FILES (default: 'dish_image')
  * @return array|null
  */
-function handle_food_photo_upload(string $fileKey = 'dish_image'): ?array {
-    return handle_image_upload($fileKey, 'dishes', 'dish');
+function handleFoodPhotoUpload(string $fileKey = 'dish_image'): ?array
+{
+    return handleImageUpload($fileKey, 'dishes', 'dish');
 }
 
 /**
@@ -643,8 +748,9 @@ function handle_food_photo_upload(string $fileKey = 'dish_image'): ?array {
  * @param string $fileKey Key name in $_FILES (default: 'category_image')
  * @return array|null
  */
-function handle_category_photo_upload(string $fileKey = 'category_image'): ?array {
-    return handle_image_upload($fileKey, 'categories', 'cat');
+function handleCategoryPhotoUpload(string $fileKey = 'category_image'): ?array
+{
+    return handleImageUpload($fileKey, 'categories', 'cat');
 }
 
 /**
@@ -655,7 +761,8 @@ function handle_category_photo_upload(string $fileKey = 'category_image'): ?arra
  * @param string $starClass CSS class for active stars
  * @return string HTML containing star icons
  */
-function render_star_rating_html(float $rating, int $maxStars = 5, string $starClass = 'text-warning'): string {
+function renderStarRatingHtml(float $rating, int $maxStars = 5, string $starClass = 'text-warning'): string
+{
     $fullStars = (int)floor($rating);
     $halfStar = ($rating - $fullStars) >= 0.35 ? 1 : 0;
     $emptyStars = max(0, $maxStars - $fullStars - $halfStar);
@@ -681,8 +788,9 @@ function render_star_rating_html(float $rating, int $maxStars = 5, string $starC
  * @param int $limit Maximum number of reviews
  * @return array
  */
-function get_dish_reviews(int $itemId, int $limit = 10): array {
-    return db_fetch_all("
+function getDishReviews(int $itemId, int $limit = 10): array
+{
+    return dbFetchAll("
         SELECT r.*, COALESCE(u.full_name, 'Foodie Customer') AS customer_name 
         FROM `dish_reviews` r
         LEFT JOIN `users` u ON r.user_id = u.user_id
@@ -696,11 +804,12 @@ function get_dish_reviews(int $itemId, int $limit = 10): array {
  * Format relative elapsed time into human-friendly string (e.g. "5m ago", "2h ago", "3d ago")
  * avoids showing raw numbers like "26792m ago" which cause cognitive fatigue.
  */
-function format_time_ago($datetime): string {
+function formatTimeAgo(int|string|null $datetime): string
+{
     if (empty($datetime)) {
         return 'Just now';
     }
-    $timestamp = is_numeric($datetime) ? (int)$datetime : strtotime($datetime);
+    $timestamp = is_numeric($datetime) ? (int)$datetime : (int)(strtotime((string)$datetime) ?: 0);
     if ($timestamp <= 0) {
         return 'Recently';
     }
@@ -726,7 +835,8 @@ function format_time_ago($datetime): string {
 /**
  * Format elapsed minutes into clean human-friendly string
  */
-function format_minutes_ago(int $minutes): string {
+function formatMinutesAgo(int $minutes): string
+{
     if ($minutes <= 0) {
         return 'Just now';
     }
@@ -745,7 +855,7 @@ function format_minutes_ago(int $minutes): string {
 /**
  * Record a money transaction between customer and store (Online, COD, Refund, Salary)
  */
-function record_money_transaction(
+function recordMoneyTransaction(
     ?int $orderId,
     ?int $userId,
     string $category,
@@ -756,9 +866,10 @@ function record_money_transaction(
     ?string $referenceId = null,
     ?string $handledBy = null,
     ?string $notes = null
-): int {
+): int
+{
     $txnNum = 'TXN-' . date('Ym') . '-' . str_pad((string)random_int(10000, 99999), 5, '0', STR_PAD_LEFT);
-    db_query("
+    dbQuery("
         INSERT INTO `money_transactions` 
         (`txn_number`, `order_id`, `user_id`, `txn_category`, `flow_direction`, `payment_method`, `amount`, `status`, `reference_id`, `handled_by`, `notes`, `created_at`) 
         VALUES (:tnum, :oid, :uid, :cat, :flow, :method, :amt, :st, :ref, :hby, :notes, NOW())
@@ -775,7 +886,7 @@ function record_money_transaction(
         ':hby'    => $handledBy,
         ':notes'  => $notes
     ]);
-    return (int)db_fetch_val("SELECT LAST_INSERT_ID()");
+    return (int)dbFetchVal("SELECT LAST_INSERT_ID()");
 }
 
 /**
@@ -788,7 +899,8 @@ function record_money_transaction(
  * Get active in-transit delivery for a specific rider (Enforces: 1 driver 1 delivery)
  * Returns the single active order record or null if rider is free.
  */
-function get_driver_active_delivery(int $riderId, ?string $riderName = null): ?array {
+function buildDriverDispatchFilter(int $riderId, ?string $riderName = null): array
+{
     $whereRider = "d.rider_id = :rid";
     $params = [':rid' => $riderId];
 
@@ -798,6 +910,29 @@ function get_driver_active_delivery(int $riderId, ?string $riderName = null): ?a
             $whereRider = "(d.rider_id = :rid OR (d.rider_id IS NULL AND d.delivery_partner_name LIKE :rname))";
             $params[':rname'] = '%' . $firstWord . '%';
         }
+    }
+
+    return [$whereRider, $params];
+}
+
+function getDriverActiveDelivery(int $riderId, ?string $riderName = null, bool $forUpdate = false): ?array
+{
+    [$whereRider, $params] = buildDriverDispatchFilter($riderId, $riderName);
+
+    if ($forUpdate) {
+        $sql = "
+            SELECT o.order_id, o.order_number, o.order_status,
+                   d.dispatch_id, d.rider_id, d.delivery_partner_name, d.delivery_status
+            FROM `orders` o
+            JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+            WHERE o.order_status = 'OUT_FOR_DELIVERY'
+              AND d.delivery_status = 'IN_TRANSIT'
+              AND {$whereRider}
+            ORDER BY d.dispatched_at DESC
+            LIMIT 1
+            FOR UPDATE
+        ";
+        return dbFetchOne($sql, $params);
     }
 
     $sql = "
@@ -819,15 +954,16 @@ function get_driver_active_delivery(int $riderId, ?string $riderName = null): ?a
         LIMIT 1
     ";
 
-    return db_fetch_one($sql, $params);
+    return dbFetchOne($sql, $params);
 }
 
 /**
  * Checks if a driver is currently busy with another active delivery.
  * Returns the active order if busy, or null if available.
  */
-function is_driver_busy(int $riderId, ?string $riderName = null, ?int $excludeOrderId = null): ?array {
-    $active = get_driver_active_delivery($riderId, $riderName);
+function isDriverBusy(int $riderId, ?string $riderName = null, ?int $excludeOrderId = null, bool $forUpdate = false): ?array
+{
+    $active = getDriverActiveDelivery($riderId, $riderName, $forUpdate);
     if ($active && $excludeOrderId && (int)$active['order_id'] === $excludeOrderId) {
         return null;
     }
@@ -837,8 +973,9 @@ function is_driver_busy(int $riderId, ?string $riderName = null, ?int $excludeOr
 /**
  * Fetch all registered delivery riders with their active delivery status
  */
-function get_all_delivery_riders(): array {
-    $riders = db_fetch_all("
+function getAllDeliveryRiders(): array
+{
+    $riders = dbFetchAll("
         SELECT u.user_id, u.full_name, u.phone_number, u.email,
                COALESCE(sp.duty_status, 'ON_DUTY') AS duty_status,
                COALESCE(sp.vehicle_details, 'Electric Bike') AS vehicle_details,
@@ -851,7 +988,7 @@ function get_all_delivery_riders(): array {
     ");
 
     foreach ($riders as &$r) {
-        $active = get_driver_active_delivery((int)$r['user_id'], $r['full_name']);
+        $active = getDriverActiveDelivery((int)$r['user_id'], $r['full_name']);
         if ($active) {
             $r['is_busy'] = true;
             $r['active_order_id'] = (int)$active['order_id'];
@@ -870,8 +1007,9 @@ function get_all_delivery_riders(): array {
 /**
  * Find the next available on-duty delivery rider (0 active deliveries)
  */
-function get_available_delivery_partner(): ?array {
-    $allRiders = get_all_delivery_riders();
+function getAvailableDeliveryPartner(): ?array
+{
+    $allRiders = getAllDeliveryRiders();
     foreach ($allRiders as $r) {
         if ($r['duty_status'] === 'ON_DUTY' && empty($r['is_busy'])) {
             return $r;
@@ -884,18 +1022,19 @@ function get_available_delivery_partner(): ?array {
  * Compute the canonical state fingerprint for Kitchen Display System (KDS) & Delivery live synchronization
  * Guarantees identical hash calculation across kitchen/index.php, kitchen/ajax/poll-orders.php, and api/live-stream.php.
  */
-function get_kds_state_hash(): string {
-    $countNew = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` IN ('PLACED', 'CONFIRMED')");
-    $countCooking = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'COOKING'");
-    $countReady = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'READY'");
-    $countOutForDelivery = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'OUT_FOR_DELIVERY'");
-    $countDelivered = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED'");
+function getKdsStateHash(): string
+{
+    $countNew = (int)dbFetchVal("SELECT COUNT(*) FROM `orders` WHERE `order_status` IN ('PLACED', 'CONFIRMED')");
+    $countCooking = (int)dbFetchVal("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'COOKING'");
+    $countReady = (int)dbFetchVal("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'READY'");
+    $countOutForDelivery = (int)dbFetchVal("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'OUT_FOR_DELIVERY'");
+    $countDelivered = (int)dbFetchVal("SELECT COUNT(*) FROM `orders` WHERE `order_status` = 'DELIVERED'");
     
-    $latestAudit = db_fetch_one("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
-    $latestDispatch = db_fetch_one("SELECT MAX(dispatch_id) AS max_disp, MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
+    $latestAudit = dbFetchOne("SELECT MAX(audit_id) AS max_audit, MAX(change_timestamp) AS max_time FROM `order_audit_trail`");
+    $latestDispatch = dbFetchOne("SELECT MAX(dispatch_id) AS max_disp, MAX(assigned_at) AS max_assigned, MAX(dispatched_at) AS max_dispatched, MAX(delivered_at) AS max_delivered FROM `delivery_dispatches`");
 
     // Fingerprint of ready orders and their assigned riders to detect allocation changes
-    $readyAllocFingerprint = (string)db_fetch_val("
+    $readyAllocFingerprint = (string)dbFetchVal("
         SELECT GROUP_CONCAT(CONCAT(o.order_id, ':', COALESCE(d.rider_id, 0), ':', COALESCE(d.delivery_status, '')) ORDER BY o.order_id SEPARATOR '|')
         FROM `orders` o
         LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
@@ -930,223 +1069,294 @@ function get_kds_state_hash(): string {
  * 4. A busy or offline driver CANNOT hold an allocated ready parcel; invalid assignments are reset.
  * 5. Each available free driver is allocated at most 1 ready parcel at a time.
  */
-function auto_allocate_ready_orders_fcfs(): array {
-    // 1. Fetch all registered drivers with their busy/duty status
-    $allRiders = get_all_delivery_riders();
-    $availableRiders = [];
-    $busyRiderIds = [];
+function autoAllocateReadyOrdersFcfs(): array
+{
+    $pdo = getDbConnection();
+    $inOuterTx = $pdo && $pdo->inTransaction();
 
-    foreach ($allRiders as $r) {
-        $rId = (int)$r['user_id'];
-        if ($r['duty_status'] === 'ON_DUTY' && empty($r['is_busy'])) {
-            $availableRiders[] = $r;
-        } else {
-            $busyRiderIds[] = $rId;
-        }
-    }
+    try {
+        return dbTransactional(function (): array {
+            // 1. Acquire locks on READY orders in deterministic PK order to prevent deadlocks
+            $readyRows = dbFetchAll("
+                SELECT `order_id`, `order_number`, `ready_at`, `placed_at`
+                FROM `orders`
+                WHERE `order_status` = 'READY'
+                ORDER BY `order_id` ASC
+                FOR UPDATE
+            ");
 
-    // 2. Fetch READY orders sorted strictly by preparation time (first prepared first)
-    $readyParcels = db_fetch_all("
-        SELECT o.order_id, o.order_number, o.ready_at, o.placed_at,
-               d.dispatch_id, d.rider_id, d.delivery_status
-        FROM `orders` o
-        LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-        WHERE o.order_status = 'READY'
-        ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
-    ");
-
-    if (empty($readyParcels)) {
-        return ['allocated' => 0, 'available_riders' => count($availableRiders), 'message' => 'No ready parcels waiting in queue.'];
-    }
-
-    // 3. Purge invalid allocations from READY parcels:
-    // Any ready parcel currently assigned to a rider who is busy or offline must be unassigned
-    $assignedRiderIds = [];
-    foreach ($readyParcels as &$parcel) {
-        $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
-        if ($currentRiderId) {
-            // If rider is busy or off duty, or already assigned to another ready parcel earlier in the FCFS queue:
-            if (in_array($currentRiderId, $busyRiderIds) || in_array($currentRiderId, $assignedRiderIds)) {
-                db_query("
-                    UPDATE `delivery_dispatches` 
-                    SET `rider_id` = NULL, 
-                        `delivery_partner_name` = 'Zippy Express Rider', 
-                        `delivery_partner_phone` = '+91 98765 43210', 
-                        `delivery_status` = 'ASSIGNED' 
-                    WHERE `order_id` = :oid
-                ", [':oid' => $parcel['order_id']]);
-                $parcel['rider_id'] = null;
-                $parcel['delivery_status'] = 'ASSIGNED';
-            } else {
-                // Legitimate assignment to an available free driver
-                $assignedRiderIds[] = $currentRiderId;
+            if (empty($readyRows)) {
+                $allRiders = getAllDeliveryRiders();
+                $availCount = 0;
+                foreach ($allRiders as $r) {
+                    if ($r['duty_status'] === 'ON_DUTY' && empty($r['is_busy'])) {
+                        $availCount++;
+                    }
+                }
+                return ['allocated' => 0, 'available_riders' => $availCount, 'message' => 'No ready parcels waiting in queue.'];
             }
-        }
-    }
-    unset($parcel);
 
-    // 4. If no available free drivers, all remaining ready parcels stay in FCFS queue
-    if (empty($availableRiders)) {
-        return ['allocated' => count($assignedRiderIds), 'available_riders' => 0, 'message' => 'All riders are busy. Parcels queued in FCFS order.'];
-    }
+            // Lock existing dispatch records for those READY orders in ascending order_id order
+            $readyIds = array_values(array_map('intval', array_column($readyRows, 'order_id')));
+            $readyPlaceholders = implode(',', array_fill(0, count($readyIds), '?'));
+            $dispatchRows = dbFetchAll(
+                "SELECT `order_id`, `dispatch_id`, `rider_id`, `delivery_status` FROM `delivery_dispatches` WHERE `order_id` IN ({$readyPlaceholders}) ORDER BY `order_id` ASC FOR UPDATE",
+                $readyIds
+            );
 
-    $allocatedCount = 0;
-    $allocations = [];
-
-    // 5. Match unallocated ready parcels to remaining free available drivers in FCFS order
-    foreach ($readyParcels as $parcel) {
-        $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
-
-        // If parcel already legitimately assigned to a free driver, keep it
-        if ($currentRiderId && in_array($currentRiderId, $assignedRiderIds)) {
-            continue;
-        }
-
-        // Find the next available free driver who has not yet been assigned a ready parcel
-        $matchedRider = null;
-        foreach ($availableRiders as $r) {
-            $rId = (int)$r['user_id'];
-            if (!in_array($rId, $assignedRiderIds)) {
-                $matchedRider = $r;
-                $assignedRiderIds[] = $rId;
-                break;
+            $dispatchByOrder = [];
+            foreach ($dispatchRows as $dr) {
+                $dispatchByOrder[(int)$dr['order_id']] = $dr;
             }
-        }
 
-        if (!$matchedRider) {
-            // No more free drivers available
-            break;
-        }
+            $readyParcels = [];
+            foreach ($readyRows as $rr) {
+                $oid = (int)$rr['order_id'];
+                $disp = $dispatchByOrder[$oid] ?? null;
+                $readyParcels[] = [
+                    'order_id' => $oid,
+                    'order_number' => $rr['order_number'],
+                    'ready_at' => $rr['ready_at'],
+                    'placed_at' => $rr['placed_at'],
+                    'dispatch_id' => $disp['dispatch_id'] ?? null,
+                    'rider_id' => $disp['rider_id'] ?? null,
+                    'delivery_status' => $disp['delivery_status'] ?? null,
+                ];
+            }
 
-        // Assign parcel to this matched rider in delivery_dispatches
-        $existingDisp = db_fetch_one("SELECT dispatch_id FROM `delivery_dispatches` WHERE `order_id` = :oid", [':oid' => $parcel['order_id']]);
-        if ($existingDisp) {
-            db_query("
-                UPDATE `delivery_dispatches`
-                SET `rider_id` = :rid,
-                    `delivery_partner_name` = :rname,
-                    `delivery_partner_phone` = :rphone,
-                    `assigned_at` = NOW(),
-                    `delivery_status` = 'ASSIGNED'
-                WHERE `order_id` = :oid
-            ", [
-                ':rid' => $matchedRider['user_id'],
-                ':rname' => $matchedRider['full_name'],
-                ':rphone' => $matchedRider['phone_number'],
-                ':oid' => $parcel['order_id']
-            ]);
-        } else {
-            $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-            db_query("
-                INSERT INTO `delivery_dispatches`
-                (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`)
-                VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')
-            ", [
-                ':oid' => $parcel['order_id'],
-                ':rid' => $matchedRider['user_id'],
-                ':rname' => $matchedRider['full_name'],
-                ':rphone' => $matchedRider['phone_number'],
-                ':otp' => $newOtp
-            ]);
-        }
+            // Re-sort in strict FCFS order (first ready first) after deterministic PK lock acquisition
+            usort($readyParcels, static function (array $a, array $b): int {
+                $tA = $a['ready_at'] ?: $a['placed_at'];
+                $tB = $b['ready_at'] ?: $b['placed_at'];
+                $cmp = strcmp((string)$tA, (string)$tB);
+                return $cmp !== 0 ? $cmp : ($a['order_id'] <=> $b['order_id']);
+            });
 
-        $allocatedCount++;
-        $allocations[] = [
-            'order_id' => $parcel['order_id'],
-            'rider_id' => $matchedRider['user_id'],
-            'rider_name' => $matchedRider['full_name'],
-            'ready_at' => $parcel['ready_at']
-        ];
+            // 2. Lock delivery rider rows and evaluate live busy status under transaction locks
+            dbFetchAll("SELECT `user_id` FROM `users` WHERE `role_id` = 4 ORDER BY `user_id` ASC FOR UPDATE");
+            $riders = dbFetchAll("
+                SELECT u.user_id, u.full_name, u.phone_number, u.email,
+                       COALESCE(sp.duty_status, 'ON_DUTY') AS duty_status
+                FROM `users` u
+                LEFT JOIN `staff_profiles` sp ON u.user_id = sp.user_id
+                WHERE u.role_id = 4
+                ORDER BY u.user_id ASC
+            ");
+
+            $availableRiders = [];
+            $busyRiderIds = [];
+            foreach ($riders as $r) {
+                $rId = (int)$r['user_id'];
+                $active = getDriverActiveDelivery($rId, $r['full_name'], true);
+                if ($r['duty_status'] === 'ON_DUTY' && !$active) {
+                    $availableRiders[] = $r;
+                } else {
+                    $busyRiderIds[] = $rId;
+                }
+            }
+
+            // 3. Purge invalid allocations from READY parcels
+            $assignedRiderIds = [];
+            foreach ($readyParcels as &$parcel) {
+                $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
+                if ($currentRiderId) {
+                    if (in_array($currentRiderId, $busyRiderIds, true) || in_array($currentRiderId, $assignedRiderIds, true)) {
+                        dbQuery("
+                            UPDATE `delivery_dispatches` 
+                            SET `rider_id` = NULL, 
+                                `delivery_partner_name` = 'Zippy Express Rider', 
+                                `delivery_partner_phone` = '+91 98765 43210', 
+                                `delivery_status` = 'ASSIGNED' 
+                            WHERE `order_id` = :oid
+                        ", [':oid' => $parcel['order_id']]);
+                        $parcel['rider_id'] = null;
+                        $parcel['delivery_status'] = 'ASSIGNED';
+                    } else {
+                        $assignedRiderIds[] = $currentRiderId;
+                    }
+                }
+            }
+            unset($parcel);
+
+            // 4. If no available free drivers, all remaining ready parcels stay in FCFS queue
+            if (empty($availableRiders)) {
+                return ['allocated' => count($assignedRiderIds), 'available_riders' => 0, 'message' => 'All riders are busy. Parcels queued in FCFS order.'];
+            }
+
+            $allocatedCount = 0;
+            $allocations = [];
+
+            // 5. Match unallocated ready parcels to remaining free available drivers in FCFS order
+            foreach ($readyParcels as $parcel) {
+                $currentRiderId = !empty($parcel['rider_id']) ? (int)$parcel['rider_id'] : null;
+
+                if ($currentRiderId && in_array($currentRiderId, $assignedRiderIds, true)) {
+                    continue;
+                }
+
+                $matchedRider = null;
+                foreach ($availableRiders as $r) {
+                    $rId = (int)$r['user_id'];
+                    if (!in_array($rId, $assignedRiderIds, true)) {
+                        $matchedRider = $r;
+                        $assignedRiderIds[] = $rId;
+                        break;
+                    }
+                }
+
+                if (!$matchedRider) {
+                    break;
+                }
+
+                if (!empty($parcel['dispatch_id'])) {
+                    dbQuery("
+                        UPDATE `delivery_dispatches`
+                        SET `rider_id` = :rid,
+                            `delivery_partner_name` = :rname,
+                            `delivery_partner_phone` = :rphone,
+                            `assigned_at` = NOW(),
+                            `delivery_status` = 'ASSIGNED'
+                        WHERE `order_id` = :oid
+                    ", [
+                        ':rid' => $matchedRider['user_id'],
+                        ':rname' => $matchedRider['full_name'],
+                        ':rphone' => $matchedRider['phone_number'],
+                        ':oid' => $parcel['order_id']
+                    ]);
+                } else {
+                    $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                    dbQuery("
+                        INSERT INTO `delivery_dispatches`
+                        (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`)
+                        VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')
+                    ", [
+                        ':oid' => $parcel['order_id'],
+                        ':rid' => $matchedRider['user_id'],
+                        ':rname' => $matchedRider['full_name'],
+                        ':rphone' => $matchedRider['phone_number'],
+                        ':otp' => $newOtp
+                    ]);
+                }
+
+                $allocatedCount++;
+                $allocations[] = [
+                    'order_id' => $parcel['order_id'],
+                    'rider_id' => $matchedRider['user_id'],
+                    'rider_name' => $matchedRider['full_name'],
+                    'ready_at' => $parcel['ready_at']
+                ];
+            }
+
+            return [
+                'allocated' => $allocatedCount,
+                'allocations' => $allocations
+            ];
+        });
+    } catch (Throwable $e) {
+        if ($inOuterTx) {
+            throw $e;
+        }
+        error_log("autoAllocateReadyOrdersFcfs failed: " . $e->getMessage());
+        return ['allocated' => 0, 'allocations' => [], 'error' => 'Allocation engine error.'];
     }
-
-    return [
-        'allocated' => $allocatedCount,
-        'allocations' => $allocations
-    ];
 }
 
 /**
  * Retrieve the specific parcel allocated to a driver in First-Come, First-Served basis.
  * Returns null if driver is already busy with an active in-transit delivery or no parcel is allocated.
  */
-function get_driver_allocated_order(int $riderId): ?array {
-    // 1. Check if rider is already busy with an active in-transit delivery (1 Driver 1 Delivery)
-    if (is_driver_busy($riderId)) {
-        return null;
-    }
+function getDriverAllocatedOrder(int $riderId): ?array
+{
+    $pdo = getDbConnection();
+    $inOuterTx = $pdo && $pdo->inTransaction();
 
-    // 2. Run allocation engine to ensure latest FCFS assignments
-    auto_allocate_ready_orders_fcfs();
+    try {
+        return dbTransactional(function () use ($riderId): ?array {
+            // 1. Run allocation engine inside the same transaction so READY orders + riders are locked cleanly
+            autoAllocateReadyOrdersFcfs();
 
-    // 3. Find order with order_status = 'READY' and dispatch.rider_id = $riderId
-    $allocated = db_fetch_one("
-        SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-               a.address_line, a.landmark, a.pincode,
-               p.payment_mode, p.amount_paid,
-               d.dispatch_id, d.delivery_otp, d.assigned_at, d.delivery_status
-        FROM `orders` o
-        JOIN `users` u ON o.user_id = u.user_id
-        LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-        LEFT JOIN `payments` p ON o.order_id = p.order_id
-        JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-        WHERE o.order_status = 'READY'
-          AND d.rider_id = :rid
-        ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
-        LIMIT 1
-    ", [':rid' => $riderId]);
+            // 2. Enforce 1 Driver 1 Delivery using transactional locks
+            if (isDriverBusy($riderId, null, null, true)) {
+                return null;
+            }
 
-    // If none assigned specifically to this rider but unassigned ready orders exist, pick top of FCFS queue
-    if (!$allocated) {
-        $allocated = db_fetch_one("
-            SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-                   a.address_line, a.landmark, a.pincode,
-                   p.payment_mode, p.amount_paid,
-                   d.dispatch_id, d.delivery_otp, d.assigned_at, d.delivery_status
-            FROM `orders` o
-            JOIN `users` u ON o.user_id = u.user_id
-            LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-            LEFT JOIN `payments` p ON o.order_id = p.order_id
-            LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-            WHERE o.order_status = 'READY'
-              AND (d.rider_id IS NULL OR d.rider_id = 0)
-            ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
-            LIMIT 1
-        ");
-        if ($allocated) {
-            $riderUser = db_fetch_one("SELECT * FROM `users` WHERE `user_id` = :uid", [':uid' => $riderId]);
-            if ($riderUser) {
-                if (!empty($allocated['dispatch_id'])) {
-                    db_query("UPDATE `delivery_dispatches` SET `rider_id` = :rid, `delivery_partner_name` = :rname, `delivery_partner_phone` = :rphone, `assigned_at` = NOW(), `delivery_status` = 'ASSIGNED' WHERE `order_id` = :oid", [
-                        ':rid' => $riderUser['user_id'],
-                        ':rname' => $riderUser['full_name'],
-                        ':rphone' => $riderUser['phone_number'],
-                        ':oid' => $allocated['order_id']
-                    ]);
-                } else {
-                    $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-                    db_query("INSERT INTO `delivery_dispatches` (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`) VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')", [
-                        ':oid' => $allocated['order_id'],
-                        ':rid' => $riderUser['user_id'],
-                        ':rname' => $riderUser['full_name'],
-                        ':rphone' => $riderUser['phone_number'],
-                        ':otp' => $newOtp
-                    ]);
+            // 3. Find order with order_status = 'READY' and dispatch.rider_id = $riderId
+            $allocated = dbFetchOne("
+                SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
+                       a.address_line, a.landmark, a.pincode,
+                       p.payment_mode, p.amount_paid,
+                       d.dispatch_id, d.delivery_otp, d.assigned_at, d.delivery_status
+                FROM `orders` o
+                JOIN `users` u ON o.user_id = u.user_id
+                LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+                LEFT JOIN `payments` p ON o.order_id = p.order_id
+                JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+                WHERE o.order_status = 'READY'
+                  AND d.rider_id = :rid
+                ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
+                LIMIT 1
+            ", [':rid' => $riderId]);
+
+            // If none assigned specifically to this rider but unassigned ready orders exist, pick top of FCFS queue
+            if (!$allocated) {
+                $allocated = dbFetchOne("
+                    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
+                           a.address_line, a.landmark, a.pincode,
+                           p.payment_mode, p.amount_paid,
+                           d.dispatch_id, d.delivery_otp, d.assigned_at, d.delivery_status
+                    FROM `orders` o
+                    JOIN `users` u ON o.user_id = u.user_id
+                    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+                    LEFT JOIN `payments` p ON o.order_id = p.order_id
+                    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+                    WHERE o.order_status = 'READY'
+                      AND (d.rider_id IS NULL OR d.rider_id = 0)
+                    ORDER BY COALESCE(o.ready_at, o.placed_at) ASC, o.order_id ASC
+                    LIMIT 1
+                ");
+                if ($allocated) {
+                    $riderUser = dbFetchOne("SELECT * FROM `users` WHERE `user_id` = :uid FOR UPDATE", [':uid' => $riderId]);
+                    if ($riderUser) {
+                        if (!empty($allocated['dispatch_id'])) {
+                            dbQuery("UPDATE `delivery_dispatches` SET `rider_id` = :rid, `delivery_partner_name` = :rname, `delivery_partner_phone` = :rphone, `assigned_at` = NOW(), `delivery_status` = 'ASSIGNED' WHERE `order_id` = :oid", [
+                                ':rid' => $riderUser['user_id'],
+                                ':rname' => $riderUser['full_name'],
+                                ':rphone' => $riderUser['phone_number'],
+                                ':oid' => $allocated['order_id']
+                            ]);
+                        } else {
+                            $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                            dbQuery("INSERT INTO `delivery_dispatches` (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`) VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')", [
+                                ':oid' => $allocated['order_id'],
+                                ':rid' => $riderUser['user_id'],
+                                ':rname' => $riderUser['full_name'],
+                                ':rphone' => $riderUser['phone_number'],
+                                ':otp' => $newOtp
+                            ]);
+                        }
+                    }
                 }
             }
+
+            if ($allocated) {
+                $items = dbFetchAll("
+                    SELECT oi.*, m.item_name, m.is_veg 
+                    FROM `order_items` oi
+                    JOIN `menu_items` m ON oi.item_id = m.item_id
+                    WHERE oi.order_id = :oid
+                ", [':oid' => $allocated['order_id']]);
+                $allocated['items'] = $items;
+            }
+
+            return $allocated;
+        });
+    } catch (Throwable $e) {
+        if ($inOuterTx) {
+            throw $e;
         }
+        error_log("getDriverAllocatedOrder failed for rider {$riderId}: " . $e->getMessage());
+        return null;
     }
-
-    if ($allocated) {
-        $items = db_fetch_all("
-            SELECT oi.*, m.item_name, m.is_veg 
-            FROM `order_items` oi
-            JOIN `menu_items` m ON oi.item_id = m.item_id
-            WHERE oi.order_id = :oid
-        ", [':oid' => $allocated['order_id']]);
-        $allocated['items'] = $items;
-    }
-
-    return $allocated;
 }
 
 /**
@@ -1155,8 +1365,9 @@ function get_driver_allocated_order(int $riderId): ?array {
  *
  * @return array Associative array of status counts
  */
-function get_order_kpis(): array {
-    $row = db_fetch_one("
+function getOrderKpis(): array
+{
+    $row = dbFetchOne("
         SELECT 
             COUNT(*) AS total,
             COUNT(CASE WHEN order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') THEN 1 END) AS live,
@@ -1190,21 +1401,22 @@ function get_order_kpis(): array {
  * @param int|null $fallbackRiderId Optional fallback rider_id from dispatch if no selection
  * @return array|null Rider user record or null
  */
-function find_rider_user($riderIdentifier = null, ?int $fallbackRiderId = null): ?array {
+function findRiderUser(int|string|null $riderIdentifier = null, ?int $fallbackRiderId = null): ?array
+{
     $identifier = !empty($riderIdentifier) ? trim((string)$riderIdentifier) : '';
     $riderUser = null;
 
     if (!empty($identifier)) {
         // 1. If numeric ID passed:
         if (is_numeric($identifier) && (int)$identifier > 0) {
-            $riderUser = db_fetch_one("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND user_id = :uid", [
+            $riderUser = dbFetchOne("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND user_id = :uid", [
                 ':uid' => (int)$identifier
             ]);
         }
 
         // 2. Look up by exact name or substring match
         if (!$riderUser) {
-            $riderUser = db_fetch_one("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND (full_name = :fn OR full_name LIKE :likefn)", [
+            $riderUser = dbFetchOne("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND (full_name = :fn OR full_name LIKE :likefn)", [
                 ':fn' => $identifier,
                 ':likefn' => '%' . $identifier . '%'
             ]);
@@ -1214,7 +1426,7 @@ function find_rider_user($riderIdentifier = null, ?int $fallbackRiderId = null):
         if (!$riderUser) {
             $firstWord = trim(explode(' ', $identifier)[0]);
             if (strlen($firstWord) >= 3) {
-                $riderUser = db_fetch_one("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND full_name LIKE :fn", [
+                $riderUser = dbFetchOne("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND full_name LIKE :fn", [
                     ':fn' => '%' . $firstWord . '%'
                 ]);
             }
@@ -1223,7 +1435,7 @@ function find_rider_user($riderIdentifier = null, ?int $fallbackRiderId = null):
 
     // 4. Fallback to existing dispatch rider if no rider was selected or found
     if (!$riderUser && !empty($fallbackRiderId) && $fallbackRiderId > 0) {
-        $riderUser = db_fetch_one("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND user_id = :uid", [
+        $riderUser = dbFetchOne("SELECT user_id, full_name, phone_number FROM `users` WHERE role_id = 4 AND user_id = :uid", [
             ':uid' => (int)$fallbackRiderId
         ]);
     }
@@ -1242,200 +1454,242 @@ function find_rider_user($riderIdentifier = null, ?int $fallbackRiderId = null):
  * @param int|null $actorUserId ID of user triggering transition
  * @return array ['success' => bool, 'message' => string, ...]
  */
-function transition_order_status(int $orderId, string $newStatus, ?string $assignedRider = null, ?int $actorUserId = null): array {
+function transitionOrderStatus(int $orderId, string $newStatus, ?string $assignedRider = null, ?int $actorUserId = null): array
+{
     $newStatus = strtoupper(trim($newStatus));
     if ($orderId <= 0 || empty($newStatus)) {
         return ['success' => false, 'error' => 'Missing or invalid order ID or target status.'];
     }
 
-    $currentOrder = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $orderId]);
-    if (!$currentOrder) {
-        return ['success' => false, 'error' => "Order #ZIP-{$orderId} not found."];
-    }
+    $pdo = getDbConnection();
+    $inOuterTx = $pdo && $pdo->inTransaction();
 
-    $oldStatus = $currentOrder['order_status'];
+    try {
+        return dbTransactional(function () use ($orderId, $newStatus, $assignedRider, $actorUserId): array {
+            // Canonical lock order: orders -> delivery_dispatches -> users (rider)
+            $currentOrder = dbFetchOne("SELECT * FROM `orders` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+            if (!$currentOrder) {
+                return ['success' => false, 'error' => "Order #ZIP-{$orderId} not found."];
+            }
 
-    // Find rider information & enforce 1 Driver 1 Delivery policy
-    $dispatch = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
-    $fallbackId = !empty($dispatch['rider_id']) ? (int)$dispatch['rider_id'] : null;
-    $fallbackName = $dispatch['delivery_partner_name'] ?? null;
-    $riderUser = find_rider_user($assignedRider, $fallbackId);
-    if (!$riderUser && !empty($fallbackName)) {
-        $riderUser = find_rider_user($fallbackName, $fallbackId);
-    }
+            $oldStatus = $currentOrder['order_status'];
 
-    if ($newStatus === 'OUT_FOR_DELIVERY') {
-        if ($riderUser) {
-            $busyOrder = is_driver_busy((int)$riderUser['user_id'], $riderUser['full_name'], $orderId);
-            if ($busyOrder) {
+            // Guard against duplicate transitions (e.g., double-cancel restock or double-delivery)
+            if ($oldStatus === $newStatus) {
                 return [
-                    'success' => false,
-                    'error' => "Handover Blocked (1 Driver, 1 Delivery Policy): Driver {$riderUser['full_name']} is currently busy delivering Order #ZIP-{$busyOrder['order_id']}. Each driver can only handle one delivery at a time."
+                    'success' => true,
+                    'already_in_status' => true,
+                    'order_id' => $orderId,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus,
+                    'badge_html' => getStatusBadge($newStatus),
+                    'message' => "Order #ZIP-{$orderId} is already {$newStatus}."
                 ];
             }
-        }
-    }
 
-    // 1. Advance order status
-    if ($newStatus === 'READY') {
-        db_query("UPDATE `orders` SET `order_status` = :st, `ready_at` = COALESCE(ready_at, NOW()) WHERE `order_id` = :id", [
-            ':st' => $newStatus,
-            ':id' => $orderId
-        ]);
-    } else {
-        db_query("UPDATE `orders` SET `order_status` = :st WHERE `order_id` = :id", [
-            ':st' => $newStatus,
-            ':id' => $orderId
-        ]);
-    }
+            // Find & lock dispatch record; enforce 1 Driver 1 Delivery policy
+            $dispatch = dbFetchOne("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+            $fallbackId = !empty($dispatch['rider_id']) ? (int)$dispatch['rider_id'] : null;
+            $fallbackName = $dispatch['delivery_partner_name'] ?? null;
+            $riderUser = findRiderUser($assignedRider, $fallbackId);
+            if (!$riderUser && !empty($fallbackName)) {
+                $riderUser = findRiderUser($fallbackName, $fallbackId);
+            }
 
-    // 2. Insert into immutable order audit trail
-    $auditUid = $actorUserId ?? ($_SESSION['user_id'] ?? null);
-    db_query("
-        INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) 
-        VALUES (:oid, :old, :new, :uid, NOW())
-    ", [
-        ':oid' => $orderId,
-        ':old' => $oldStatus,
-        ':new' => $newStatus,
-        ':uid' => $auditUid
-    ]);
+            if ($newStatus === 'OUT_FOR_DELIVERY' && $riderUser) {
+                dbFetchOne("SELECT `user_id` FROM `users` WHERE `user_id` = :uid FOR UPDATE", [':uid' => (int)$riderUser['user_id']]);
+                $busyOrder = isDriverBusy((int)$riderUser['user_id'], $riderUser['full_name'], $orderId, true);
+                if ($busyOrder) {
+                    return [
+                        'success' => false,
+                        'error' => "Handover Blocked (1 Driver, 1 Delivery Policy): Driver {$riderUser['full_name']} is currently busy delivering Order #ZIP-{$busyOrder['order_id']}. Each driver can only handle one delivery at a time."
+                    ];
+                }
+            }
 
-    // 3. Update delivery partner dispatch record
-    if ($riderUser) {
-        if ($dispatch) {
-            db_query("
-                UPDATE `delivery_dispatches` 
-                SET `rider_id` = :rid,
-                    `delivery_partner_name` = :rname,
-                    `delivery_partner_phone` = :rphone 
-                WHERE `order_id` = :oid
-            ", [
-                ':rid' => $riderUser['user_id'],
-                ':rname' => $riderUser['full_name'],
-                ':rphone' => $riderUser['phone_number'],
-                ':oid' => $orderId
-            ]);
-        } else {
-            $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-            db_query("
-                INSERT INTO `delivery_dispatches`
-                (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`)
-                VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')
+            // 1. Advance order status
+            if ($newStatus === 'READY') {
+                dbQuery("UPDATE `orders` SET `order_status` = :st, `ready_at` = COALESCE(ready_at, NOW()) WHERE `order_id` = :id", [
+                    ':st' => $newStatus,
+                    ':id' => $orderId
+                ]);
+            } else {
+                dbQuery("UPDATE `orders` SET `order_status` = :st WHERE `order_id` = :id", [
+                    ':st' => $newStatus,
+                    ':id' => $orderId
+                ]);
+            }
+
+            // 2. Insert into immutable order audit trail
+            $auditUid = $actorUserId ?? (isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null);
+            dbQuery("
+                INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) 
+                VALUES (:oid, :old, :new, :uid, NOW())
             ", [
                 ':oid' => $orderId,
-                ':rid' => $riderUser['user_id'],
-                ':rname' => $riderUser['full_name'],
-                ':rphone' => $riderUser['phone_number'],
-                ':otp' => $newOtp
+                ':old' => $oldStatus,
+                ':new' => $newStatus,
+                ':uid' => $auditUid
             ]);
+
+            // 3. Update delivery partner dispatch record
+            if ($riderUser) {
+                if ($dispatch) {
+                    dbQuery("
+                        UPDATE `delivery_dispatches` 
+                        SET `rider_id` = :rid,
+                            `delivery_partner_name` = :rname,
+                            `delivery_partner_phone` = :rphone 
+                        WHERE `order_id` = :oid
+                    ", [
+                        ':rid' => $riderUser['user_id'],
+                        ':rname' => $riderUser['full_name'],
+                        ':rphone' => $riderUser['phone_number'],
+                        ':oid' => $orderId
+                    ]);
+                } else {
+                    $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                    dbQuery("
+                        INSERT INTO `delivery_dispatches`
+                        (`order_id`, `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `assigned_at`, `delivery_status`)
+                        VALUES (:oid, :rid, :rname, :rphone, :otp, NOW(), 'ASSIGNED')
+                    ", [
+                        ':oid' => $orderId,
+                        ':rid' => $riderUser['user_id'],
+                        ':rname' => $riderUser['full_name'],
+                        ':rphone' => $riderUser['phone_number'],
+                        ':otp' => $newOtp
+                    ]);
+                }
+            } elseif (!empty($assignedRider)) {
+                if ($dispatch) {
+                    dbQuery("UPDATE `delivery_dispatches` SET `delivery_partner_name` = :rname WHERE `order_id` = :oid", [
+                        ':rname' => $assignedRider,
+                        ':oid' => $orderId
+                    ]);
+                } else {
+                    $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                    dbQuery("
+                        INSERT INTO `delivery_dispatches`
+                        (`order_id`, `delivery_partner_name`, `delivery_otp`, `assigned_at`, `delivery_status`)
+                        VALUES (:oid, :rname, :otp, NOW(), 'ASSIGNED')
+                    ", [
+                        ':oid' => $orderId,
+                        ':rname' => $assignedRider,
+                        ':otp' => $newOtp
+                    ]);
+                }
+            }
+
+            // 4. Lifecycle-specific transition handlers
+            if ($newStatus === 'OUT_FOR_DELIVERY') {
+                $checkDisp = dbFetchOne("SELECT `dispatch_id` FROM `delivery_dispatches` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                if (!$checkDisp) {
+                    $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+                    dbQuery("
+                        INSERT INTO `delivery_dispatches`
+                        (`order_id`, `delivery_partner_name`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`)
+                        VALUES (:oid, 'Assigned Courier', :otp, NOW(), NOW(), 'IN_TRANSIT')
+                    ", [
+                        ':oid' => $orderId,
+                        ':otp' => $newOtp
+                    ]);
+                }
+
+                dbQuery("
+                    UPDATE `delivery_dispatches` 
+                    SET `dispatched_at` = NOW(), 
+                        `delivery_status` = 'IN_TRANSIT',
+                        `current_latitude` = COALESCE(current_latitude, 12.97840000),
+                        `current_longitude` = COALESCE(current_longitude, 77.64080000),
+                        `route_progress` = COALESCE(route_progress, 0),
+                        `distance_remaining_km` = COALESCE(distance_remaining_km, 2.40),
+                        `estimated_minutes_remaining` = COALESCE(estimated_minutes_remaining, 15)
+                    WHERE `order_id` = :id
+                ", [':id' => $orderId]);
+            } elseif ($newStatus === 'DELIVERED') {
+                dbQuery("UPDATE `delivery_dispatches` SET `delivered_at` = NOW(), `delivery_status` = 'DELIVERED' WHERE `order_id` = :id", [':id' => $orderId]);
+
+                // Lock payment & COD ledger rows before marking settled
+                $payRec = dbFetchOne("SELECT * FROM `payments` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                if ($payRec && $payRec['payment_mode'] === 'COD') {
+                    dbFetchAll("SELECT `txn_id` FROM `money_transactions` WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD' FOR UPDATE", [':id' => $orderId]);
+                    dbQuery("UPDATE `payments` SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() WHERE `order_id` = :id", [':id' => $orderId]);
+                    dbQuery("
+                        UPDATE `money_transactions` 
+                        SET `status` = 'COMPLETED', `handled_by` = :hby, `notes` = CONCAT(COALESCE(notes, ''), ' [Cash collected upon delivery completion]') 
+                        WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
+                    ", [
+                        ':hby' => 'Store Admin / Courier',
+                        ':id'  => $orderId
+                    ]);
+                }
+            } elseif ($newStatus === 'CANCELLED') {
+                // Lock menu_items in ascending item_id order before restocking cancelled order items
+                dbFetchAll("
+                    SELECT DISTINCT m.item_id
+                    FROM `menu_items` m
+                    JOIN `order_items` oi ON m.item_id = oi.item_id
+                    WHERE oi.order_id = :id
+                    ORDER BY m.item_id ASC
+                    FOR UPDATE
+                ", [':id' => $orderId]);
+
+                dbQuery("
+                    UPDATE `menu_items` m
+                    JOIN `order_items` oi ON m.item_id = oi.item_id
+                    SET m.stock_quantity = m.stock_quantity + oi.quantity,
+                        m.is_available = 1
+                    WHERE oi.order_id = :id
+                ", [':id' => $orderId]);
+
+                // Lock and mark payment as refunded
+                dbFetchOne("SELECT `payment_id` FROM `payments` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                dbQuery("
+                    UPDATE `payments` 
+                    SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() 
+                    WHERE `order_id` = :id
+                ", [':id' => $orderId]);
+            }
+
+            // Automatically invoke FCFS allocation engine when order is ready or delivered
+            if (in_array($newStatus, ['READY', 'DELIVERED'], true)) {
+                autoAllocateReadyOrdersFcfs();
+            }
+
+            return [
+                'success' => true,
+                'order_id' => $orderId,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'badge_html' => getStatusBadge($newStatus),
+                'message' => "Order #ZIP-{$orderId} status advanced to {$newStatus}."
+            ];
+        });
+    } catch (Throwable $e) {
+        if ($inOuterTx) {
+            throw $e;
         }
-    } elseif (!empty($assignedRider)) {
-        if ($dispatch) {
-            db_query("UPDATE `delivery_dispatches` SET `delivery_partner_name` = :rname WHERE `order_id` = :oid", [
-                ':rname' => $assignedRider,
-                ':oid' => $orderId
-            ]);
-        } else {
-            $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-            db_query("
-                INSERT INTO `delivery_dispatches`
-                (`order_id`, `delivery_partner_name`, `delivery_otp`, `assigned_at`, `delivery_status`)
-                VALUES (:oid, :rname, :otp, NOW(), 'ASSIGNED')
-            ", [
-                ':oid' => $orderId,
-                ':rname' => $assignedRider,
-                ':otp' => $newOtp
-            ]);
-        }
+        error_log("transitionOrderStatus failed for order {$orderId} -> {$newStatus}: " . $e->getMessage());
+        return [
+            'success' => false,
+            'error' => 'Failed to update order status safely. Please try again.'
+        ];
     }
-
-    // 4. Lifecycle-specific transition handlers
-    if ($newStatus === 'OUT_FOR_DELIVERY') {
-        $checkDisp = db_fetch_one("SELECT dispatch_id FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
-        if (!$checkDisp) {
-            $newOtp = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-            db_query("
-                INSERT INTO `delivery_dispatches`
-                (`order_id`, `delivery_partner_name`, `delivery_otp`, `assigned_at`, `dispatched_at`, `delivery_status`)
-                VALUES (:oid, 'Assigned Courier', :otp, NOW(), NOW(), 'IN_TRANSIT')
-            ", [
-                ':oid' => $orderId,
-                ':otp' => $newOtp
-            ]);
-        }
-
-        db_query("
-            UPDATE `delivery_dispatches` 
-            SET `dispatched_at` = NOW(), 
-                `delivery_status` = 'IN_TRANSIT',
-                `current_latitude` = COALESCE(current_latitude, 12.97840000),
-                `current_longitude` = COALESCE(current_longitude, 77.64080000),
-                `route_progress` = COALESCE(route_progress, 0),
-                `distance_remaining_km` = COALESCE(distance_remaining_km, 2.40),
-                `estimated_minutes_remaining` = COALESCE(estimated_minutes_remaining, 15)
-            WHERE `order_id` = :id
-        ", [':id' => $orderId]);
-    } elseif ($newStatus === 'DELIVERED') {
-        db_query("UPDATE `delivery_dispatches` SET `delivered_at` = NOW(), `delivery_status` = 'DELIVERED' WHERE `order_id` = :id", [':id' => $orderId]);
-
-        // If COD, mark payment as SUCCESSFUL & complete ledger transaction
-        $payRec = db_fetch_one("SELECT * FROM `payments` WHERE `order_id` = :id", [':id' => $orderId]);
-        if ($payRec && $payRec['payment_mode'] === 'COD') {
-            db_query("UPDATE `payments` SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() WHERE `order_id` = :id", [':id' => $orderId]);
-            db_query("
-                UPDATE `money_transactions` 
-                SET `status` = 'COMPLETED', `handled_by` = :hby, `notes` = CONCAT(COALESCE(notes, ''), ' [Cash collected upon delivery completion]') 
-                WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
-            ", [
-                ':hby' => 'Store Admin / Courier',
-                ':id'  => $orderId
-            ]);
-        }
-    } elseif ($newStatus === 'CANCELLED') {
-        // Restock inventory for cancelled order items
-        db_query("
-            UPDATE `menu_items` m
-            JOIN `order_items` oi ON m.item_id = oi.item_id
-            SET m.stock_quantity = m.stock_quantity + oi.quantity,
-                m.is_available = 1
-            WHERE oi.order_id = :id
-        ", [':id' => $orderId]);
-
-        // Mark payment as refunded
-        db_query("
-            UPDATE `payments` 
-            SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() 
-            WHERE `order_id` = :id
-        ", [':id' => $orderId]);
-    }
-
-    // Automatically invoke FCFS allocation engine when order is ready or delivered
-    if (in_array($newStatus, ['READY', 'DELIVERED'])) {
-        auto_allocate_ready_orders_fcfs();
-    }
-
-    return [
-        'success' => true,
-        'order_id' => $orderId,
-        'old_status' => $oldStatus,
-        'new_status' => $newStatus,
-        'badge_html' => get_status_badge($newStatus),
-        'message' => "Order #ZIP-{$orderId} status advanced to {$newStatus}."
-    ];
 }
 
 /**
  * Retrieve a customer's most recent previous meal / completed order for 1-tap reordering.
  * Prioritizes delivered/completed orders, falling back to placed/confirmed if no delivered order exists.
  */
-function get_customer_previous_meal(?int $userId): ?array {
+function getCustomerPreviousMeal(?int $userId): ?array
+{
     if (!$userId) {
         return null;
     }
 
     // 1. Fetch the most recent delivered/completed order
-    $order = db_fetch_one("
+    $order = dbFetchOne("
         SELECT o.*, 
                p.payment_mode, p.payment_status,
                ua.address_line, ua.landmark
@@ -1449,7 +1703,7 @@ function get_customer_previous_meal(?int $userId): ?array {
 
     // 2. Fallback to any non-cancelled order
     if (!$order) {
-        $order = db_fetch_one("
+        $order = dbFetchOne("
             SELECT o.*, 
                    p.payment_mode, p.payment_status,
                    ua.address_line, ua.landmark
@@ -1464,7 +1718,7 @@ function get_customer_previous_meal(?int $userId): ?array {
 
     // 3. Fallback to any past order if only cancelled orders exist
     if (!$order) {
-        $order = db_fetch_one("
+        $order = dbFetchOne("
             SELECT o.*, 
                    p.payment_mode, p.payment_status,
                    ua.address_line, ua.landmark
@@ -1482,7 +1736,7 @@ function get_customer_previous_meal(?int $userId): ?array {
     }
 
     // Fetch order line items with live menu item details
-    $items = db_fetch_all("
+    $items = dbFetchAll("
         SELECT oi.order_item_id, oi.order_id, oi.item_id, oi.quantity, oi.unit_price, oi.line_total,
                m.item_name, m.is_veg, m.price AS current_price, m.image_url, m.is_available, m.stock_quantity,
                c.category_name
@@ -1510,7 +1764,7 @@ function get_customer_previous_meal(?int $userId): ?array {
             'price' => (float)$it['current_price'],
             'isVeg' => (bool)$it['is_veg'],
             'restaurant' => 'Meghana Foods',
-            'imageUrl' => get_dish_image_url($it['image_url'] ?? ''),
+            'imageUrl' => getDishImageUrl($it['image_url'] ?? ''),
             'qty' => (int)$it['quantity'],
             'inStock' => $inStock
         ];
@@ -1530,10 +1784,11 @@ function get_customer_previous_meal(?int $userId): ?array {
 /**
  * Retrieve all Customization Groups and active Options for a specific Dish
  */
-function get_dish_customization_groups(int $itemId, bool $onlyAvailable = false): array {
-    $groups = db_fetch_all("
+function getDishCustomizationGroups(int $itemId, bool $onlyAvailable = false): array
+{
+    $groups = dbFetchAll("
         SELECT * FROM `dish_customization_groups`
-        WHERE `item_id` = :id
+        WHERE `item_id` = :id AND `is_active` = 1
         ORDER BY `display_order` ASC, `group_id` ASC
     ", [':id' => $itemId]);
 
@@ -1541,15 +1796,18 @@ function get_dish_customization_groups(int $itemId, bool $onlyAvailable = false)
         return [];
     }
 
-    $groupIds = array_column($groups, 'group_id');
-    $inClause = implode(',', array_map('intval', $groupIds));
+    $groupIds = array_values(array_unique(array_filter(array_map('intval', array_column($groups, 'group_id')), static fn(int $gid): bool => $gid > 0)));
+    if (empty($groupIds)) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($groupIds), '?'));
     $availFilter = $onlyAvailable ? " AND `is_available` = 1" : "";
-    
-    $options = db_fetch_all("
+
+    $options = dbFetchAll("
         SELECT * FROM `dish_customization_options`
-        WHERE `group_id` IN ({$inClause}){$availFilter}
+        WHERE `group_id` IN ({$placeholders}) AND `is_active` = 1{$availFilter}
         ORDER BY `group_id` ASC, `display_order` ASC, `price` ASC, `option_id` ASC
-    ");
+    ", $groupIds);
 
     $optionsByGroup = [];
     foreach ($options as $opt) {
@@ -1567,11 +1825,13 @@ function get_dish_customization_groups(int $itemId, bool $onlyAvailable = false)
 /**
  * Get map of customisation counts (groups & options) for all dishes
  */
-function get_all_dishes_customization_counts(): array {
-    $rows = db_fetch_all("
+function getAllDishesCustomizationCounts(): array
+{
+    $rows = dbFetchAll("
         SELECT g.item_id, COUNT(DISTINCT g.group_id) AS group_count, COUNT(o.option_id) AS option_count
         FROM `dish_customization_groups` g
-        LEFT JOIN `dish_customization_options` o ON g.group_id = o.group_id
+        LEFT JOIN `dish_customization_options` o ON g.group_id = o.group_id AND o.is_active = 1
+        WHERE g.is_active = 1
         GROUP BY g.item_id
     ");
     $map = [];
@@ -1587,7 +1847,8 @@ function get_all_dishes_customization_counts(): array {
 /**
  * Format customizations string into neat HTML badges
  */
-function format_customizations_html(?string $customizations): string {
+function formatCustomizationsHtml(?string $customizations): string
+{
     if (empty($customizations)) {
         return '';
     }
@@ -1603,6 +1864,227 @@ function format_customizations_html(?string $customizations): string {
     $html .= '</div>';
     return $html;
 }
+
+/**
+ * Compute real-time Rider Earnings & Instant IMPS Payout Balance
+ * Aggregates completed trips, rider contract base fare, distance surcharges, tips,
+ * and subtracts disbursed Instant IMPS cashouts from `staff_salary_payouts`.
+ */
+function getRiderEarningsSummary(int $riderId, string $riderName = ''): array
+{
+    $firstWord = trim(explode(' ', trim($riderName !== '' ? $riderName : 'Rider'))[0]);
+
+    // Fetch rider contract per-order base rate from staff_profiles
+    $profile = dbFetchOne(
+        "SELECT `hourly_or_order_rate` FROM `staff_profiles` WHERE `user_id` = :uid LIMIT 1",
+        [':uid' => $riderId]
+    );
+    $baseRate = ($profile && (float)$profile['hourly_or_order_rate'] > 0)
+        ? (float)$profile['hourly_or_order_rate']
+        : 45.00;
+    $distanceRate = 15.00;
+    $tipRate = 20.00;
+
+    // Count all completed deliveries assigned to this rider
+    $deliveredCount = (int)(dbFetchVal("
+        SELECT COUNT(*)
+        FROM `orders` o
+        LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
+        WHERE o.order_status = 'DELIVERED'
+          AND (d.rider_id = :rid OR (d.rider_id IS NULL AND d.delivery_partner_name LIKE :rname))
+    ", [
+        ':rid'   => $riderId,
+        ':rname' => '%' . $firstWord . '%'
+    ]) ?: 0);
+
+    $baseFareTotal   = round($deliveredCount * $baseRate, 2);
+    $distanceTotal   = round($deliveredCount * $distanceRate, 2);
+    $tipsTotal       = round($deliveredCount * $tipRate, 2);
+    $totalEarned     = round($baseFareTotal + $distanceTotal + $tipsTotal, 2);
+
+    // Sum already settled Instant IMPS cashouts
+    $totalCashedOut = (float)(dbFetchVal("
+        SELECT COALESCE(SUM(`net_paid`), 0)
+        FROM `staff_salary_payouts`
+        WHERE `user_id` = :uid
+          AND `payout_status` = 'PAID'
+          AND (`transaction_reference` LIKE 'IMPS-%' OR `notes` LIKE '%Instant IMPS%')
+    ", [':uid' => $riderId]) ?: 0.00);
+    $totalCashedOut = round($totalCashedOut, 2);
+
+    $availableBalance = max(0.00, round($totalEarned - $totalCashedOut, 2));
+
+    $cashoutHistory = dbFetchAll("
+        SELECT `payout_id`, `month_year`, `base_amount`, `incentives_amount`, `net_paid`,
+               `payment_mode`, `transaction_reference`, `payout_status`, `paid_at`, `notes`
+        FROM `staff_salary_payouts`
+        WHERE `user_id` = :uid
+          AND (`transaction_reference` LIKE 'IMPS-%' OR `notes` LIKE '%Instant IMPS%')
+        ORDER BY `paid_at` DESC, `payout_id` DESC
+        LIMIT 15
+    ", [':uid' => $riderId]);
+
+    return [
+        'delivered_count'   => $deliveredCount,
+        'base_rate'         => $baseRate,
+        'distance_rate'     => $distanceRate,
+        'tip_rate'          => $tipRate,
+        'trip_payout_rate'  => $baseRate + $distanceRate + $tipRate,
+        'base_fare_total'   => $baseFareTotal,
+        'distance_total'    => $distanceTotal,
+        'tips_total'        => $tipsTotal,
+        'total_earned'      => $totalEarned,
+        'total_cashed_out'  => $totalCashedOut,
+        'available_balance' => $availableBalance,
+        'cashout_history'   => $cashoutHistory
+    ];
+}
+
+/**
+ * Determine whether a delivery rider is legitimately assigned to the given order.
+ */
+function isRiderAssignedToOrder(int $orderId, int $riderId, ?string $riderName = null): bool
+{
+    if ($orderId <= 0 || $riderId <= 0) {
+        return false;
+    }
+
+    $disp = dbFetchOne(
+        "SELECT `rider_id`, `delivery_partner_name` FROM `delivery_dispatches` WHERE `order_id` = :oid LIMIT 1",
+        [':oid' => $orderId]
+    );
+    if (!$disp) {
+        return false;
+    }
+
+    $assignedId = (int)($disp['rider_id'] ?? 0);
+    if ($assignedId > 0) {
+        return $assignedId === $riderId;
+    }
+
+    if (!empty($riderName)) {
+        $firstWord = trim(explode(' ', trim($riderName))[0]);
+        if (strlen($firstWord) >= 3 && stripos((string)($disp['delivery_partner_name'] ?? ''), $firstWord) !== false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Sanitize FAQ answer markup using a DOMDocument tag & attribute allowlist.
+ * Strips script/iframe/svg elements, inline styles, on* event attributes, and unsafe URL schemes.
+ */
+function sanitizeFaqContent(string $input): string
+{
+    $trimmed = trim($input);
+    if ($trimmed === '') {
+        return '';
+    }
+
+    if (!preg_match('/<(?:p|br|ul|ol|li)\b[^>]*>/i', $trimmed)) {
+        $trimmed = nl2br($trimmed, false);
+    }
+
+    if (!class_exists('DOMDocument')) {
+        return nl2br(e(strip_tags($trimmed)), false);
+    }
+
+    $allowedTags = ['p', 'br', 'b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'code', 'pre', 'a', 'span'];
+    $dropEntirely = ['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'form', 'noscript', 'template', 'link', 'meta'];
+
+    $prevErrors = libxml_use_internal_errors(true);
+    $doc = new DOMDocument('1.0', 'UTF-8');
+    $wrapped = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><div id="zippy-faq-root">' . $trimmed . '</div></body></html>';
+    $doc->loadHTML($wrapped);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prevErrors);
+
+    $root = $doc->getElementById('zippy-faq-root');
+    if (!$root) {
+        return nl2br(e(strip_tags($trimmed)), false);
+    }
+
+    $sanitizeNode = function (DOMNode $node) use (&$sanitizeNode, $allowedTags, $dropEntirely): void {
+        $children = [];
+        foreach ($node->childNodes as $child) {
+            $children[] = $child;
+        }
+
+        foreach ($children as $child) {
+            if ($child->nodeType === XML_TEXT_NODE) {
+                continue;
+            }
+            if ($child->nodeType !== XML_ELEMENT_NODE) {
+                $node->removeChild($child);
+                continue;
+            }
+
+            /** @var DOMElement $child */
+            $tag = strtolower($child->nodeName);
+            if (in_array($tag, $dropEntirely, true)) {
+                $node->removeChild($child);
+                continue;
+            }
+
+            $sanitizeNode($child);
+
+            if (!in_array($tag, $allowedTags, true)) {
+                while ($child->firstChild) {
+                    $node->insertBefore($child->firstChild, $child);
+                }
+                $node->removeChild($child);
+                continue;
+            }
+
+            $attrNames = [];
+            foreach ($child->attributes as $attr) {
+                $attrNames[] = $attr->nodeName;
+            }
+            foreach ($attrNames as $attrName) {
+                $lowerAttr = strtolower($attrName);
+                if ($tag === 'a' && $lowerAttr === 'href') {
+                    $rawHref = trim(html_entity_decode($child->getAttribute($attrName), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $cleanHref = (string)preg_replace('/[\x00-\x20]+/', '', $rawHref);
+                    if (!preg_match('#^(?:https?://|mailto:|/(?!/))#i', $cleanHref)) {
+                        $child->removeAttribute($attrName);
+                    } else {
+                        $child->setAttribute('href', $rawHref);
+                    }
+                    continue;
+                }
+                if ($tag === 'a' && $lowerAttr === 'title') {
+                    continue;
+                }
+                if ($tag === 'a' && $lowerAttr === 'target' && strtolower($child->getAttribute($attrName)) === '_blank') {
+                    $child->setAttribute('rel', 'noopener noreferrer');
+                    continue;
+                }
+                $child->removeAttribute($attrName);
+            }
+            if ($tag === 'a' && $child->hasAttribute('href') && !$child->hasAttribute('rel')) {
+                $child->setAttribute('rel', 'noopener noreferrer');
+            }
+        }
+    };
+
+    $sanitizeNode($root);
+
+    $out = '';
+    foreach ($root->childNodes as $child) {
+        $out .= $doc->saveHTML($child);
+    }
+    return trim($out);
+}
+
+require_once __DIR__ . '/view_helpers.php';
+require_once __DIR__ . '/Services/CatalogService.php';
+require_once __DIR__ . '/Services/OrderService.php';
+require_once __DIR__ . '/Services/FleetService.php';
+require_once __DIR__ . '/Services/FinanceService.php';
+require_once __DIR__ . '/Services/AdminService.php';
+
 
 
 

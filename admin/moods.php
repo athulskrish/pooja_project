@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Food Moods & Vibe Curation Management
  * Zippy - Online Food Ordering Platform
@@ -10,269 +11,27 @@ $activePage = 'moods';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle All Form Submissions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session security token. Please try again.');
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session security token. Please try again.');
+    } else {
+        $res = CatalogService::handleMoodAction($_POST);
+        setFlash($res['type'], $res['message']);
     }
-
-    $action = $_POST['action'];
-
-    // 1. ADD NEW MOOD
-    if ($action === 'add_mood') {
-        $name = trim(strip_tags((string)($_POST['name'] ?? '')));
-        $key = trim(strip_tags((string)($_POST['mood_key'] ?? '')));
-        if (empty($key)) {
-            $key = strtolower(preg_replace('/[^A-Za-z0-9_]+/', '_', trim($name)));
-        }
-        $key = trim($key, '_');
-        $shortName = trim(strip_tags((string)($_POST['short_name'] ?? ''))) ?: $name;
-        $emoji = trim((string)($_POST['emoji'] ?? '🍽️'));
-        $icon = trim(strip_tags((string)($_POST['icon'] ?? 'fa-solid fa-utensils')));
-        $tagline = trim(strip_tags((string)($_POST['tagline'] ?? '')));
-        $badgeBg = trim((string)($_POST['badge_bg'] ?? '#FFF3CD'));
-        $badgeColor = trim((string)($_POST['badge_color'] ?? '#856404'));
-        $borderColor = trim((string)($_POST['border_color'] ?? '#FFE69C'));
-        $accent = trim((string)($_POST['accent'] ?? '#FFC107'));
-        $order = isset($_POST['display_order']) && $_POST['display_order'] !== '' ? (int)$_POST['display_order'] : null;
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-        $imageUrl = trim((string)($_POST['image_url'] ?? ''));
-
-        // Auto display order
-        if ($order === null || $order <= 0) {
-            $maxOrd = (int)db_fetch_val("SELECT MAX(`display_order`) FROM `food_moods`");
-            $order = $maxOrd + 1;
-        }
-
-        // Handle Photo Upload
-        $upload = handle_mood_photo_upload('mood_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/moods.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $imageUrl = $upload['url'];
-            }
-        }
-
-        if (empty($imageUrl)) {
-            $imageUrl = 'assets/images/moods/comfort.jpg';
-        }
-
-        if (!empty($name) && !empty($key)) {
-            $exists = db_fetch_val("SELECT COUNT(*) FROM `food_moods` WHERE `mood_key` = :k", [':k' => $key]);
-            if ($exists > 0) {
-                set_flash('warning', "A food mood with key '{$key}' already exists. Please choose a distinct key.");
-            } else {
-                db_query("
-                    INSERT INTO `food_moods` 
-                    (`mood_key`, `name`, `short_name`, `emoji`, `icon`, `image_url`, `tagline`, `badge_bg`, `badge_color`, `border_color`, `accent`, `display_order`, `is_active`)
-                    VALUES (:k, :n, :sn, :em, :ic, :img, :tag, :bg, :bc, :brd, :acc, :ord, :act)
-                ", [
-                    ':k'   => $key,
-                    ':n'   => $name,
-                    ':sn'  => $shortName,
-                    ':em'  => $emoji,
-                    ':ic'  => $icon,
-                    ':img' => $imageUrl,
-                    ':tag' => $tagline,
-                    ':bg'  => $badgeBg,
-                    ':bc'  => $badgeColor,
-                    ':brd' => $borderColor,
-                    ':acc' => $accent,
-                    ':ord' => $order,
-                    ':act' => $isActive
-                ]);
-                set_flash('success', "Food Mood '{$name}' created successfully with photo!");
-            }
-        } else {
-            set_flash('danger', 'Mood name and identifier key are required.');
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 2. EDIT MOOD & PHOTO
-    } elseif ($action === 'edit_mood') {
-        $id = (int)($_POST['mood_id'] ?? 0);
-        $name = trim(strip_tags((string)($_POST['name'] ?? '')));
-        $shortName = trim(strip_tags((string)($_POST['short_name'] ?? '')));
-        $emoji = trim((string)($_POST['emoji'] ?? '🍽️'));
-        $icon = trim(strip_tags((string)($_POST['icon'] ?? 'fa-solid fa-utensils')));
-        $tagline = trim(strip_tags((string)($_POST['tagline'] ?? '')));
-        $badgeBg = trim((string)($_POST['badge_bg'] ?? '#FFF3CD'));
-        $badgeColor = trim((string)($_POST['badge_color'] ?? '#856404'));
-        $borderColor = trim((string)($_POST['border_color'] ?? '#FFE69C'));
-        $accent = trim((string)($_POST['accent'] ?? '#FFC107'));
-        $order = (int)($_POST['display_order'] ?? 0);
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-        $imageUrl = trim((string)($_POST['image_url'] ?? ''));
-
-        // Check for new photo file upload
-        $upload = handle_mood_photo_upload('mood_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/moods.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $imageUrl = $upload['url'];
-            }
-        }
-
-        // If no new file or URL provided, retain existing photo
-        if (empty($imageUrl)) {
-            $existingImg = db_fetch_val("SELECT `image_url` FROM `food_moods` WHERE `mood_id` = :id", [':id' => $id]);
-            if ($existingImg) {
-                $imageUrl = $existingImg;
-            }
-        }
-
-        db_query("
-            UPDATE `food_moods` 
-            SET `name` = :n, `short_name` = :sn, `emoji` = :em, `icon` = :ic, 
-                `image_url` = :img, `tagline` = :tag, `badge_bg` = :bg, `badge_color` = :bc, 
-                `border_color` = :brd, `accent` = :acc, `display_order` = :ord, `is_active` = :act
-            WHERE `mood_id` = :id
-        ", [
-            ':n'   => $name,
-            ':sn'  => $shortName,
-            ':em'  => $emoji,
-            ':ic'  => $icon,
-            ':img' => $imageUrl,
-            ':tag' => $tagline,
-            ':bg'  => $badgeBg,
-            ':bc'  => $badgeColor,
-            ':brd' => $borderColor,
-            ':acc' => $accent,
-            ':ord' => $order,
-            ':act' => $isActive,
-            ':id'  => $id
-        ]);
-        set_flash('success', "Food Mood '{$name}' updated successfully.");
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 3. MANAGE DISHES IN MOOD (MASS CHECKLIST)
-    } elseif ($action === 'manage_mood_dishes') {
-        $moodKey = clean_input($_POST['mood_key'] ?? '');
-        $selectedItems = isset($_POST['item_ids']) && is_array($_POST['item_ids']) ? $_POST['item_ids'] : [];
-
-        if (!empty($moodKey)) {
-            set_mood_dishes($moodKey, $selectedItems);
-            $count = count($selectedItems);
-            set_flash('success', "Assigned {$count} dishes to '{$moodKey}' mood successfully.");
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 4. QUICK ADD DISH TO MOOD
-    } elseif ($action === 'quick_add_dish') {
-        $moodKey = clean_input($_POST['mood_key'] ?? '');
-        $itemId = (int)($_POST['item_id'] ?? 0);
-        if ($itemId > 0 && !empty($moodKey)) {
-            add_dish_to_mood($itemId, $moodKey);
-            $dishName = db_fetch_val("SELECT `item_name` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-            set_flash('success', "Added '{$dishName}' to '{$moodKey}' mood.");
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 5. QUICK REMOVE DISH FROM MOOD
-    } elseif ($action === 'quick_remove_dish') {
-        $moodKey = clean_input($_POST['mood_key'] ?? '');
-        $itemId = (int)($_POST['item_id'] ?? 0);
-        if ($itemId > 0 && !empty($moodKey)) {
-            remove_dish_from_mood($itemId, $moodKey);
-            $dishName = db_fetch_val("SELECT `item_name` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-            set_flash('success', "Removed '{$dishName}' from '{$moodKey}' mood.");
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 6. TOGGLE STATUS (ACTIVE / INACTIVE)
-    } elseif ($action === 'toggle_status') {
-        $id = (int)($_POST['mood_id'] ?? 0);
-        $m = db_fetch_one("SELECT `name`, `is_active` FROM `food_moods` WHERE `mood_id` = :id", [':id' => $id]);
-        if ($m) {
-            $newStatus = $m['is_active'] ? 0 : 1;
-            db_query("UPDATE `food_moods` SET `is_active` = :st WHERE `mood_id` = :id", [
-                ':st' => $newStatus,
-                ':id' => $id
-            ]);
-            $lbl = $newStatus ? 'now active on storefront' : 'now hidden from storefront';
-            set_flash('success', "Mood '{$m['name']}' is {$lbl}.");
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 7. UPDATE DISPLAY ORDER
-    } elseif ($action === 'update_order') {
-        $id = (int)($_POST['mood_id'] ?? 0);
-        $direction = clean_input($_POST['direction'] ?? '');
-        $cur = (int)db_fetch_val("SELECT `display_order` FROM `food_moods` WHERE `mood_id` = :id", [':id' => $id]);
-        if ($direction === 'up') {
-            $newOrder = max(1, $cur - 1);
-        } elseif ($direction === 'down') {
-            $newOrder = $cur + 1;
-        } else {
-            $newOrder = $cur;
-        }
-        db_query("UPDATE `food_moods` SET `display_order` = :ord WHERE `mood_id` = :id", [
-            ':ord' => $newOrder,
-            ':id'  => $id
-        ]);
-        set_flash('success', "Display order updated.");
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-
-    // 8. DELETE MOOD
-    } elseif ($action === 'delete_mood') {
-        $id = (int)($_POST['mood_id'] ?? 0);
-        $m = db_fetch_one("SELECT `mood_key`, `name` FROM `food_moods` WHERE `mood_id` = :id", [':id' => $id]);
-        if ($m) {
-            // Remove mood tag from any linked dishes
-            $dishes = db_fetch_all("SELECT `item_id`, `mood` FROM `menu_items` WHERE FIND_IN_SET(:k, REPLACE(`mood`, ' ', '')) > 0", [':k' => $m['mood_key']]);
-            foreach ($dishes as $d) {
-                remove_dish_from_mood((int)$d['item_id'], $m['mood_key']);
-            }
-            db_query("DELETE FROM `food_moods` WHERE `mood_id` = :id", [':id' => $id]);
-            set_flash('success', "Mood '{$m['name']}' deleted and unlinked from dishes.");
-        }
-        header("Location: " . ADMIN_URL . "/moods.php");
-        exit;
-    }
+    header("Location: " . ADMIN_URL . "/moods.php");
+    exit;
 }
 
-// Fetch all moods
-$moods = db_fetch_all("SELECT * FROM `food_moods` ORDER BY `display_order` ASC, `mood_id` ASC");
-
-// Calculate stats
-$totalMoods = count($moods);
-$activeMoods = 0;
-$totalDishesInMoods = 0;
-
-foreach ($moods as &$m) {
-    if (!empty($m['is_active'])) {
-        $activeMoods++;
-    }
-    $m['dish_count'] = get_mood_dish_count($m['mood_key']);
-    $totalDishesInMoods += $m['dish_count'];
-}
-unset($m);
-
-// Fetch all catalog dishes for the Manage Dishes modal
-$allDishes = db_fetch_all("
-    SELECT m.item_id, m.item_name, m.price, m.is_veg, m.image_url, m.mood, c.category_name, c.category_slug
-    FROM `menu_items` m
-    LEFT JOIN `categories` c ON m.category_id = c.category_id
-    ORDER BY c.category_name ASC, m.item_name ASC
-");
+$moodsData = CatalogService::getAdminMoodsData();
+$moods = $moodsData['moods'];
+$totalMoods = $moodsData['totalMoods'];
+$activeMoods = $moodsData['activeMoods'];
+$totalDishesInMoods = $moodsData['totalDishesInMoods'];
+$allDishes = $moodsData['allDishes'];
 
 include __DIR__ . '/includes/header.php';
 ?>
@@ -404,9 +163,9 @@ include __DIR__ . '/includes/header.php';
                 <td class="ps-4 fw-bold text-muted"><?= $idx + 1 ?></td>
                 <td>
                   <div class="position-relative" style="width: 60px; height: 60px;">
-                    <img src="<?= e(get_mood_image_url($m['mood_key'])) ?>" alt="<?= e($m['name']) ?>" class="w-100 h-100 rounded-circle object-fit-cover shadow-xs border border-2 border-white">
+                    <img src="<?= e(getMoodImageUrl($m['mood_key'])) ?>" alt="<?= e($m['name']) ?>" class="w-100 h-100 rounded-circle object-fit-cover shadow-xs border border-2 border-white">
                     <span class="position-absolute bottom-0 end-0 rounded-circle shadow-xs bg-white px-1 d-flex align-items-center justify-content-center" style="width: 22px; height: 22px; font-size: 0.75rem;">
-                      <?= $m['emoji'] ?>
+                      <?= e($m['emoji']) ?>
                     </span>
                   </div>
                 </td>
@@ -423,15 +182,15 @@ include __DIR__ . '/includes/header.php';
                   </p>
                 </td>
                 <td>
-                  <span class="badge px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs" style="background:<?= $m['badge_bg'] ?>; color:<?= $m['badge_color'] ?>; border:1px solid <?= $m['border_color'] ?>;">
-                    <?= $m['emoji'] ?> <?= e($m['short_name']) ?>
+                  <span class="badge px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs" style="background:<?= e($m['badge_bg']) ?>; color:<?= e($m['badge_color']) ?>; border:1px solid <?= e($m['border_color']) ?>;">
+                    <?= e($m['emoji']) ?> <?= e($m['short_name']) ?>
                   </span>
                   <div class="small text-muted mt-1" style="font-size:0.7rem;">
-                    Accent: <span class="d-inline-block rounded-circle" style="width:10px; height:10px; background:<?= $m['accent'] ?>; vertical-align:middle;"></span> <?= e($m['accent']) ?>
+                    Accent: <span class="d-inline-block rounded-circle" style="width:10px; height:10px; background:<?= e($m['accent']) ?>; vertical-align:middle;"></span> <?= e($m['accent']) ?>
                   </div>
                 </td>
                 <td>
-                  <button type="button" class="btn btn-sm rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-1 border shadow-xs" style="background:#EDFBF2; color:#2E6F40; border-color:#68BA7F !important;" onclick="openManageDishesModal('<?= e($m['mood_key']) ?>', '<?= addslashes(e($m['name'])) ?>', '<?= e(get_mood_image_url($m['mood_key'])) ?>')">
+                  <button type="button" class="btn btn-sm rounded-pill px-3 py-1 fw-bold d-inline-flex align-items-center gap-1 border shadow-xs" style="background:#EDFBF2; color:#2E6F40; border-color:#68BA7F !important;" onclick="openManageDishesModal(<?= e(jsJson((string)$m['mood_key'])) ?>, <?= e(jsJson((string)$m['name'])) ?>, <?= e(jsJson((string)getMoodImageUrl($m['mood_key']))) ?>)">
                     <i class="fa-solid fa-bowl-food"></i>
                     <span><?= (int)$m['dish_count'] ?> dishes</span>
                     <i class="bi bi-gear-fill small ms-1 text-success"></i>
@@ -441,14 +200,14 @@ include __DIR__ . '/includes/header.php';
                   <div class="d-flex align-items-center gap-1">
                     <span class="fw-bold small text-muted px-1"><?= (int)$m['display_order'] ?></span>
                     <form method="POST" class="d-inline">
-                      <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                      <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                       <input type="hidden" name="action" value="update_order">
                       <input type="hidden" name="mood_id" value="<?= (int)$m['mood_id'] ?>">
                       <input type="hidden" name="direction" value="up">
                       <button type="submit" class="btn btn-sm btn-outline-secondary p-0 px-1 rounded" title="Move Up"><i class="bi bi-chevron-up"></i></button>
                     </form>
                     <form method="POST" class="d-inline">
-                      <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                      <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                       <input type="hidden" name="action" value="update_order">
                       <input type="hidden" name="mood_id" value="<?= (int)$m['mood_id'] ?>">
                       <input type="hidden" name="direction" value="down">
@@ -458,7 +217,7 @@ include __DIR__ . '/includes/header.php';
                 </td>
                 <td>
                   <form method="POST" class="d-inline">
-                    <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                     <input type="hidden" name="action" value="toggle_status">
                     <input type="hidden" name="mood_id" value="<?= (int)$m['mood_id'] ?>">
                     <?php if ($m['is_active']): ?>
@@ -474,13 +233,13 @@ include __DIR__ . '/includes/header.php';
                 </td>
                 <td class="text-end pe-4">
                   <div class="btn-group shadow-xs">
-                    <button type="button" class="btn btn-sm btn-outline-forest fw-semibold" onclick="openEditMoodModal(<?= htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') ?>)">
+                    <button type="button" class="btn btn-sm btn-outline-forest fw-semibold" onclick="openEditMoodModal(<?= e(jsJson($m)) ?>)">
                       <i class="bi bi-pencil me-1"></i>Edit
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-success fw-semibold" onclick="openManageDishesModal('<?= e($m['mood_key']) ?>', '<?= addslashes(e($m['name'])) ?>', '<?= e(get_mood_image_url($m['mood_key'])) ?>')">
+                    <button type="button" class="btn btn-sm btn-outline-success fw-semibold" onclick="openManageDishesModal(<?= e(jsJson((string)$m['mood_key'])) ?>, <?= e(jsJson((string)$m['name'])) ?>, <?= e(jsJson((string)getMoodImageUrl($m['mood_key']))) ?>)">
                       <i class="fa-solid fa-utensils me-1"></i>Items
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteMood(<?= (int)$m['mood_id'] ?>, '<?= addslashes(e($m['name'])) ?>')">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteMood(<?= (int)$m['mood_id'] ?>, <?= e(jsJson((string)$m['name'])) ?>)">
                       <i class="bi bi-trash"></i>
                     </button>
                   </div>
@@ -513,7 +272,7 @@ include __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <input type="hidden" name="action" value="add_mood">
 
         <div class="modal-header border-bottom py-3 px-4" style="background: linear-gradient(135deg, #F0FAF3 0%, #E5F7EC 100%);">
@@ -642,7 +401,7 @@ include __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <input type="hidden" name="action" value="edit_mood">
         <input type="hidden" name="mood_id" id="editMoodId">
 
@@ -772,7 +531,7 @@ include __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST">
-        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <input type="hidden" name="action" value="manage_mood_dishes">
         <input type="hidden" name="mood_key" id="manageDishesMoodKey">
 
@@ -834,7 +593,7 @@ include __DIR__ . '/includes/header.php';
                       <input type="checkbox" name="item_ids[]" value="<?= (int)$dish['item_id'] ?>" class="form-check-input dish-checkbox" onchange="updateSelectedDishCount()">
                     </td>
                     <td>
-                      <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-3 object-fit-cover shadow-xs border" style="width: 44px; height: 44px;">
+                      <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-3 object-fit-cover shadow-xs border" style="width: 44px; height: 44px;">
                     </td>
                     <td>
                       <div class="d-flex align-items-center gap-2">
@@ -903,7 +662,7 @@ include __DIR__ . '/includes/header.php';
       <h5 class="fw-bold font-outfit text-dark mb-1">Delete Food Mood?</h5>
       <p class="text-muted small mb-4" id="deleteMoodMsg"></p>
       <form method="POST">
-        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <input type="hidden" name="action" value="delete_mood">
         <input type="hidden" name="mood_id" id="deleteMoodId">
         <div class="d-flex justify-content-center gap-2">

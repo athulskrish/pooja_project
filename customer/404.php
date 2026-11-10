@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Custom 404 Error Page
  * MCSP-232: E-Commerce Platform for Food Order

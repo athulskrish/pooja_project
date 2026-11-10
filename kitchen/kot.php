@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Printable Kitchen Order Ticket (KOT) — Single & Batch Support
  * Zippy - Online Food Ordering Platform
@@ -9,45 +10,22 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-require_kitchen();
+requireKitchen();
 
 // Support both comma-separated batch order_ids or single order_id
 $orderIdsRaw = $_GET['order_ids'] ?? ($_GET['order_id'] ?? '');
-$targetOrderIds = array_filter(array_map('intval', explode(',', (string)$orderIdsRaw)));
+$targetOrderIds = array_values(array_filter(array_map('intval', explode(',', (string)$orderIdsRaw))));
 
 if (empty($targetOrderIds)) {
     die("Invalid order ID(s) provided for KOT slip generation.");
 }
 
-$placeholders = implode(',', array_fill(0, count($targetOrderIds), '?'));
-$ordersList = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-           a.address_line, a.landmark, a.pincode,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_id IN ($placeholders)
-    ORDER BY o.placed_at ASC
-", $targetOrderIds);
-
+$kotData = OrderService::getKitchenKotData($targetOrderIds);
+$ordersList = $kotData['ordersList'];
 if (empty($ordersList)) {
     die("Order ticket(s) not found.");
 }
-
-$allItems = db_fetch_all("
-    SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes, m.kitchen_station
-    FROM `order_items` oi
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id IN ($placeholders)
-    ORDER BY oi.order_item_id ASC
-", $targetOrderIds);
-
-$itemsByOrder = [];
-foreach ($allItems as $it) {
-    $itemsByOrder[$it['order_id']][] = $it;
-}
+$itemsByOrder = $kotData['itemsByOrder'];
 ?>
 <!DOCTYPE html>
 <html lang="en">

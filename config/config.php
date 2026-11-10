@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Global Application Configuration & Common Helpers
  * Zippy - Online Food Ordering Platform
@@ -19,7 +20,8 @@ if (!ob_get_level()) {
  * Enables Multi-Actor Isolated Sessions in the SAME browser window.
  * Allows Customer, Admin, Delivery Rider, and Kitchen Chef to operate concurrently in separate tabs.
  */
-function get_current_portal(): string {
+function getCurrentPortal(): string
+{
     $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '');
     $uri = str_replace('\\', '/', $_SERVER['REQUEST_URI'] ?? '');
     $combined = strtolower($script . ' ' . $uri);
@@ -37,7 +39,57 @@ function get_current_portal(): string {
         return 'customer';
     }
     if (str_contains($combined, '/api/')) {
-        return 'customer';
+        $cookieMap = [
+            'admin' => 'ZIPPY_ADMIN_SESS',
+            'kitchen' => 'ZIPPY_KITCHEN_SESS',
+            'delivery' => 'ZIPPY_RIDER_SESS',
+            'customer' => 'ZIPPY_CUSTOMER_SESS',
+        ];
+        $presentPortals = [];
+        foreach ($cookieMap as $portalName => $cookieName) {
+            if (!empty($_COOKIE[$cookieName])) {
+                $presentPortals[] = $portalName;
+            }
+        }
+
+        // Unauthenticated client
+        if (empty($presentPortals)) {
+            return 'customer';
+        }
+
+        // Single authenticated portal cookie: unambiguously use that session for RBAC & CSRF checks
+        if (count($presentPortals) === 1) {
+            return $presentPortals[0];
+        }
+
+        // Multiple portal cookies active in same browser: disambiguate via portal hint or same-host Referer
+        $hint = strtolower(trim((string)($_GET['portal'] ?? $_POST['portal'] ?? $_SERVER['HTTP_X_PORTAL'] ?? '')));
+        $hintPortal = match (true) {
+            in_array($hint, ['admin', 'categories', 'dishes'], true) => 'admin',
+            $hint === 'kitchen' => 'kitchen',
+            in_array($hint, ['delivery', 'rider'], true) => 'delivery',
+            $hint === 'customer' => 'customer',
+            default => null,
+        };
+        if ($hintPortal !== null && in_array($hintPortal, $presentPortals, true)) {
+            return $hintPortal;
+        }
+
+        $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+        if ($referer !== '') {
+            $refHost = strtolower((string)(parse_url($referer, PHP_URL_HOST) ?? ''));
+            $curHost = strtolower((string)preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? '')));
+            $refPath = strtolower(str_replace('\\', '/', (string)(parse_url($referer, PHP_URL_PATH) ?? '')));
+            if ($refHost === '' || $curHost === '' || $refHost === $curHost) {
+                foreach (['admin', 'kitchen', 'delivery', 'customer'] as $candidate) {
+                    if (str_contains($refPath, "/{$candidate}/") && in_array($candidate, $presentPortals, true)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+
+        return in_array('customer', $presentPortals, true) ? 'customer' : $presentPortals[0];
     }
 
     return 'customer'; // Default storefront / master launchpad
@@ -47,7 +99,8 @@ function get_current_portal(): string {
  * Retrieve Active User Info Across All 4 Portal Scopes
  * Allows the Master Gateway (index.php) to monitor multi-actor presentation state
  */
-function get_all_portal_actors(): array {
+function getAllPortalActors(): array
+{
     $portals = ['customer', 'kitchen', 'delivery', 'admin'];
     $actors = [];
     foreach ($portals as $p) {
@@ -68,7 +121,7 @@ function get_all_portal_actors(): array {
 // Start session if not started with Isolated Session Cookie per Portal
 if (session_status() === PHP_SESSION_NONE) {
     // Multi-Actor Session Isolation: Map portal context to dedicated session cookie
-    $portal = get_current_portal();
+    $portal = getCurrentPortal();
     $sessionNames = [
         'admin' => 'ZIPPY_ADMIN_SESS',
         'kitchen' => 'ZIPPY_KITCHEN_SESS',
@@ -108,9 +161,13 @@ define('DEFAULT_DELIVERY_FEE', 40.00);
 define('FREE_DELIVERY_THRESHOLD', 499.00);
 define('PLATFORM_FEE', 5.00);
 
+// Load Database (also loads local .env overrides)
+require_once __DIR__ . '/database.php';
+
 // Razorpay Payment Gateway Settings (Test Mode Sandbox)
 define('RAZORPAY_KEY_ID', getenv('RAZORPAY_KEY_ID') ?: 'rzp_test_1DP5mmOlF5G5ag');
 define('RAZORPAY_KEY_SECRET', getenv('RAZORPAY_KEY_SECRET') ?: 'dummy_secret_key');
+define('RAZORPAY_WEBHOOK_SECRET', (string)(getenv('RAZORPAY_WEBHOOK_SECRET') ?: ($_ENV['RAZORPAY_WEBHOOK_SECRET'] ?? '')));
 define('RAZORPAY_MERCHANT_NAME', 'Zippy Foods');
 
 // Base URL Auto-detection
@@ -138,48 +195,60 @@ if (!defined('BASE_URL')) {
     define('ASSETS_URL', BASE_URL . '/assets');
 }
 
-// Load Database
-require_once __DIR__ . '/database.php';
+// Opt-in Demo Showcase Mode (?demo=1 quick login & demo credential UI hints)
+if (!defined('APP_DEMO_MODE')) {
+    $demoEnv = getenv('APP_DEMO_MODE');
+    if ($demoEnv === false && isset($_ENV['APP_DEMO_MODE'])) {
+        $demoEnv = (string)$_ENV['APP_DEMO_MODE'];
+    }
+    define('APP_DEMO_MODE', filter_var($demoEnv !== false ? $demoEnv : 'false', FILTER_VALIDATE_BOOLEAN));
+}
 
 /**
  * HTML Escaping shorthand
  */
-function e(?string $string): string {
+function e(?string $string): string
+{
     return htmlspecialchars($string ?? '', ENT_QUOTES, 'UTF-8');
 }
 
 /**
  * Sanitize User Input
  */
-function clean_input($data) {
+function cleanInput(string|array|null $data): string|array
+{
     if (is_array($data)) {
-        return array_map('clean_input', $data);
+        return array_map('cleanInput', $data);
     }
-    return trim(htmlspecialchars((string)$data, ENT_QUOTES, 'UTF-8'));
+    return trim(htmlspecialchars((string)($data ?? ''), ENT_QUOTES, 'UTF-8'));
 }
 
 /**
  * Format Indian Rupee Currency
  */
-function format_inr($amount): string {
-    return CURRENCY_SYMBOL . number_format((float)$amount, 2);
+function formatInr(float|int|string|null $amount): string
+{
+    return CURRENCY_SYMBOL . number_format((float)($amount ?? 0), 2);
 }
 
 /**
  * CSRF Token Management
  */
-function csrf_token(): string {
+function csrfToken(): string
+{
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
 }
 
-function csrf_field(): string {
-    return '<input type="hidden" name="csrf_token" value="' . csrf_token() . '">';
+function csrfField(): string
+{
+    return '<input type="hidden" name="csrf_token" value="' . csrfToken() . '">';
 }
 
-function verify_csrf(?string $token): bool {
+function verifyCsrfToken(?string $token): bool
+{
     if (empty($_SESSION['csrf_token']) || empty($token)) {
         return false;
     }
@@ -187,16 +256,47 @@ function verify_csrf(?string $token): bool {
 }
 
 /**
+ * Validate CSRF token from form POST body, X-CSRF-TOKEN header, or JSON payload
+ */
+function verifyRequestCsrf(?array $jsonPayload = null): bool
+{
+    if (!empty($_POST['csrf_token'])) {
+        $submittedToken = (string)$_POST['csrf_token'];
+    } elseif (!empty($_SERVER['HTTP_X_CSRF_TOKEN'])) {
+        $submittedToken = (string)$_SERVER['HTTP_X_CSRF_TOKEN'];
+    } elseif (!empty($jsonPayload['csrf_token'])) {
+        $submittedToken = (string)$jsonPayload['csrf_token'];
+    } else {
+        $submittedToken = '';
+    }
+    return verifyCsrfToken($submittedToken);
+}
+
+/**
+ * Context-safe JSON literal encoder for inline JavaScript and HTML attribute handlers
+ */
+function jsJson(mixed $value): string
+{
+    $encoded = json_encode(
+        $value,
+        JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE
+    );
+    return $encoded !== false ? $encoded : 'null';
+}
+
+/**
  * Flash Notification System
  */
-function set_flash(string $type, string $message): void {
+function setFlash(string $type, string $message): void
+{
     $_SESSION['flash'] = [
         'type' => $type, // 'success', 'danger', 'warning', 'info'
         'message' => $message
     ];
 }
 
-function get_flash(): ?array {
+function getFlash(): ?array
+{
     if (isset($_SESSION['flash'])) {
         $flash = $_SESSION['flash'];
         unset($_SESSION['flash']);
@@ -205,11 +305,12 @@ function get_flash(): ?array {
     return null;
 }
 
-function display_flash(): void {
-    $flash = get_flash();
+function displayFlash(): void
+{
+    $flash = getFlash();
     if ($flash) {
         $type = e($flash['type']);
-        $icon = match($type) {
+        $icon = match ($type) {
             'success' => 'bi-check-circle-fill',
             'danger' => 'bi-exclamation-octagon-fill',
             'warning' => 'bi-exclamation-triangle-fill',
@@ -284,30 +385,33 @@ const RBAC_PERMISSIONS = [
 /**
  * Authentication & RBAC Helpers
  */
-function is_logged_in(): bool {
+function isLoggedIn(): bool
+{
     return !empty($_SESSION['user_id']);
 }
 
-function current_user(): ?array {
-    if (!is_logged_in()) {
+function getCurrentUser(): ?array
+{
+    if (!isLoggedIn()) {
         return null;
     }
-    $userName = $_SESSION['user_name'] ?? 'User';
-    $userPhone = $_SESSION['user_phone'] ?? '';
+    $userName = (string)($_SESSION['user_name'] ?? 'User');
+    $userPhone = (string)($_SESSION['user_phone'] ?? '');
     return [
-        'id' => $_SESSION['user_id'],
+        'id' => (int)$_SESSION['user_id'],
         'name' => $userName,
         'full_name' => $userName,
-        'email' => $_SESSION['user_email'] ?? '',
+        'email' => (string)($_SESSION['user_email'] ?? ''),
         'phone' => $userPhone,
         'phone_number' => $userPhone,
-        'role_id' => $_SESSION['role_id'] ?? 2,
-        'role_name' => strtoupper($_SESSION['role_name'] ?? 'CUSTOMER')
+        'role_id' => (int)($_SESSION['role_id'] ?? 2),
+        'role_name' => strtoupper((string)($_SESSION['role_name'] ?? 'CUSTOMER'))
     ];
 }
 
-function has_role(string|array $roles): bool {
-    if (!is_logged_in()) {
+function hasRole(string|array $roles): bool
+{
+    if (!isLoggedIn()) {
         return false;
     }
     $currentRole = strtoupper($_SESSION['role_name'] ?? '');
@@ -318,57 +422,65 @@ function has_role(string|array $roles): bool {
     return $currentRole === strtoupper($roles);
 }
 
-function has_permission(string $permission): bool {
-    if (!is_logged_in()) {
+function hasPermission(string $permission): bool
+{
+    if (!isLoggedIn()) {
         return false;
     }
     $role = strtoupper($_SESSION['role_name'] ?? '');
     return in_array($permission, RBAC_PERMISSIONS[$role] ?? [], true);
 }
 
-function check_permission(string $permission): bool {
-    return has_permission($permission);
+function checkPermission(string $permission): bool
+{
+    return hasPermission($permission);
 }
 
-function is_admin(): bool {
-    return is_logged_in() && (($_SESSION['role_name'] ?? '') === 'ADMIN' || ($_SESSION['role_id'] ?? 0) == 1);
+function isAdmin(): bool
+{
+    return isLoggedIn() && (($_SESSION['role_name'] ?? '') === 'ADMIN' || ($_SESSION['role_id'] ?? 0) == 1);
 }
 
-function is_customer(): bool {
-    return is_logged_in() && (($_SESSION['role_name'] ?? '') === 'CUSTOMER' || ($_SESSION['role_id'] ?? 0) == 2);
+function isCustomer(): bool
+{
+    return isLoggedIn() && (($_SESSION['role_name'] ?? '') === 'CUSTOMER' || ($_SESSION['role_id'] ?? 0) == 2);
 }
 
-function is_rider(): bool {
-    return is_logged_in() && (($_SESSION['role_name'] ?? '') === 'RIDER' || ($_SESSION['role_id'] ?? 0) == 4);
+function isRider(): bool
+{
+    return isLoggedIn() && (($_SESSION['role_name'] ?? '') === 'RIDER' || ($_SESSION['role_id'] ?? 0) == 4);
 }
 
-function is_kitchen(): bool {
-    return is_logged_in() && (($_SESSION['role_name'] ?? '') === 'KITCHEN' || ($_SESSION['role_id'] ?? 0) == 3);
+function isKitchen(): bool
+{
+    return isLoggedIn() && (($_SESSION['role_name'] ?? '') === 'KITCHEN' || ($_SESSION['role_id'] ?? 0) == 3);
 }
 
-function require_login(string $redirect = null): void {
-    if (!is_logged_in()) {
-        set_flash('warning', 'Please sign in to access that page.');
+function requireLogin(?string $redirect = null): void
+{
+    if (!isLoggedIn()) {
+        setFlash('warning', 'Please sign in to access that page.');
         $target = $redirect ?: CUSTOMER_URL . '/login.php';
         header("Location: " . $target);
         exit;
     }
 }
 
-function require_role(string|array $roles, ?string $redirect = null): void {
-    if (!is_logged_in()) {
-        set_flash('warning', 'Please sign in to access that protected portal.');
+function requireRole(string|array $roles, ?string $redirect = null): void
+{
+    if (!isLoggedIn()) {
+        setFlash('warning', 'Please sign in to access that protected portal.');
         $target = $redirect ?: CUSTOMER_URL . '/login.php';
         header("Location: " . $target);
         exit;
     }
     
-    if (!has_role($roles)) {
+    if (!hasRole($roles)) {
         $allowedList = is_array($roles) ? implode(', ', $roles) : $roles;
-        set_flash('danger', "Access Denied: Your account role does not have permission to access that area. (Required: {$allowedList})");
+        setFlash('danger', "Access Denied: Your account role does not have permission to access that area. (Required: {$allowedList})");
         
         $userRole = strtoupper($_SESSION['role_name'] ?? '');
-        $home = match($userRole) {
+        $home = match ($userRole) {
             'ADMIN' => ADMIN_URL . '/index.php',
             'KITCHEN' => KITCHEN_URL . '/index.php',
             'RIDER' => DELIVERY_URL . '/index.php',
@@ -379,28 +491,33 @@ function require_role(string|array $roles, ?string $redirect = null): void {
     }
 }
 
-function require_admin(): void {
-    require_role('ADMIN', ADMIN_URL . '/login.php');
+function requireAdmin(): void
+{
+    requireRole('ADMIN', ADMIN_URL . '/login.php');
 }
 
-function require_rider(string $redirect = null): void {
-    require_role(['RIDER', 'ADMIN'], $redirect ?: DELIVERY_URL . '/login.php');
+function requireRider(?string $redirect = null): void
+{
+    requireRole(['RIDER', 'ADMIN'], $redirect ?: DELIVERY_URL . '/login.php');
 }
 
-function require_kitchen(string $redirect = null): void {
-    require_role(['KITCHEN', 'ADMIN'], $redirect ?: KITCHEN_URL . '/login.php');
+function requireKitchen(?string $redirect = null): void
+{
+    requireRole(['KITCHEN', 'ADMIN'], $redirect ?: KITCHEN_URL . '/login.php');
 }
 
-function require_customer(string $redirect = null): void {
-    require_role(['CUSTOMER', 'ADMIN'], $redirect ?: CUSTOMER_URL . '/login.php');
+function requireCustomer(?string $redirect = null): void
+{
+    requireRole(['CUSTOMER', 'ADMIN'], $redirect ?: CUSTOMER_URL . '/login.php');
 }
 
 /**
  * Standardized Role Badge HTML Generator
  */
-function get_role_badge(string $roleName): string {
+function getRoleBadge(string $roleName): string
+{
     $role = strtoupper(trim($roleName));
-    return match($role) {
+    return match ($role) {
         'ADMIN' => '<span class="badge bg-danger px-2 py-1 rounded-pill"><i class="bi bi-shield-lock-fill me-1"></i>ADMIN</span>',
         'KITCHEN' => '<span class="badge bg-warning text-dark px-2 py-1 rounded-pill"><i class="fa-solid fa-fire-burner me-1"></i>KITCHEN CHEF</span>',
         'RIDER' => '<span class="badge bg-info text-dark px-2 py-1 rounded-pill"><i class="bi bi-bicycle me-1"></i>DELIVERY RIDER</span>',
@@ -413,12 +530,13 @@ function get_role_badge(string $roleName): string {
  * Role-Based Order Resource Authorization Check
  * Prevents Insecure Direct Object Reference (IDOR)
  */
-function can_access_order(int|array $orderOrId, ?int $userId = null): bool {
-    if (is_admin() || is_kitchen() || is_rider()) {
+function canAccessOrder(int|array $orderOrId, ?int $userId = null): bool
+{
+    if (isAdmin() || isKitchen() || isRider()) {
         return true;
     }
     if ($userId === null) {
-        $cur = current_user();
+        $cur = getCurrentUser();
         if (!$cur) {
             return false;
         }
@@ -429,7 +547,7 @@ function can_access_order(int|array $orderOrId, ?int $userId = null): bool {
     if (is_array($orderOrId)) {
         $ownerId = (int)($orderOrId['user_id'] ?? 0);
     } else {
-        $ownerId = (int)db_fetch_val("SELECT `user_id` FROM `orders` WHERE `order_id` = :id", [':id' => (int)$orderOrId]);
+        $ownerId = (int)dbFetchVal("SELECT `user_id` FROM `orders` WHERE `order_id` = :id", [':id' => (int)$orderOrId]);
     }
 
     return $ownerId === (int)$userId;
@@ -438,9 +556,10 @@ function can_access_order(int|array $orderOrId, ?int $userId = null): bool {
 /**
  * Status Badge Formatter for Orders
  */
-function get_status_badge(string $status): string {
+function getStatusBadge(string $status): string
+{
     $status = strtoupper($status);
-    $config = match($status) {
+    $config = match ($status) {
         'PLACED' => ['bg' => 'bg-secondary', 'text' => 'text-white', 'icon' => 'bi-clock-history', 'label' => 'Order Placed'],
         'CONFIRMED' => ['bg' => 'bg-info', 'text' => 'text-dark', 'icon' => 'bi-check2-circle', 'label' => 'Confirmed'],
         'COOKING' => ['bg' => 'bg-warning', 'text' => 'text-dark', 'icon' => 'bi-fire', 'label' => 'In Kitchen'],

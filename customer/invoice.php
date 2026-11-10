@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Official GST Tax Invoice (Indian E-Commerce Compliance)
  * Zippy - Online Food Ordering Platform
@@ -8,40 +9,30 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1001;
+requireCustomer();
+$currentUser = getCurrentUser();
+$uid = (int)$currentUser['id'];
 
-$order = db_fetch_one("
-    SELECT o.*, u.full_name, u.phone_number, u.email,
-           a.address_line, a.pincode,
-           p.payment_mode, p.transaction_reference, p.payment_status, p.payment_timestamp
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    WHERE o.order_id = :id
-", [':id' => $orderId]);
+$requestedOrderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+$invoiceData = OrderService::getOrderInvoiceData($requestedOrderId, $uid);
+$orderId = $invoiceData['order_id'];
+$order = $invoiceData['order'];
 
 if (!$order) {
-    die("Tax Invoice not found for Order ID #{$orderId}");
+    http_response_code(404);
+    die("Tax Invoice not found.");
 }
 
-// RBAC Check: Ensure customer owns this order, or is an Administrator/Staff
-$currentUser = current_user();
-if ($currentUser && !can_access_order($order, (int)$currentUser['id'])) {
+if (!$invoiceData['authorized']) {
+    http_response_code(403);
     die("Access Denied: You do not have permission to inspect invoices for other customer accounts.");
 }
 
-// Fetch Items
-$items = db_fetch_all("
-    SELECT oi.*, m.item_name 
-    FROM `order_items` oi
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id = :id
-", [':id' => $orderId]);
-
-$cgst = round($order['tax_amount'] / 2, 2);
-$sgst = round($order['tax_amount'] / 2, 2);
+$items = $invoiceData['items'];
+$cgst = $invoiceData['cgst'];
+$sgst = $invoiceData['sgst'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -104,10 +95,10 @@ $sgst = round($order['tax_amount'] / 2, 2);
     <div class="col-sm-5 text-sm-end mt-3 mt-sm-0">
       <h5 class="fw-bold mb-1 text-dark">INVOICE: #INV-ZIP-<?= (int)$order['order_id'] ?></h5>
       <div class="small text-muted">Order ID: <strong>#ZIP-<?= (int)$order['order_id'] ?></strong></div>
-      <div class="small text-muted">Date: <?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?></div>
+      <div class="small text-muted">Date: <?= date('d M Y, h:i A', (int)(strtotime((string)$order['placed_at']) ?: time())) ?></div>
       <div class="small text-muted">SAC Code: <strong>996331</strong> (Restaurant Services)</div>
       <?php if (!empty($order['is_scheduled'])): ?>
-        <div class="small fw-bold" style="color:#7C3AED;"><i class="bi bi-calendar2-check-fill me-1"></i> Advance Order: <?= e($order['scheduled_slot'] ?: date('d-M-Y h:i A', strtotime($order['scheduled_for']))) ?></div>
+        <div class="small fw-bold" style="color:#7C3AED;"><i class="bi bi-calendar2-check-fill me-1"></i> Advance Order: <?= e($order['scheduled_slot'] ?: (!empty($order['scheduled_for']) ? date('d-M-Y h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'Scheduled')) ?></div>
       <?php endif; ?>
       <div class="small text-muted">Payment: <span class="badge bg-success bg-opacity-25 text-success"><?= e($order['payment_mode']) ?> - <?= e($order['payment_status'] ?: 'PAID') ?></span></div>
       <?php if (!empty($order['transaction_reference'])): ?>
@@ -160,8 +151,8 @@ $sgst = round($order['tax_amount'] / 2, 2);
             </td>
             <td class="font-monospace">996331</td>
             <td class="text-center fw-bold"><?= (int)$item['quantity'] ?></td>
-            <td class="text-end"><?= format_inr($item['unit_price']) ?></td>
-            <td class="text-end fw-bold"><?= format_inr($item['line_total']) ?></td>
+            <td class="text-end"><?= formatInr($item['unit_price']) ?></td>
+            <td class="text-end fw-bold"><?= formatInr($item['line_total']) ?></td>
           </tr>
         <?php endforeach; ?>
       </tbody>
@@ -174,29 +165,29 @@ $sgst = round($order['tax_amount'] / 2, 2);
       <table class="table table-sm table-borderless small mb-0">
         <tr>
           <td class="text-muted">Item Subtotal:</td>
-          <td class="text-end fw-semibold"><?= format_inr($order['subtotal']) ?></td>
+          <td class="text-end fw-semibold"><?= formatInr($order['subtotal']) ?></td>
         </tr>
         <tr>
           <td class="text-muted">CGST (2.5%):</td>
-          <td class="text-end"><?= format_inr($cgst) ?></td>
+          <td class="text-end"><?= formatInr($cgst) ?></td>
         </tr>
         <tr>
           <td class="text-muted">SGST (2.5%):</td>
-          <td class="text-end"><?= format_inr($sgst) ?></td>
+          <td class="text-end"><?= formatInr($sgst) ?></td>
         </tr>
         <tr>
           <td class="text-muted">Delivery Partner Fee:</td>
-          <td class="text-end"><?= format_inr($order['delivery_fee']) ?></td>
+          <td class="text-end"><?= formatInr($order['delivery_fee']) ?></td>
         </tr>
         <?php if ($order['discount_amount'] > 0): ?>
           <tr class="text-success">
             <td>Coupon Savings:</td>
-            <td class="text-end fw-bold">-<?= format_inr($order['discount_amount']) ?></td>
+            <td class="text-end fw-bold">-<?= formatInr($order['discount_amount']) ?></td>
           </tr>
         <?php endif; ?>
         <tr class="border-top">
           <td class="fw-bold fs-6 pt-2">Total Amount (INR):</td>
-          <td class="text-end fw-bold fs-6 pt-2" style="color:#2E6F40;"><?= format_inr($order['total_amount']) ?></td>
+          <td class="text-end fw-bold fs-6 pt-2" style="color:#2E6F40;"><?= formatInr($order['total_amount']) ?></td>
         </tr>
       </table>
     </div>

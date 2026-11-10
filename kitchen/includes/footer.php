@@ -1,3 +1,4 @@
+<?php declare(strict_types=1); ?>
   </main>
 
   <!-- ========================================================================
@@ -227,7 +228,8 @@
     // 5. Live Polling for New Orders & Real-time State Synchronization
     let lastKnownIncomingId = <?= !empty($laneNew) ? max(array_column($laneNew, 'order_id')) : 0 ?>;
     let lastKnownReadyCount = <?= (int)($countReady ?? 0) ?>;
-    let lastKnownStateHash = '<?= $kdsInitialStateHash ?? '' ?>';
+    let lastKnownStateHash = <?= jsJson($kdsInitialStateHash ?? '') ?>;
+    const kitchenCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
     async function pollKitchenOrders() {
       try {
@@ -326,15 +328,16 @@
       try {
         const res = await fetch('<?= KITCHEN_URL ?>/ajax/update-status.php', {
           method: 'POST',
+          headers: { 'X-CSRF-TOKEN': kitchenCsrfToken },
           body: formData
         });
         const result = await res.json();
 
-        if (result.success) {
+        if (res.ok && result.success) {
           playKitchenChime();
           window.location.reload();
         } else {
-          alert('Notice: ' + result.message);
+          alert('Notice: ' + (result.message || result.error || 'Update failed.'));
           submitBtn.innerHTML = originalHtml;
           submitBtn.disabled = false;
         }
@@ -352,8 +355,11 @@
       try {
         const res = await fetch('<?= KITCHEN_URL ?>/ajax/toggle-stock.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_id: itemId, is_available: targetState })
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': kitchenCsrfToken
+          },
+          body: JSON.stringify({ item_id: itemId, is_available: targetState, csrf_token: kitchenCsrfToken })
         });
         const data = await res.json();
 

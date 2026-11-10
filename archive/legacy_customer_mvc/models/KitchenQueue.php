@@ -43,11 +43,9 @@ class KitchenQueue {
                     $ord['items'] = $stmtItems->fetchAll();
                     $rawOrders[] = $ord;
                 }
-            } catch (PDOException $e) {}
-        }
-
-        if (empty($rawOrders)) {
-            $rawOrders = self::getMockKdsOrders();
+            } catch (PDOException $e) {
+                error_log("KitchenQueue::getKdsBoardData error: " . $e->getMessage());
+            }
         }
 
         // Compute WSJF Score & Organize into Kanban Columns
@@ -72,7 +70,7 @@ class KitchenQueue {
             }
             $totalPrepMinutes = max(5, $totalPrepMinutes);
 
-            // Urgency factor (1.5x if waiting > 15 mins)
+            // Urgency factor (1.8x if waiting > 15 mins)
             $urgencyFactor = ($elapsedMinutes > 15) ? 1.8 : 1.2;
 
             // WSJF Score Calculation
@@ -98,58 +96,5 @@ class KitchenQueue {
         usort($board['cooking'], fn($a, $b) => ($b['wsjf_score'] <=> $a['wsjf_score']));
 
         return $board;
-    }
-
-    private static function getMockKdsOrders(): array {
-        return [
-            [
-                'order_id'     => 102,
-                'order_number' => 'ZIP-948261',
-                'user_id'      => 1,
-                'full_name'    => 'Pooja JP',
-                'phone_number' => '+91 98765 43210',
-                'order_status' => 'COOKING',
-                'order_notes'  => 'Less spicy, ring the doorbell once.',
-                'delivery_partner_name' => 'Ramesh Kumar (Assigned)',
-                'delivery_otp' => '839210',
-                'placed_at'    => date('Y-m-d H:i:s', strtotime('-14 minutes')),
-                'items' => [
-                    ['item_name' => 'Meghana Special Chicken Biryani', 'quantity' => 1, 'prep_time_minutes' => 14, 'kitchen_station' => 'Handi', 'is_veg' => 0],
-                    ['item_name' => 'Butter Chicken Delhi Style', 'quantity' => 1, 'prep_time_minutes' => 15, 'kitchen_station' => 'Handi', 'is_veg' => 0]
-                ]
-            ],
-            [
-                'order_id'     => 103,
-                'order_number' => 'ZIP-338291',
-                'user_id'      => 5,
-                'full_name'    => 'Karthik Rao',
-                'phone_number' => '+91 98451 99221',
-                'order_status' => 'CONFIRMED',
-                'order_notes'  => 'Extra green chutney and lemons.',
-                'delivery_partner_name' => 'Pending Dispatch',
-                'delivery_otp' => '729104',
-                'placed_at'    => date('Y-m-d H:i:s', strtotime('-4 minutes')),
-                'items' => [
-                    ['item_name' => 'Chicken 65 Crispy Fry', 'quantity' => 2, 'prep_time_minutes' => 10, 'kitchen_station' => 'Grills', 'is_veg' => 0],
-                    ['item_name' => 'Butter Garlic Naan', 'quantity' => 3, 'prep_time_minutes' => 6, 'kitchen_station' => 'Tandoor', 'is_veg' => 1]
-                ]
-            ],
-            [
-                'order_id'     => 104,
-                'order_number' => 'ZIP-552910',
-                'user_id'      => 6,
-                'full_name'    => 'Ananya Sharma',
-                'phone_number' => '+91 97412 88334',
-                'order_status' => 'READY',
-                'order_notes'  => 'Keep food warm in insulated bag.',
-                'delivery_partner_name' => 'Ramesh Kumar (At Gate)',
-                'delivery_otp' => '551920',
-                'placed_at'    => date('Y-m-d H:i:s', strtotime('-24 minutes')),
-                'items' => [
-                    ['item_name' => 'Paneer Butter Masala', 'quantity' => 1, 'prep_time_minutes' => 12, 'kitchen_station' => 'Handi', 'is_veg' => 1],
-                    ['item_name' => 'Dal Makhani Bukhara', 'quantity' => 1, 'prep_time_minutes' => 8, 'kitchen_station' => 'Pantry', 'is_veg' => 1]
-                ]
-            ]
-        ];
     }
 }

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Dish-Level Feedback Dimensions
  * Adds Appearance, Taste, Portion Size, and Value ratings to dish_reviews.
@@ -7,7 +8,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     echo "ERROR: Unable to connect to database.\n";
     exit(1);
@@ -16,7 +17,7 @@ if (!$pdo) {
 echo "=== Running Migration: Dish-Level Feedback Dimensions ===\n";
 
 // 1. Check existing columns in dish_reviews
-$columns = db_fetch_all("SHOW COLUMNS FROM `dish_reviews`");
+$columns = dbFetchAll("SHOW COLUMNS FROM `dish_reviews`");
 $colNames = array_column($columns, 'Field');
 
 $colsToAdd = [
@@ -27,17 +28,18 @@ $colsToAdd = [
 ];
 
 foreach ($colsToAdd as $col => $def) {
-    if (!in_array($col, $colNames)) {
-        echo "Adding column `{$col}` to `dish_reviews`...\n";
-        $pdo->exec("ALTER TABLE `dish_reviews` ADD COLUMN `{$col}` {$def}");
+    $safeCol = assertSqlIdentifier((string)$col, 'dish_reviews column');
+    if (!in_array($safeCol, $colNames, true)) {
+        echo "Adding column `{$safeCol}` to `dish_reviews`...\n";
+        $pdo->exec("ALTER TABLE `dish_reviews` ADD COLUMN `{$safeCol}` {$def}");
     } else {
-        echo "Column `{$col}` already exists.\n";
+        echo "Column `{$safeCol}` already exists.\n";
     }
 }
 
 // 2. Populate realistic breakdown scores for existing reviews
 echo "Updating existing reviews with realistic dimension scores...\n";
-$existingReviews = db_fetch_all("SELECT dish_review_id, rating, item_id FROM `dish_reviews`");
+$existingReviews = dbFetchAll("SELECT dish_review_id, rating, item_id FROM `dish_reviews`");
 foreach ($existingReviews as $rev) {
     $r = (int)$rev['rating'];
     // Minor variance around overall rating for realism (between 1 and 5)

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Comprehensive Live Orders Hub & Dispatch Management
  * Zippy - Online Food Ordering Platform
@@ -11,28 +12,28 @@ $activePage = 'orders';
 // Bootstrap core libraries before HTML output (prevents "headers already sent")
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Current filter and search parameters
-$filterStatus = clean_input($_GET['status'] ?? 'LIVE');
-$searchQuery = clean_input($_GET['search'] ?? '');
-$paymentFilter = clean_input($_GET['payment'] ?? '');
+$filterStatus = cleanInput($_GET['status'] ?? 'LIVE');
+$searchQuery = cleanInput($_GET['search'] ?? '');
+$paymentFilter = cleanInput($_GET['payment'] ?? '');
 
-// Handle Status Update POST (Centralized via transition_order_status())
+// Handle Status Update POST (Centralized via transitionOrderStatus())
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_order_status') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
         $orderId = (int)$_POST['order_id'];
-        $newStatus = clean_input($_POST['new_status']);
-        $assignedRider = clean_input($_POST['rider_name'] ?? '');
+        $newStatus = cleanInput($_POST['new_status']);
+        $assignedRider = cleanInput($_POST['rider_name'] ?? '');
 
-        $result = transition_order_status($orderId, $newStatus, $assignedRider, $currentUser['id'] ?? null);
+        $result = transitionOrderStatus($orderId, $newStatus, $assignedRider, $currentUser['id'] ?? null);
         if ($result['success']) {
-            set_flash('success', $result['message']);
+            setFlash('success', $result['message']);
         } else {
-            set_flash('danger', $result['error'] ?? 'Failed to update order status.');
+            setFlash('danger', $result['error'] ?? 'Failed to update order status.');
         }
 
         $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
@@ -44,33 +45,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle Multi-Select Batch Status Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'batch_status_update') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
-        $orderIds = isset($_POST['order_ids']) ? array_filter(array_map('intval', (array)$_POST['order_ids'])) : [];
-        $newStatus = clean_input($_POST['new_status'] ?? '');
-        $assignedRider = clean_input($_POST['rider_name'] ?? '');
+        $orderIds = isset($_POST['order_ids']) ? array_map('intval', (array)$_POST['order_ids']) : [];
+        $newStatus = cleanInput($_POST['new_status'] ?? '');
+        $assignedRider = cleanInput($_POST['rider_name'] ?? '');
 
-        if (!empty($orderIds) && !empty($newStatus)) {
-            $successCount = 0;
-            $failedOrders = [];
-            foreach ($orderIds as $oid) {
-                $res = transition_order_status($oid, $newStatus, $assignedRider, $currentUser['id'] ?? null);
-                if ($res['success']) {
-                    $successCount++;
-                } else {
-                    $failedOrders[] = "#ZIP-{$oid}";
-                }
-            }
-
-            if ($successCount > 0) {
-                set_flash('success', "Batch action completed: {$successCount} order(s) successfully transitioned to {$newStatus}.");
-            }
-            if (!empty($failedOrders)) {
-                set_flash('warning', "Notice: " . count($failedOrders) . " order(s) could not transition to {$newStatus} (" . implode(', ', array_slice($failedOrders, 0, 4)) . ").");
-            }
-        } else {
-            set_flash('info', 'Please select at least one order and target status for batch update.');
+        $batchRes = OrderService::batchUpdateOrderStatus($orderIds, $newStatus, $assignedRider, $currentUser['id'] ?? null);
+        setFlash($batchRes['type'], $batchRes['message']);
+        if (!empty($batchRes['warning'])) {
+            setFlash('warning', $batchRes['warning']);
         }
 
         $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
@@ -82,56 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle 1-Click Mark COD Cash Collected
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'mark_cod_paid') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
         $orderId = (int)$_POST['order_id'];
-        $order = db_fetch_one("
-            SELECT o.*, p.payment_mode, p.payment_status, p.amount_paid 
-            FROM `orders` o 
-            LEFT JOIN `payments` p ON o.order_id = p.order_id 
-            WHERE o.order_id = :id
-        ", [':id' => $orderId]);
-
-        if ($order) {
-            db_query("
-                UPDATE `payments` 
-                SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() 
-                WHERE `order_id` = :id
-            ", [':id' => $orderId]);
-
-            $existingTx = db_fetch_one("
-                SELECT * FROM `money_transactions` 
-                WHERE `order_id` = :id AND `txn_category` = 'CUSTOMER_PAYMENT_COD'
-            ", [':id' => $orderId]);
-
-            if ($existingTx) {
-                db_query("
-                    UPDATE `money_transactions` 
-                    SET `status` = 'COMPLETED', 
-                        `handled_by` = :hby, 
-                        `notes` = CONCAT(COALESCE(notes, ''), ' [Cash verified and marked collected by Store Admin]') 
-                    WHERE `txn_id` = :tid
-                ", [
-                    ':hby' => $currentUser['name'] ?? 'Store Admin',
-                    ':tid' => $existingTx['txn_id']
-                ]);
-            } else {
-                record_money_transaction(
-                    $orderId,
-                    (int)$order['user_id'],
-                    'CUSTOMER_PAYMENT_COD',
-                    'INWARD',
-                    'COD_CASH',
-                    (float)$order['total_amount'],
-                    'COMPLETED',
-                    'COD-DIRECT-' . $orderId,
-                    $currentUser['name'] ?? 'Store Admin',
-                    "Order #ZIP-{$orderId} Cash on Delivery collected by Store Admin."
-                );
-            }
-
-            set_flash('success', "Cash payment of " . format_inr($order['total_amount']) . " for Order #ZIP-{$orderId} marked as COLLECTED.");
+        $codRes = OrderService::markOrderCodPaid($orderId, (string)($currentUser['name'] ?? 'Store Admin'));
+        setFlash($codRes['flash_type'], $codRes['message']);
+        if ($codRes['ok']) {
             $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
             if (!empty($searchQuery)) $redirectUrl .= "&search=" . urlencode($searchQuery);
             header("Location: " . $redirectUrl);
@@ -142,106 +84,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 require_once __DIR__ . '/includes/header.php';
 
-// 1. Live Counters (Consolidated single query via get_order_kpis(), reused from header.php)
-$cntAll = $orderKpis['total'];
-$cntLive = $orderKpis['live'];
-$cntPreparing = $orderKpis['preparing'];
-$cntReady = $orderKpis['ready'];
-$cntDelivering = $orderKpis['delivering'];
-$cntDelivered = $orderKpis['delivered'];
-$cntCancelled = $orderKpis['cancelled'];
-$cntScheduled = $orderKpis['scheduled'] ?? 0;
-
-// 3. Build Dynamic Filtering Query
-$where = "1=1";
-$params = [];
-
-if ($filterStatus === 'LIVE') {
-    $where .= " AND o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')";
-} elseif ($filterStatus === 'SCHEDULED') {
-    $where .= " AND o.is_scheduled = 1";
-} elseif ($filterStatus === 'PREPARING') {
-    $where .= " AND o.order_status IN ('CONFIRMED', 'COOKING')";
-} elseif ($filterStatus === 'COOKING') {
-    $where .= " AND o.order_status = 'COOKING'";
-} elseif ($filterStatus === 'CONFIRMED') {
-    $where .= " AND o.order_status = 'CONFIRMED'";
-} elseif ($filterStatus === 'READY') {
-    $where .= " AND o.order_status = 'READY'";
-} elseif ($filterStatus === 'OUT_FOR_DELIVERY' || $filterStatus === 'DELIVERING') {
-    $where .= " AND o.order_status = 'OUT_FOR_DELIVERY'";
-} elseif ($filterStatus === 'DELIVERED') {
-    $where .= " AND o.order_status = 'DELIVERED'";
-} elseif ($filterStatus === 'CANCELLED') {
-    $where .= " AND o.order_status = 'CANCELLED'";
-} elseif ($filterStatus === 'ALL') {
-    // Show all
-}
-
-if (!empty($paymentFilter)) {
-    $where .= " AND p.payment_mode = :pmode";
-    $params[':pmode'] = $paymentFilter;
-}
-
-if (!empty($searchQuery)) {
-    $where .= " AND (
-        o.order_id = :sq_id 
-        OR u.full_name LIKE :sq_like 
-        OR u.phone_number LIKE :sq_like 
-        OR u.email LIKE :sq_like 
-        OR a.address_line LIKE :sq_like 
-        OR a.pincode LIKE :sq_like 
-        OR d.delivery_partner_name LIKE :sq_like 
-        OR d.delivery_otp LIKE :sq_like
-    )";
-    $cleanId = (int)preg_replace('/[^0-9]/', '', $searchQuery);
-    $params[':sq_id'] = $cleanId;
-    $params[':sq_like'] = "%" . $searchQuery . "%";
-}
-
-$orders = db_fetch_all("
-    SELECT o.*, 
-           u.full_name, u.phone_number, u.email,
-           a.address_line, a.landmark, a.pincode,
-           p.payment_mode, p.payment_status, p.transaction_reference,
-           d.rider_id, d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status, d.dispatched_at,
-           TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed_minutes,
-           TIMESTAMPDIFF(MINUTE, COALESCE(d.dispatched_at, o.placed_at), NOW()) AS transit_minutes
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE $where
-    ORDER BY o.placed_at DESC
-", $params);
-
-$codPendingOrders = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` o LEFT JOIN `payments` p ON o.order_id = p.order_id WHERE p.payment_mode = 'COD' AND (p.payment_status IS NULL OR p.payment_status != 'SUCCESSFUL') AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')"
-) ?: 0);
-
-$delayedOrders = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) > 45"
-) ?: 0);
-
-$registeredRiders = get_all_delivery_riders();
-
-// Fetch items for all queried orders
-$orderItemsGrouped = [];
-if (!empty($orders)) {
-    $orderIds = array_column($orders, 'order_id');
-    $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
-    $itemsRaw = db_fetch_all("
-        SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes 
-        FROM `order_items` oi
-        JOIN `menu_items` m ON oi.item_id = m.item_id
-        WHERE oi.order_id IN ($placeholders)
-    ", $orderIds);
-
-    foreach ($itemsRaw as $it) {
-        $orderItemsGrouped[$it['order_id']][] = $it;
-    }
-}
+$adminOrdersData = OrderService::getAdminOrdersData($filterStatus, $searchQuery, $paymentFilter, $orderKpis);
+$cntAll = $adminOrdersData['cntAll'];
+$cntLive = $adminOrdersData['cntLive'];
+$cntPreparing = $adminOrdersData['cntPreparing'];
+$cntReady = $adminOrdersData['cntReady'];
+$cntDelivering = $adminOrdersData['cntDelivering'];
+$cntDelivered = $adminOrdersData['cntDelivered'];
+$cntCancelled = $adminOrdersData['cntCancelled'];
+$cntScheduled = $adminOrdersData['cntScheduled'];
+$orders = $adminOrdersData['orders'];
+$codPendingOrders = $adminOrdersData['codPendingOrders'];
+$delayedOrders = $adminOrdersData['delayedOrders'];
+$registeredRiders = $adminOrdersData['registeredRiders'];
+$orderItemsGrouped = $adminOrdersData['orderItemsGrouped'];
 ?>
 
 <!-- ===========================================================================
@@ -409,7 +265,7 @@ if (!empty($orders)) {
             $status = $order['order_status'];
             
             // Determine visual card stage class
-            $stageClass = match($status) {
+            $stageClass = match ($status) {
               'CONFIRMED', 'COOKING' => 'stage-preparing',
               'READY' => 'stage-ready',
               'OUT_FOR_DELIVERY' => 'stage-delivering',
@@ -436,7 +292,7 @@ if (!empty($orders)) {
             }
 
             // Search string aggregation for zero-latency client filtering
-            $itemNames = array_map(fn($it) => $it['item_name'], $items);
+            $itemNames = array_map(fn(array $it): string => (string)$it['item_name'], $items);
             $cardSearchData = strtolower("ZIP-{$order['order_id']} {$order['full_name']} {$order['phone_number']} {$order['email']} {$order['address_line']} {$order['pincode']} {$order['delivery_partner_name']} {$order['delivery_otp']} {$order['payment_mode']} {$status} " . implode(' ', $itemNames) . " " . ($order['order_notes'] ?? ''));
           ?>
           <div class="col-md-6 col-xl-4 order-card-item-col" 
@@ -452,7 +308,7 @@ if (!empty($orders)) {
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                   <input type="checkbox" class="form-check-input order-select-checkbox m-0" value="<?= (int)$order['order_id'] ?>" title="Select order for batch operations" style="cursor: pointer; width: 1.15em; height: 1.15em;">
                   <span class="badge bg-dark fw-bold font-monospace">#ZIP-<?= (int)$order['order_id'] ?></span>
-                  <?= get_status_badge($status) ?>
+                  <?= getStatusBadge($status) ?>
                   <?php if (in_array($status, ['CONFIRMED', 'COOKING'])): ?>
                     <?php if ($slaDiff > 15): ?>
                       <span class="badge rounded-pill bg-danger text-white" style="font-size:0.68rem;" title="Critical preparation delay"><i class="bi bi-exclamation-octagon-fill me-1"></i>+<?= $slaDiff ?>m Critical</span>
@@ -466,7 +322,7 @@ if (!empty($orders)) {
                   <?php endif; ?>
                 </div>
                 <span class="small text-muted font-monospace" style="font-size:0.75rem;">
-                  <?= date('h:i A', strtotime($order['placed_at'])) ?> &bull; <?= format_minutes_ago((int)$order['elapsed_minutes']) ?>
+                  <?= date('h:i A', strtotime($order['placed_at'])) ?> &bull; <?= formatMinutesAgo((int)$order['elapsed_minutes']) ?>
                 </span>
               </div>
 
@@ -513,7 +369,7 @@ if (!empty($orders)) {
                             </div>
                           <?php endif; ?>
                         </span>
-                        <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= format_inr($it['line_total']) ?></span>
+                        <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= formatInr($it['line_total']) ?></span>
                       </div>
                     <?php endforeach; ?>
                   </div>
@@ -551,7 +407,7 @@ if (!empty($orders)) {
 
                   <!-- Items Summary -->
                   <div class="text-muted small text-truncate mb-2">
-                    Package: <?= implode(', ', array_map(fn($it) => $it['quantity'] . 'x ' . $it['item_name'], $items)) ?>
+                    Package: <?= e(implode(', ', array_map(fn(array $it): string => (int)$it['quantity'] . 'x ' . $it['item_name'], $items))) ?>
                   </div>
 
                   <!-- Delivery Handshake OTP -->
@@ -588,7 +444,7 @@ if (!empty($orders)) {
                             </div>
                           <?php endif; ?>
                         </span>
-                        <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= format_inr($it['line_total']) ?></span>
+                        <span class="text-muted font-monospace" style="font-size:0.75rem;"><?= formatInr($it['line_total']) ?></span>
                       </div>
                     <?php endforeach; ?>
                   </div>
@@ -606,7 +462,7 @@ if (!empty($orders)) {
               <!-- Card Financial & Actions Footer -->
               <div class="pt-2 border-top d-flex flex-wrap align-items-center justify-content-between gap-2 mt-auto">
                 <div>
-                  <div class="fw-bold text-forest fs-6"><?= format_inr($order['total_amount']) ?></div>
+                  <div class="fw-bold text-forest fs-6"><?= formatInr($order['total_amount']) ?></div>
                   <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
                     <?php if ($order['payment_mode'] === 'COD'): ?>
                       <?php if ($order['payment_status'] === 'SUCCESSFUL'): ?>
@@ -617,8 +473,8 @@ if (!empty($orders)) {
                         <span class="badge bg-warning text-dark border border-warning" style="font-size:0.68rem;" title="Collect cash at delivery">
                           <i class="bi bi-hourglass-split me-1"></i>COD PENDING (Collect Cash)
                         </span>
-                        <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="d-inline m-0" onsubmit="return confirm('Mark cash of <?= format_inr($order['total_amount']) ?> as collected for #ZIP-<?= (int)$order['order_id'] ?>?');">
-                          <?= csrf_field() ?>
+                        <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="d-inline m-0" onsubmit="return confirm('Mark cash of <?= formatInr($order['total_amount']) ?> as collected for #ZIP-<?= (int)$order['order_id'] ?>?');">
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="mark_cod_paid">
                           <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                           <button type="submit" class="btn btn-xs btn-outline-success py-0 px-2 rounded-pill fw-bold" style="font-size:0.65rem;" title="Mark Cash Collected">
@@ -638,7 +494,7 @@ if (!empty($orders)) {
                   <!-- 1-Click Quick Status Advance Button -->
                   <?php if ($status === 'CONFIRMED'): ?>
                     <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order_status">
                       <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                       <input type="hidden" name="new_status" value="COOKING">
@@ -648,7 +504,7 @@ if (!empty($orders)) {
                     </form>
                   <?php elseif ($status === 'COOKING'): ?>
                     <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order_status">
                       <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                       <input type="hidden" name="new_status" value="READY">
@@ -658,7 +514,7 @@ if (!empty($orders)) {
                     </form>
                   <?php elseif ($status === 'READY'): ?>
                     <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order_status">
                       <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                       <input type="hidden" name="new_status" value="OUT_FOR_DELIVERY">
@@ -668,7 +524,7 @@ if (!empty($orders)) {
                     </form>
                   <?php elseif ($status === 'OUT_FOR_DELIVERY'): ?>
                     <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order_status">
                       <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                       <input type="hidden" name="new_status" value="DELIVERED">
@@ -681,7 +537,7 @@ if (!empty($orders)) {
                   <!-- Modal Button for deep status change -->
                   <?php if ($status === 'OUT_FOR_DELIVERY'): ?>
                     <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-2 py-1" style="font-size:0.78rem;" 
-                            onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['full_name'])) ?>', '<?= e(addslashes($order['delivery_partner_name'] ?: 'Rider')) ?>', '<?= e(addslashes($order['delivery_otp'] ?: '')) ?>')" title="Track Live GPS Route">
+                            onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, <?= e(jsJson((string)($order['full_name'] ?? ''))) ?>, <?= e(jsJson((string)($order['delivery_partner_name'] ?: 'Rider'))) ?>, <?= e(jsJson((string)($order['delivery_otp'] ?: ''))) ?>)" title="Track Live GPS Route">
                       <i class="fa-solid fa-location-arrow me-1"></i>GPS
                     </button>
                   <?php endif; ?>
@@ -739,7 +595,7 @@ if (!empty($orders)) {
             <?php foreach ($orders as $order): ?>
               <?php
                 $items = $orderItemsGrouped[$order['order_id']] ?? [];
-                $itemNames = array_map(fn($it) => $it['item_name'], $items);
+                $itemNames = array_map(fn(array $it): string => (string)$it['item_name'], $items);
                 $rowSearchData = strtolower("ZIP-{$order['order_id']} {$order['full_name']} {$order['phone_number']} {$order['email']} {$order['address_line']} {$order['pincode']} {$order['delivery_partner_name']} {$order['delivery_otp']} {$order['payment_mode']} {$order['order_status']} " . implode(' ', $itemNames));
                 $rowRiskClass = '';
                 $riskLabel = '';
@@ -779,10 +635,10 @@ if (!empty($orders)) {
 
                 <td>
                   <div class="fw-bold font-monospace text-dark">#ZIP-<?= (int)$order['order_id'] ?></div>
-                  <div class="small text-muted"><?= date('d M, h:i A', strtotime($order['placed_at'])) ?></div>
+                  <div class="small text-muted"><?= date('d M, h:i A', (int)(strtotime((string)$order['placed_at']) ?: time())) ?></div>
                   <?php if (!empty($order['is_scheduled'])): ?>
                     <span class="badge rounded-pill text-white mt-1 d-inline-block shadow-xs" style="background:#7C3AED; font-size:0.7rem; padding:3px 8px;">
-                      <i class="bi bi-calendar2-check-fill me-1"></i> <?= e($order['scheduled_slot'] ?: ('Scheduled: ' . date('d M, h:i A', strtotime($order['scheduled_for'])))) ?>
+                      <i class="bi bi-calendar2-check-fill me-1"></i> <?= e($order['scheduled_slot'] ?: (!empty($order['scheduled_for']) ? 'Scheduled: ' . date('d M, h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'Scheduled')) ?>
                     </span>
                   <?php endif; ?>
                   <?php if (!empty($order['delivery_otp'])): ?>
@@ -827,7 +683,7 @@ if (!empty($orders)) {
                 </td>
 
                 <td>
-                  <div class="fw-bold text-forest fs-6"><?= format_inr($order['total_amount']) ?></div>
+                  <div class="fw-bold text-forest fs-6"><?= formatInr($order['total_amount']) ?></div>
                   <div class="mt-1">
                     <?php if ($order['payment_mode'] === 'COD'): ?>
                       <?php if ($order['payment_status'] === 'SUCCESSFUL'): ?>
@@ -838,8 +694,8 @@ if (!empty($orders)) {
                         <span class="badge bg-warning text-dark border border-warning d-block mb-1" style="font-size:0.68rem;">
                           <i class="bi bi-hourglass-split me-1"></i>COD Pending
                         </span>
-                        <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="d-inline m-0" onsubmit="return confirm('Mark cash of <?= format_inr($order['total_amount']) ?> as collected for #ZIP-<?= (int)$order['order_id'] ?>?');">
-                          <?= csrf_field() ?>
+                        <form method="POST" action="<?= ADMIN_URL ?>/orders.php" class="d-inline m-0" onsubmit="return confirm('Mark cash of <?= formatInr($order['total_amount']) ?> as collected for #ZIP-<?= (int)$order['order_id'] ?>?');">
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="mark_cod_paid">
                           <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
                           <button type="submit" class="btn btn-xs btn-outline-success py-0 px-2 rounded-pill fw-bold" style="font-size:0.65rem;">
@@ -857,7 +713,7 @@ if (!empty($orders)) {
 
                 <td>
                   <div class="d-flex flex-column gap-1">
-                    <div class="status-badge-wrap"><?= get_status_badge($order['order_status']) ?></div>
+                    <div class="status-badge-wrap"><?= getStatusBadge($order['order_status']) ?></div>
                     <?php if (!empty($riskLabel)): ?>
                       <div class="status-risk-wrap"><?= $riskLabel ?></div>
                     <?php endif; ?>
@@ -874,7 +730,7 @@ if (!empty($orders)) {
                 <td>
                   <div class="order-action-stack">
                     <?php if ($order['order_status'] === 'OUT_FOR_DELIVERY'): ?>
-                      <button type="button" class="order-action-btn order-action-primary" onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, '<?= e(addslashes($order['full_name'])) ?>', '<?= e(addslashes($order['delivery_partner_name'] ?: 'Rider')) ?>', '<?= e(addslashes($order['delivery_otp'] ?: '')) ?>')">
+                      <button type="button" class="order-action-btn order-action-primary" onclick="openAdminGpsModal(<?= (int)$order['order_id'] ?>, <?= e(jsJson((string)($order['full_name'] ?? ''))) ?>, <?= e(jsJson((string)($order['delivery_partner_name'] ?: 'Rider'))) ?>, <?= e(jsJson((string)($order['delivery_otp'] ?: ''))) ?>)">
                         <i class="fa-solid fa-location-arrow me-1"></i> GPS
                       </button>
                     <?php endif; ?>
@@ -922,7 +778,7 @@ if (!empty($orders)) {
         </div>
 
         <form method="POST" action="<?= ADMIN_URL ?>/orders.php">
-          <?= csrf_field() ?>
+          <?= csrfField() ?>
           <input type="hidden" name="action" value="update_order_status">
           <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
 
@@ -936,7 +792,7 @@ if (!empty($orders)) {
                 </div>
                 <div class="small">
                   Scheduled Slot: <strong><?= e($order['scheduled_slot'] ?: 'Custom Slot') ?></strong>
-                  <br>Target Delivery: <strong class="font-mono"><?= date('d-M-Y h:i A', strtotime($order['scheduled_for'])) ?></strong>
+                  <br>Target Delivery: <strong class="font-mono"><?= !empty($order['scheduled_for']) ? date('d-M-Y h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'TBD' ?></strong>
                 </div>
               </div>
             <?php endif; ?>
@@ -944,7 +800,7 @@ if (!empty($orders)) {
             <div class="row g-3 mb-3">
               <div class="col-6">
                 <label class="form-label small fw-bold text-muted">Current Lifecycle Status</label>
-                <div><?= get_status_badge($order['order_status']) ?></div>
+                <div><?= getStatusBadge($order['order_status']) ?></div>
               </div>
               <div class="col-6">
                 <label class="form-label small fw-bold text-muted">Handshake OTP</label>
@@ -1020,7 +876,7 @@ if (!empty($orders)) {
 
   <!-- Form for Batch Status Update Submission -->
   <form id="batchStatusForm" method="POST" action="<?= ADMIN_URL ?>/orders.php" class="m-0 d-flex align-items-center gap-2">
-    <?= csrf_field() ?>
+    <?= csrfField() ?>
     <input type="hidden" name="action" value="batch_status_update">
     <input type="hidden" name="new_status" id="batchTargetStatusInput" value="">
     <div id="batchSelectedIdsContainer"></div>
@@ -1260,6 +1116,13 @@ function playAdminChime() {
   } catch(e) {}
 }
 
+function escapeAdminHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[m]));
+}
+
 async function openAdminGpsModal(orderId, custName, riderName, otp) {
   document.getElementById('adminGpsOrderTitle').textContent = '#ZIP-' + orderId;
   document.getElementById('adminGpsCustName').textContent = custName;
@@ -1290,7 +1153,7 @@ async function openAdminGpsModal(orderId, custName, riderName, otp) {
       }
 
       // Fetch live telemetry for order
-      const res = await fetch(`../api/live-location.php?order_id=${orderId}`);
+      const res = await fetch(`../api/live-location.php?portal=admin&order_id=${encodeURIComponent(orderId)}`);
       const data = await res.json();
       if (data.success) {
         document.getElementById('adminGpsDist').textContent = `${data.route.distance_remaining_km} km`;
@@ -1311,7 +1174,7 @@ async function openAdminGpsModal(orderId, custName, riderName, otp) {
         }).addTo(adminMap);
 
         L.marker(hub).addTo(adminMap).bindPopup('<strong>Zippy Kitchen Hub (Indiranagar)</strong>');
-        L.marker(cust).addTo(adminMap).bindPopup(`<strong>${custName}</strong><br>${data.locations.customer.address}`);
+        L.marker(cust).addTo(adminMap).bindPopup(`<strong>${escapeAdminHtml(custName)}</strong><br>${escapeAdminHtml(data.locations.customer.address || '')}`);
 
         const riderIcon = L.divIcon({
           className: 'custom-admin-rider',
@@ -1320,7 +1183,7 @@ async function openAdminGpsModal(orderId, custName, riderName, otp) {
           iconAnchor: [17, 17]
         });
         adminRiderMarker = L.marker(rider, { icon: riderIcon }).addTo(adminMap)
-          .bindPopup(`<strong>${riderName}</strong><br>Speed: ${data.locations.rider.speed_kmh} km/h`);
+          .bindPopup(`<strong>${escapeAdminHtml(riderName)}</strong><br>Speed: ${Number(data.locations.rider.speed_kmh || 0)} km/h`);
 
         adminMap.fitBounds(L.latLngBounds([hub, cust]), { padding: [30, 30] });
       }

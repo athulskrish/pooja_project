@@ -1,36 +1,20 @@
-# 🚴 Module: Delivery Fleet & Dispatch (delivery_fleet.md)
+# Module: Delivery Partner Fleet & Live Tracking
 
-> **Context Domain:** Rider Allocation, FCFS Dispatch Queue, Geolocation Tracking & OTP Verification  
-> **Relevant Tables:** `delivery_dispatches`, `orders`, `users`, `order_audit_trail`
+## 1. Overview
+The Delivery Fleet module coordinates rider availability (`staff_profiles.duty_status`), First-Come First-Served (**FCFS**) order allocation, single-order-per-rider concurrency control, live GPS telemetry interpolation, doorstep OTP verification, and COD wallet reconciliation.
 
----
+## 2. Database Schema & Entities
+- `delivery_dispatches`: `dispatch_id`, `order_id` (`UNIQUE`), `rider_id`, `delivery_partner_name`, `delivery_partner_phone`, `delivery_otp`, `current_latitude`, `current_longitude`, `delivery_latitude`, `delivery_longitude`, `route_progress`, `distance_remaining_km`, `estimated_minutes_remaining`, `assigned_at`, `dispatched_at`, `delivered_at`, `delivery_status` (`ENUM('ASSIGNED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED')`).
+- `staff_profiles`: `department = 'DELIVERY'`, `duty_status` (`ON_DUTY`, `ON_BREAK`, `OFF_DUTY`, `ON_LEAVE`), `cod_balance`, `total_orders_handled`, `rating`.
+- `order_audit_trail`: `updated_by_user_id` records the acting rider or admin ID on every dispatch transition.
 
-## 1. Fleet Architecture & Dispatch Triage
+## 3. Core Services, Algorithms & Endpoints
+- **`includes/FCFSQueue.php`**: `getPrioritizedOrders()`, `getTriageExceptions()` (FIFO ordering by `ready_at` / `placed_at` + SLA breach flagging).
+- **`includes/functions.php`**: `autoAllocateReadyOrdersFcfs()`, `isDriverBusy()`, `getDriverActiveDelivery()`, `getDriverAllocatedOrder()`, `getAllDeliveryRiders()`, `getAvailableDeliveryPartner()`, `getRiderEarningsSummary()`, `isRiderAssignedToOrder()`.
+- **`includes/Services/FleetService.php`**: `interpolateRoute()`, `toggleRiderDuty()`, `claimOrder()`, `verifyDeliveryOtp()`, `getRiderDashboardData()`, `handleAdminFleetAction()`, `getAdminDeliveryOverviewData()`.
+- **Portal & APIs:** `delivery/index.php`, `delivery/login.php`, `delivery/logout.php`, `delivery/ajax/cashout.php`, `api/live-location.php`, `api/live-stream.php`, `admin/ajax/get-fleet-telemetry.php`.
 
-The delivery portal (`delivery/`) enables registered riders to accept and fulfill food deliveries. Allocation is governed by the **First-Come-First-Served (FCFS) Triage Queue** (`includes/FCFSQueue.php`):
-- Single active delivery per rider enforcement (one driver cannot hoard multiple concurrent active orders).
-- Orders in `READY_FOR_PICKUP` status appear on the rider radar.
-- When a rider taps "Accept", the order is locked and assigned.
-- Upon reaching the customer, the rider inputs the customer's 6-digit OTP to complete fulfillment.
-
----
-
-## 2. Key Source Files
-
-- **`delivery/index.php`**: Rider dashboard, available ready orders radar, and active delivery controls.
-- **`delivery/login.php` & `delivery/logout.php`**: Rider identity authentication (`role_id = 4`).
-- **`api/live-location.php`**: Receives GPS telemetry (`latitude`, `longitude`) via navigator.geolocation.
-- **`includes/FCFSQueue.php`**: Concurrency-safe rider dispatch allocation logic.
-
----
-
-## 3. Engineering Invariants
-
-1. **Race Condition Prevention:** Rider claiming an order must execute with a pessimistic lock (`FOR UPDATE`) on `orders` and `delivery_dispatches` to prevent duplicate claims.
-2. **OTP Verification:** Transition to `DELIVERED` must strictly check:
-   ```php
-   if ($submittedOtp !== $order['delivery_otp']) {
-       throw new RuntimeException("Invalid OTP provided.");
-   }
-   ```
-3. **Audit Trail Sync:** State changes to `OUT_FOR_DELIVERY` and `DELIVERED` must be logged in `order_audit_trail` with `changed_by_user_id = $riderId`.
+## 4. Technical & Concurrency Rules
+1. **One Active Delivery Per Rider:** Both `autoAllocateReadyOrdersFcfs()` and `FleetService::claimOrder()` execute inside `dbTransactional()` locking `orders`, `delivery_dispatches`, and rider `users` rows via `SELECT ... FOR UPDATE` so two riders cannot claim the same order and one rider never receives concurrent overlapping dispatches.
+2. **Doorstep OTP & COD Settlement:** `FleetService::verifyDeliveryOtp()` verifies `delivery_dispatches.delivery_otp`, advances `orders.order_status` to `DELIVERED`, sets `delivered_at = NOW()`, updates `payments` / `money_transactions` / rider `staff_profiles.cod_balance` on COD orders, and writes `order_audit_trail` atomically.
+3. **RBAC & CSRF:** All `delivery/*` endpoints enforce `requireRider()` and `verifyRequestCsrf()`; `api/live-location.php` enforces order ownership (`canAccessOrder()` / `isRiderAssignedToOrder()`) and CSRF on GPS simulation/update `POST` requests.

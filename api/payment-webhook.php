@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Asynchronous Payment Gateway Webhook Handler
  * Zippy - Online Food Ordering Platform
@@ -18,18 +19,43 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Read raw request body
-$rawPayload = file_get_contents('php://input');
-$data = json_decode($rawPayload, true);
+// Fail closed unless webhook secret is configured
+if (!defined('RAZORPAY_WEBHOOK_SECRET') || RAZORPAY_WEBHOOK_SECRET === '') {
+    http_response_code(503);
+    echo json_encode(['success' => false, 'error' => 'Webhook signature secret is not configured.']);
+    exit;
+}
 
-// If form POST instead of JSON
-if (empty($data)) {
-    $data = $_POST;
+// Verify HMAC-SHA256 signature over raw request payload
+$rawPayload = (string)file_get_contents('php://input');
+$providedSignature = trim((string)($_SERVER['HTTP_X_RAZORPAY_SIGNATURE'] ?? ''));
+
+if ($providedSignature === '') {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Missing X-Razorpay-Signature header.']);
+    exit;
+}
+
+$expectedSignature = hash_hmac('sha256', $rawPayload, RAZORPAY_WEBHOOK_SECRET);
+if (!preg_match('/^[a-f0-9]{64}$/i', $providedSignature) || !hash_equals($expectedSignature, strtolower($providedSignature))) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Invalid webhook signature.']);
+    exit;
+}
+
+$data = json_decode($rawPayload, true);
+if (!is_array($data) && $rawPayload !== '') {
+    $parsedForm = [];
+    parse_str($rawPayload, $parsedForm);
+    $data = is_array($parsedForm) ? $parsedForm : [];
+}
+if (!is_array($data)) {
+    $data = [];
 }
 
 $orderId = (int)($data['order_id'] ?? ($data['payload']['payment']['entity']['notes']['order_id'] ?? 0));
-$paymentId = clean_input($data['payment_id'] ?? ($data['payload']['payment']['entity']['id'] ?? 'pay_webhook_' . bin2hex(random_bytes(6))));
-$status = strtoupper(clean_input($data['status'] ?? ($data['event'] ?? 'SUCCESSFUL')));
+$paymentId = cleanInput($data['payment_id'] ?? ($data['payload']['payment']['entity']['id'] ?? 'pay_webhook_' . bin2hex(random_bytes(6))));
+$status = strtoupper(cleanInput($data['status'] ?? ($data['event'] ?? 'SUCCESSFUL')));
 $amount = (float)($data['amount'] ?? ($data['payload']['payment']['entity']['amount'] ?? 0));
 
 if ($orderId <= 0) {
@@ -38,7 +64,7 @@ if ($orderId <= 0) {
     exit;
 }
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Database connection unavailable.']);

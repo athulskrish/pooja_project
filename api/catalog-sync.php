@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Real-Time Catalog Synchronization & Change Notification API
  * Zippy - Online Food Ordering Platform
@@ -18,35 +19,125 @@ header('Expires: 0');
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-$pdo = getDBConnection();
+$clientVersion = cleanInput($_GET['version'] ?? '');
+$clientCatVer  = cleanInput($_GET['cat_ver'] ?? '');
+$clientDishVer = cleanInput($_GET['dish_ver'] ?? '');
+$portal        = strtolower(trim((string)($_GET['portal'] ?? 'customer')));
+$isPrivilegedPortal = in_array($portal, ['admin', 'dishes', 'categories'], true);
+
+if ($isPrivilegedPortal) {
+    if (!isLoggedIn()) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Unauthorized. Authentication required.']);
+        exit;
+    }
+    if (!hasRole(['ADMIN', 'KITCHEN'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. Administrator or Kitchen access required.']);
+        exit;
+    }
+}
+
+$pdo = getDbConnection();
 if (!$pdo) {
+    http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Database connection failed']);
     exit;
 }
 
-$clientVersion = clean_input($_GET['version'] ?? '');
-$clientCatVer  = clean_input($_GET['cat_ver'] ?? '');
-$clientDishVer = clean_input($_GET['dish_ver'] ?? '');
-$portal        = clean_input($_GET['portal'] ?? 'admin');
+// Public-safe storefront synchronization payload (no stock counts or inactive catalog details)
+if (!$isPrivilegedPortal) {
+    $publicCategories = dbFetchAll("
+        SELECT c.category_id, c.category_name, c.display_order
+        FROM `categories` c
+        WHERE c.is_active = 1
+        ORDER BY c.category_id ASC
+    ");
+    $publicDishes = dbFetchAll("
+        SELECT m.item_id, m.category_id, m.item_name, m.price
+        FROM `menu_items` m
+        JOIN `categories` c ON m.category_id = c.category_id
+        WHERE c.is_active = 1 AND m.is_active = 1 AND m.is_available = 1
+        ORDER BY m.item_id ASC
+    ");
+
+    $catFingerprintData = array_map(fn(array $c): array => [
+        (int)$c['category_id'],
+        $c['category_name'],
+        (int)$c['display_order']
+    ], $publicCategories);
+
+    $dishFingerprintData = array_map(fn(array $d): array => [
+        (int)$d['item_id'],
+        (int)$d['category_id'],
+        $d['item_name'],
+        (float)$d['price']
+    ], $publicDishes);
+
+    $catVer = md5(json_encode($catFingerprintData));
+    $dishVer = md5(json_encode($dishFingerprintData));
+    $combinedVer = md5($catVer . '_' . $dishVer);
+
+    $catChanged = ($clientCatVer !== '' && $clientCatVer !== $catVer);
+    $dishChanged = ($clientDishVer !== '' && $clientDishVer !== $dishVer);
+    $hasChanged = ($clientVersion !== '' && $clientVersion !== $combinedVer) || $catChanged || $dishChanged;
+
+    $latestPublicDish = dbFetchOne("
+        SELECT m.item_id, m.item_name, m.category_id, c.category_name, m.price
+        FROM `menu_items` m
+        JOIN `categories` c ON m.category_id = c.category_id
+        WHERE c.is_active = 1 AND m.is_active = 1 AND m.is_available = 1
+        ORDER BY m.item_id DESC
+        LIMIT 1
+    ");
+
+    $changeMessage = '';
+    $changeType = 'none';
+    if ($hasChanged) {
+        $changeType = 'general';
+        $changeMessage = 'Menu offerings were updated.';
+    }
+
+    echo json_encode([
+        'success' => true,
+        'version' => $combinedVer,
+        'cat_ver' => $catVer,
+        'dish_ver' => $dishVer,
+        'changed' => $hasChanged,
+        'change_type' => $changeType,
+        'message' => $changeMessage,
+        'timestamp' => date('Y-m-d H:i:s'),
+        'latest_dish' => $latestPublicDish ? [
+            'item_id' => (int)$latestPublicDish['item_id'],
+            'item_name' => $latestPublicDish['item_name'],
+            'category_id' => (int)$latestPublicDish['category_id'],
+            'category_name' => $latestPublicDish['category_name'],
+            'price' => (float)$latestPublicDish['price']
+        ] : null
+    ]);
+    exit;
+}
 
 // 1. Query all categories with their dish counts
-$categories = db_fetch_all("
+$categories = dbFetchAll("
     SELECT c.category_id, c.category_name, c.category_slug, c.category_description,
            c.image_url, c.display_order, c.is_active,
            COUNT(m.item_id) AS total_dishes,
            SUM(CASE WHEN m.is_available = 1 THEN 1 ELSE 0 END) AS active_dishes
     FROM `categories` c
-    LEFT JOIN `menu_items` m ON c.category_id = m.category_id
+    LEFT JOIN `menu_items` m ON c.category_id = m.category_id AND m.is_active = 1
     GROUP BY c.category_id
     ORDER BY c.display_order ASC, c.category_id ASC
 ");
 
-// 2. Query all menu items key summary attributes
-$dishes = db_fetch_all("
+// 2. Query all active menu items key summary attributes
+$dishes = dbFetchAll("
     SELECT m.item_id, m.category_id, m.item_name, m.price, m.stock_quantity, 
            m.is_available, m.is_veg, m.is_healthy, m.mood, m.kitchen_station, m.image_url, m.created_at
     FROM `menu_items` m
+    WHERE m.is_active = 1
     ORDER BY m.item_id ASC
 ");
 
@@ -110,15 +201,16 @@ foreach ($dishes as $d) {
 }
 
 // 4. Latest Added / Modified Items
-$latestDish = db_fetch_one("
+$latestDish = dbFetchOne("
     SELECT m.item_id, m.item_name, m.category_id, c.category_name, m.price, m.is_available, m.created_at
     FROM `menu_items` m
     LEFT JOIN `categories` c ON m.category_id = c.category_id
+    WHERE m.is_active = 1
     ORDER BY m.item_id DESC
     LIMIT 1
 ");
 
-$latestCategory = db_fetch_one("
+$latestCategory = dbFetchOne("
     SELECT category_id, category_name, category_slug, display_order, is_active
     FROM `categories`
     ORDER BY category_id DESC
@@ -126,7 +218,7 @@ $latestCategory = db_fetch_one("
 ");
 
 // 5. Build Sub-fingerprints
-$catFingerprintData = array_map(function($c) {
+$catFingerprintData = array_map(function (array $c): array {
     return [
         (int)$c['category_id'],
         $c['category_name'],
@@ -136,7 +228,7 @@ $catFingerprintData = array_map(function($c) {
     ];
 }, $categories);
 
-$dishFingerprintData = array_map(function($d) {
+$dishFingerprintData = array_map(function (array $d): array {
     return [
         (int)$d['item_id'],
         (int)$d['category_id'],

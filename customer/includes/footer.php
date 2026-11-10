@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Portal Footer, Modals & Drawers
  * Zippy - Online Food Ordering Platform
@@ -305,9 +306,15 @@
                 <!-- Write a review toggle button -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <span class="small fw-bold text-muted text-uppercase">Have you tasted this dish?</span>
-                  <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold" id="toggleWriteReviewBtn" onclick="toggleDishReviewForm()">
-                    <i class="bi bi-pencil-fill me-1"></i> Rate This Food ⭐
-                  </button>
+                  <?php if (!empty($currentUser)): ?>
+                    <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold" id="toggleWriteReviewBtn" onclick="toggleDishReviewForm()">
+                      <i class="bi bi-pencil-fill me-1"></i> Rate This Food ⭐
+                    </button>
+                  <?php else: ?>
+                    <a href="<?= CUSTOMER_URL ?>/login.php" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">
+                      <i class="bi bi-box-arrow-in-right me-1"></i> Sign In to Rate
+                    </a>
+                  <?php endif; ?>
                 </div>
 
                 <!-- Quick Review Form Collapse -->
@@ -531,7 +538,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <?php
-    $custCounts = get_all_dishes_customization_counts();
+    $custCounts = getAllDishesCustomizationCounts();
     $customizableIds = [];
     foreach ($custCounts as $cid => $cData) {
       if (!empty($cData['group_count'])) {

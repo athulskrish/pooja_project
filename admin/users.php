@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * User & Staff Role-Based Access Control (RBAC) Management
  * Zippy - Online Food Ordering Platform
@@ -24,47 +25,18 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 // Strict Role-Based Access Control: Administrator privileges required (Role 1: ADMIN)
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // =============================================================================
 // CSV EXPORT HANDLER
 // =============================================================================
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    $roleFilter = clean_input($_GET['role'] ?? '');
-    $statusFilter = clean_input($_GET['status'] ?? '');
-    $searchQuery = clean_input($_GET['q'] ?? '');
+    $roleFilter = cleanInput($_GET['role'] ?? '');
+    $statusFilter = cleanInput($_GET['status'] ?? '');
+    $searchQuery = cleanInput($_GET['q'] ?? '');
 
-    $where = "1=1";
-    $params = [];
-    if (!empty($roleFilter)) {
-        $where .= " AND r.role_name = :rname";
-        $params[':rname'] = strtoupper($roleFilter);
-    }
-    if ($statusFilter === 'active') {
-        $where .= " AND u.is_active = 1";
-    } elseif ($statusFilter === 'suspended') {
-        $where .= " AND u.is_active = 0";
-    }
-    if (!empty($searchQuery)) {
-        $cleanQ = preg_replace('/^#?USR-?/i', '', $searchQuery);
-        if (is_numeric($cleanQ)) {
-            $where .= " AND (u.user_id = :exact_id OR u.full_name LIKE :q OR u.email LIKE :q OR u.phone_number LIKE :q)";
-            $params[':exact_id'] = (int)$cleanQ;
-            $params[':q'] = "%{$searchQuery}%";
-        } else {
-            $where .= " AND (u.full_name LIKE :q OR u.email LIKE :q OR u.phone_number LIKE :q)";
-            $params[':q'] = "%{$searchQuery}%";
-        }
-    }
-
-    $exportUsers = db_fetch_all("
-        SELECT u.*, r.role_name 
-        FROM `users` u
-        JOIN `roles` r ON u.role_id = r.role_id
-        WHERE $where
-        ORDER BY u.role_id ASC, u.user_id DESC
-    ", $params);
+    $exportUsers = AdminService::getUsersForExport($roleFilter, $statusFilter, $searchQuery);
 
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=zippy_users_directory_' . date('Ymd_His') . '.csv');
@@ -91,66 +63,11 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 if (isset($_GET['action']) && $_GET['action'] === 'get_user_details') {
     header('Content-Type: application/json; charset=utf-8');
     $uid = (int)($_GET['user_id'] ?? 0);
-    $user = db_fetch_one("
-        SELECT u.user_id, u.role_id, u.full_name, u.email, u.phone_number, u.is_active, u.created_at,
-               r.role_name, r.description AS role_desc
-        FROM `users` u
-        JOIN `roles` r ON u.role_id = r.role_id
-        WHERE u.user_id = :id
-    ", [':id' => $uid]);
+    $data = AdminService::getUserDetailStats($uid);
 
-    if (!$user) {
+    if (!$data) {
         echo json_encode(['success' => false, 'message' => 'User account not found.']);
         exit;
-    }
-
-    $data = [
-        'user' => [
-            'id' => (int)$user['user_id'],
-            'full_name' => $user['full_name'],
-            'email' => $user['email'],
-            'phone_number' => $user['phone_number'],
-            'role_id' => (int)$user['role_id'],
-            'role_name' => $user['role_name'],
-            'role_desc' => $user['role_desc'],
-            'is_active' => (int)$user['is_active'],
-            'created_at' => date('d M Y, h:i A', strtotime($user['created_at'])),
-            'role_badge' => get_role_badge($user['role_name'])
-        ],
-        'stats' => []
-    ];
-
-    if ($user['role_name'] === 'CUSTOMER') {
-        $totalOrders = (int)db_fetch_val("SELECT COUNT(*) FROM `orders` WHERE `user_id` = :uid", [':uid' => $uid]) ?: 0;
-        $totalSpend = (float)db_fetch_val("SELECT COALESCE(SUM(total_amount), 0) FROM `orders` WHERE `user_id` = :uid AND `order_status` = 'DELIVERED'", [':uid' => $uid]) ?: 0.0;
-        $addressesCount = (int)db_fetch_val("SELECT COUNT(*) FROM `user_addresses` WHERE `user_id` = :uid", [':uid' => $uid]) ?: 0;
-        $recentOrders = db_fetch_all("
-            SELECT order_id, order_number, total_amount, order_status, placed_at 
-            FROM `orders` 
-            WHERE `user_id` = :uid 
-            ORDER BY placed_at DESC 
-            LIMIT 3
-        ", [':uid' => $uid]);
-
-        $data['stats'] = [
-            'type' => 'customer',
-            'total_orders' => $totalOrders,
-            'total_spend' => format_inr($totalSpend),
-            'addresses_count' => $addressesCount,
-            'recent_orders' => $recentOrders
-        ];
-    } elseif ($user['role_name'] === 'RIDER') {
-        $completed = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `rider_id` = :uid AND `delivery_status` = 'DELIVERED'", [':uid' => $uid]) ?: 0;
-        $active = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `rider_id` = :uid AND `delivery_status` IN ('ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')", [':uid' => $uid]) ?: 0;
-        $data['stats'] = [
-            'type' => 'rider',
-            'completed_deliveries' => $completed,
-            'active_dispatches' => $active
-        ];
-    } else {
-        $data['stats'] = [
-            'type' => 'staff'
-        ];
     }
 
     echo json_encode(['success' => true, 'data' => $data]);
@@ -161,292 +78,44 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_user_details') {
 // HANDLE RBAC FORM ACTIONS (POST)
 // =============================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid or expired session token. Please try again.');
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
-    } 
-    
-    // 1. Provision New Staff Account
-    if ($_POST['action'] === 'add_staff') {
-        $name = clean_input($_POST['full_name'] ?? '');
-        $email = clean_input(strtolower($_POST['email'] ?? ''));
-        $phone = clean_input($_POST['phone_number'] ?? '');
-        $roleId = (int)($_POST['role_id'] ?? 0);
-        $pass = $_POST['password'] ?? '';
-
-        if (empty($name) || empty($email) || empty($phone) || empty($pass)) {
-            set_flash('danger', 'Please provide name, official email, phone number, and temporary password.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        if (strlen($pass) < 6) {
-            set_flash('danger', 'Password must be at least 6 characters long.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Validate role exists and is NOT customer (Role 2)
-        $roleInfo = db_fetch_one("SELECT * FROM `roles` WHERE `role_id` = :rid", [':rid' => $roleId]);
-        if (!$roleInfo || (int)$roleInfo['role_id'] === 2) {
-            set_flash('danger', 'Invalid staff role specified. Customers cannot be provisioned as staff.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Check duplicate email
-        $existingEmail = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE LOWER(email) = :email", [':email' => $email]);
-        if ($existingEmail > 0) {
-            set_flash('danger', "An account with email '{$email}' already exists.");
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Check duplicate phone
-        $existingPhone = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `phone_number` = :phone", [':phone' => $phone]);
-        if ($existingPhone > 0) {
-            set_flash('danger', "An account with phone number '{$phone}' already exists.");
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        $hash = password_hash($pass, PASSWORD_DEFAULT);
-        db_query("
-            INSERT INTO `users` (`role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) 
-            VALUES (:rid, :name, :email, :phone, :hash, 1)
-        ", [
-            ':rid' => $roleId,
-            ':name' => $name,
-            ':email' => $email,
-            ':phone' => $phone,
-            ':hash' => $hash
-        ]);
-
-        set_flash('success', "New staff member '{$name}' created with role privileges: {$roleInfo['role_name']}.");
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid or expired session token. Please try again.');
+    } else {
+        $res = AdminService::handleUserRbacAction($_POST, (int)($currentUser['id'] ?? 0));
+        setFlash($res['type'], $res['message']);
     }
-
-    // 2. Edit User Profile Details
-    elseif ($_POST['action'] === 'edit_user') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $name = clean_input($_POST['full_name'] ?? '');
-        $email = clean_input(strtolower($_POST['email'] ?? ''));
-        $phone = clean_input($_POST['phone_number'] ?? '');
-
-        if (empty($name) || empty($email) || empty($phone)) {
-            set_flash('danger', 'Full name, email, and phone number cannot be blank.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        $target = db_fetch_one("SELECT * FROM `users` WHERE `user_id` = :id", [':id' => $uid]);
-        if (!$target) {
-            set_flash('danger', 'User account not found.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Check duplicate email (excluding this user)
-        $existingEmail = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE LOWER(email) = :email AND `user_id` != :id", [':email' => $email, ':id' => $uid]);
-        if ($existingEmail > 0) {
-            set_flash('danger', "Email '{$email}' is already in use by another account.");
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Check duplicate phone (excluding this user)
-        $existingPhone = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `phone_number` = :phone AND `user_id` != :id", [':phone' => $phone, ':id' => $uid]);
-        if ($existingPhone > 0) {
-            set_flash('danger', "Phone number '{$phone}' is already in use by another account.");
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        db_query("UPDATE `users` SET `full_name` = :name, `email` = :email, `phone_number` = :phone WHERE `user_id` = :id", [
-            ':name' => $name,
-            ':email' => $email,
-            ':phone' => $phone,
-            ':id' => $uid
-        ]);
-
-        set_flash('success', "Profile details for '{$name}' (#USR-{$uid}) updated successfully.");
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
-    }
-
-    // 3. Reset User Password
-    elseif ($_POST['action'] === 'reset_password') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $newPass = $_POST['new_password'] ?? '';
-
-        if (strlen($newPass) < 6) {
-            set_flash('danger', 'Temporary password must be at least 6 characters long.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        $target = db_fetch_one("SELECT * FROM `users` WHERE `user_id` = :id", [':id' => $uid]);
-        if (!$target) {
-            set_flash('danger', 'User account not found.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        $hash = password_hash($newPass, PASSWORD_DEFAULT);
-        db_query("UPDATE `users` SET `password_hash` = :hash WHERE `user_id` = :id", [
-            ':hash' => $hash,
-            ':id' => $uid
-        ]);
-
-        set_flash('success', "Password successfully reset for '{$target['full_name']}'.");
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
-    }
-    
-    // 4. Toggle User Account Status (Active / Suspended)
-    elseif ($_POST['action'] === 'toggle_active') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $newStatus = (int)($_POST['is_active'] ?? 0);
-
-        $target = db_fetch_one("SELECT * FROM `users` WHERE `user_id` = :id", [':id' => $uid]);
-        if (!$target) {
-            set_flash('danger', 'User account not found.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Guard 1: Prevent self-deactivation by active administrator (UC-20)
-        if ($uid === (int)($currentUser['id'] ?? 0) && $newStatus === 0) {
-            set_flash('danger', 'Security Restriction: Self-deactivation by the active administrator is prohibited to prevent lockout.');
-            header("Location: " . ADMIN_URL . "/users.php");
-            exit;
-        }
-
-        // Guard 2: Prevent deactivating the last active administrator
-        if ((int)$target['role_id'] === 1 && $newStatus === 0) {
-            $otherAdmins = (int)db_fetch_val("
-                SELECT COUNT(*) FROM `users` 
-                WHERE `role_id` = 1 AND `is_active` = 1 AND `user_id` != :id
-            ", [':id' => $uid]);
-            if ($otherAdmins <= 0) {
-                set_flash('danger', 'Security Restriction: Cannot suspend the last remaining active Administrator.');
-                header("Location: " . ADMIN_URL . "/users.php");
-                exit;
-            }
-        }
-
-        db_query("UPDATE `users` SET `is_active` = :act WHERE `user_id` = :id", [
-            ':act' => $newStatus,
-            ':id' => $uid
-        ]);
-
-        $statusLabel = $newStatus ? 'reactivated' : 'suspended';
-        set_flash('success', "User account for '{$target['full_name']}' (#USR-{$uid}) has been {$statusLabel}.");
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
-    }
-
-    // 5. Update Existing User Role (RBAC Privilege Reassignment)
-    elseif ($_POST['action'] === 'update_role') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $newRoleId = (int)($_POST['role_id'] ?? 0);
-
-        $result = update_user_role($uid, $newRoleId);
-        if ($result['success']) {
-            set_flash('success', $result['message']);
-        } else {
-            set_flash('danger', $result['message']);
-        }
-        header("Location: " . ADMIN_URL . "/users.php");
-        exit;
-    }
+    header("Location: " . ADMIN_URL . "/users.php");
+    exit;
 }
 
 require_once __DIR__ . '/includes/header.php';
 
-// Helper: Calculate user initials
-function get_user_initials(string $name): string {
-    $parts = preg_split('/\s+/', trim($name));
-    $initials = '';
-    if (!empty($parts[0])) {
-        $initials .= mb_strtoupper(mb_substr($parts[0], 0, 1));
-    }
-    if (count($parts) > 1 && !empty(end($parts))) {
-        $initials .= mb_strtoupper(mb_substr(end($parts), 0, 1));
-    }
-    return $initials ?: 'U';
-}
-
 // Role Filtering, Status Filtering & Pagination Query Setup
-$roleFilter = clean_input($_GET['role'] ?? '');
-$statusFilter = clean_input($_GET['status'] ?? '');
-$searchQuery = clean_input($_GET['q'] ?? '');
-$activeTab = clean_input($_GET['tab'] ?? 'directory');
+$roleFilter = cleanInput($_GET['role'] ?? '');
+$statusFilter = cleanInput($_GET['status'] ?? '');
+$searchQuery = cleanInput($_GET['q'] ?? '');
+$activeTab = cleanInput($_GET['tab'] ?? 'directory');
 
-$where = "1=1";
-$params = [];
-if (!empty($roleFilter)) {
-    $where .= " AND r.role_name = :rname";
-    $params[':rname'] = strtoupper($roleFilter);
-}
-if ($statusFilter === 'active') {
-    $where .= " AND u.is_active = 1";
-} elseif ($statusFilter === 'suspended') {
-    $where .= " AND u.is_active = 0";
-}
-if (!empty($searchQuery)) {
-    $cleanQ = preg_replace('/^#?USR-?/i', '', $searchQuery);
-    if (is_numeric($cleanQ)) {
-        $where .= " AND (u.user_id = :exact_id OR u.full_name LIKE :q OR u.email LIKE :q OR u.phone_number LIKE :q)";
-        $params[':exact_id'] = (int)$cleanQ;
-        $params[':q'] = "%{$searchQuery}%";
-    } else {
-        $where .= " AND (u.full_name LIKE :q OR u.email LIKE :q OR u.phone_number LIKE :q)";
-        $params[':q'] = "%{$searchQuery}%";
-    }
-}
-
-// Server-side pagination parameters
-$perPage = 15;
-$totalFiltered = (int)db_fetch_val("
-    SELECT COUNT(*) 
-    FROM `users` u
-    JOIN `roles` r ON u.role_id = r.role_id
-    WHERE $where
-", $params) ?: 0;
-
-$totalPages = max(1, (int)ceil($totalFiltered / $perPage));
-$currentPage = min($totalPages, max(1, (int)($_GET['page'] ?? 1)));
-$offset = ($currentPage - 1) * $perPage;
-
-$users = db_fetch_all("
-    SELECT u.*, r.role_name, r.description AS role_desc
-    FROM `users` u
-    JOIN `roles` r ON u.role_id = r.role_id
-    WHERE $where
-    ORDER BY u.role_id ASC, u.user_id DESC
-    LIMIT $offset, $perPage
-", $params);
-
-// Fetch dynamic roles from DB
-$roles = db_fetch_all("SELECT * FROM `roles` ORDER BY `role_id` ASC");
-
-// Role metrics & active counts
-$totalUsersCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users`") ?: 0;
-$adminCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `role_id` = 1") ?: 0;
-$kitchenCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `role_id` = 3") ?: 0;
-$riderCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `role_id` = 4") ?: 0;
-$customerCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `role_id` = 2") ?: 0;
-
-$inactiveUsersCount = (int)db_fetch_val("SELECT COUNT(*) FROM `users` WHERE `is_active` = 0") ?: 0;
-
-// Reusable query string builder for filters & pagination
-$paginationParams = ['tab' => 'directory'];
-if (!empty($roleFilter)) $paginationParams['role'] = $roleFilter;
-if (!empty($statusFilter)) $paginationParams['status'] = $statusFilter;
-if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
+$dirData = AdminService::getUsersDirectoryData(
+    $roleFilter,
+    $statusFilter,
+    $searchQuery,
+    (int)($_GET['page'] ?? 1)
+);
+$perPage = $dirData['perPage'];
+$totalFiltered = $dirData['totalFiltered'];
+$totalPages = $dirData['totalPages'];
+$currentPage = $dirData['currentPage'];
+$offset = $dirData['offset'];
+$users = $dirData['users'];
+$roles = $dirData['roles'];
+$totalUsersCount = $dirData['totalUsersCount'];
+$adminCount = $dirData['adminCount'];
+$kitchenCount = $dirData['kitchenCount'];
+$riderCount = $dirData['riderCount'];
+$customerCount = $dirData['customerCount'];
+$inactiveUsersCount = $dirData['inactiveUsersCount'];
+$paginationParams = $dirData['paginationParams'];
 ?>
 
 <!-- ===========================================================================
@@ -894,8 +563,8 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
               <?php foreach ($users as $u): ?>
                 <?php
                   $isSelf = ((int)$u['user_id'] === (int)$currentUser['id']);
-                  $initials = get_user_initials($u['full_name']);
-                  $avatarColor = match($u['role_name']) {
+                  $initials = getUserInitials($u['full_name']);
+                  $avatarColor = match ($u['role_name']) {
                     'ADMIN' => 'bg-danger text-white',
                     'KITCHEN' => 'bg-warning text-dark',
                     'RIDER' => 'bg-info text-dark',
@@ -941,7 +610,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
 
                   <!-- Assigned Role -->
                   <td>
-                    <?= get_role_badge($u['role_name']) ?>
+                    <?= getRoleBadge($u['role_name']) ?>
                   </td>
 
                   <!-- Status -->
@@ -1132,7 +801,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/users.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_staff">
 
         <div class="modal-body p-4">
@@ -1208,7 +877,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/users.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="update_role">
         <input type="hidden" name="user_id" id="modalTargetUserId" value="">
 
@@ -1273,7 +942,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/users.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_user">
         <input type="hidden" name="user_id" id="editModalUserId" value="">
 
@@ -1320,7 +989,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/users.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="reset_password">
         <input type="hidden" name="user_id" id="resetModalUserId" value="">
 
@@ -1370,7 +1039,7 @@ if (!empty($searchQuery)) $paginationParams['q'] = $searchQuery;
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/users.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="toggle_active">
         <input type="hidden" name="user_id" id="toggleModalUserId" value="">
         <input type="hidden" name="is_active" id="toggleModalNewStatus" value="">

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Live Location Tracking & Coordinate Streaming
  * Adds geolocation, route progress, and dynamic ETA tracking fields to delivery_dispatches
@@ -9,7 +10,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }
@@ -34,15 +35,16 @@ $columnsToAdd = [
 ];
 
 foreach ($columnsToAdd as $colName => $colDef) {
-    if (!in_array(strtolower($colName), $existingCols)) {
+    $safeCol = assertSqlIdentifier((string)$colName, 'delivery_dispatches column');
+    if (!in_array(strtolower($safeCol), $existingCols, true)) {
         try {
-            $pdo->exec("ALTER TABLE `delivery_dispatches` ADD COLUMN `{$colName}` {$colDef}");
-            echo " [+] Added column `{$colName}` to `delivery_dispatches`.\n";
+            $pdo->exec("ALTER TABLE `delivery_dispatches` ADD COLUMN `{$safeCol}` {$colDef}");
+            echo " [+] Added column `{$safeCol}` to `delivery_dispatches`.\n";
         } catch (Exception $e) {
-            echo " [!] Failed to add column `{$colName}`: " . $e->getMessage() . "\n";
+            echo " [!] Failed to add column `{$safeCol}`: " . $e->getMessage() . "\n";
         }
     } else {
-        echo " [=] Column `{$colName}` already exists in `delivery_dispatches`.\n";
+        echo " [=] Column `{$safeCol}` already exists in `delivery_dispatches`.\n";
     }
 }
 

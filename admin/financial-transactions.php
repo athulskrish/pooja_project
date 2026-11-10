@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Executive Money & COD Financial Transactions Ledger
  * Zippy - Online Food Ordering Platform
@@ -18,8 +19,8 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle CSV Export
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
@@ -28,9 +29,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $output = fopen('php://output', 'w');
     fputcsv($output, ['Txn ID', 'Txn Number', 'Order ID', 'Category', 'Flow', 'Payment Method', 'Amount (INR)', 'Status', 'Reference ID', 'Handled By', 'Notes', 'Created At']);
 
-    $allTxns = db_fetch_all("
-        SELECT * FROM `money_transactions` ORDER BY `created_at` DESC
-    ");
+    $allTxns = FinanceService::getMoneyTransactionsForExport();
     foreach ($allTxns as $t) {
         fputcsv($output, [
             $t['txn_id'],
@@ -53,336 +52,47 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 
 // Handle POST Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
-        $action = $_POST['action'];
-
-        // 1. Mark COD Cash as Collected by Admin
-        if ($action === 'mark_cod_collected') {
-            $txnId = (int)($_POST['txn_id'] ?? 0);
-            $orderId = (int)($_POST['order_id'] ?? 0);
-
-            $tx = db_fetch_one("SELECT * FROM `money_transactions` WHERE `txn_id` = :id", [':id' => $txnId]);
-            if ($tx) {
-                db_query("
-                    UPDATE `money_transactions` 
-                    SET `status` = 'COMPLETED',
-                        `handled_by` = :hby,
-                        `notes` = CONCAT(COALESCE(notes, ''), ' [Cash verified and marked collected by Store Admin]')
-                    WHERE `txn_id` = :id
-                ", [
-                    ':hby' => $currentUser['name'] ?? 'Store Admin',
-                    ':id'  => $txnId
-                ]);
-
-                if ($orderId > 0) {
-                    db_query("
-                        UPDATE `payments` 
-                        SET `payment_status` = 'SUCCESSFUL', `payment_timestamp` = NOW() 
-                        WHERE `order_id` = :oid
-                    ", [':oid' => $orderId]);
-                }
-
-                set_flash('success', "Transaction {$tx['txn_number']} marked as COMPLETED. COD cash of " . format_inr($tx['amount']) . " collected into store balance.");
-            }
-            header("Location: " . ADMIN_URL . "/financial-transactions.php");
-            exit;
-        }
-
-        // 2. Deposit Rider COD Cash to Store Drawer
-        if ($action === 'settle_rider_deposit') {
-            $riderUserId = (int)($_POST['rider_user_id'] ?? 0);
-            $amount = (float)($_POST['settle_amount'] ?? 0);
-
-            if ($riderUserId > 0 && $amount > 0) {
-                $riderProfile = db_fetch_one("
-                    SELECT sp.*, u.full_name 
-                    FROM `staff_profiles` sp 
-                    JOIN `users` u ON sp.user_id = u.user_id 
-                    WHERE sp.user_id = :uid
-                ", [':uid' => $riderUserId]);
-
-                if ($riderProfile) {
-                    $ref = 'DEP-STORE-' . strtoupper(bin2hex(random_bytes(4)));
-                    record_money_transaction(
-                        null,
-                        $riderUserId,
-                        'COD_DEPOSIT_STORE',
-                        'INWARD',
-                        'COD_CASH',
-                        $amount,
-                        'COMPLETED',
-                        $ref,
-                        $currentUser['name'] ?? 'Store Cashier',
-                        "Cash settled into store vault by rider {$riderProfile['full_name']}."
-                    );
-
-                    db_query("
-                        UPDATE `staff_profiles` 
-                        SET `cod_balance` = GREATEST(0, `cod_balance` - :amt) 
-                        WHERE `user_id` = :uid
-                    ", [
-                        ':amt' => $amount,
-                        ':uid' => $riderUserId
-                    ]);
-
-                    set_flash('success', "Cash deposit of " . format_inr($amount) . " from rider {$riderProfile['full_name']} settled into store vault.");
-                }
-            }
-            header("Location: " . ADMIN_URL . "/financial-transactions.php");
-            exit;
-        }
-
-        // 3. End-of-Day Cash Drawer Closing & Z-Report Generation
-        if ($action === 'close_cash_register') {
-            $closureDate = date('Y-m-d');
-            $physicalCash = (float)($_POST['physical_cash'] ?? 0);
-            $discrepancyReason = clean_input($_POST['discrepancy_notes'] ?? '');
-
-            // Calculate system metrics for $closureDate
-            $ordSummary = db_fetch_one("
-                SELECT COUNT(*) AS total_orders, COALESCE(SUM(total_amount), 0.00) AS gross_sales 
-                FROM `orders` 
-                WHERE DATE(placed_at) = :dt AND order_status != 'CANCELLED'
-            ", [':dt' => $closureDate]);
-            $totalOrders = (int)($ordSummary['total_orders'] ?? 0);
-            $grossSales = (float)($ordSummary['gross_sales'] ?? 0.00);
-
-            // Online prepayments settled
-            $onlinePayments = (float)db_fetch_val("
-                SELECT COALESCE(SUM(amount), 0.00) 
-                FROM `money_transactions` 
-                WHERE DATE(created_at) = :dt AND txn_category = 'CUSTOMER_PAYMENT_ONLINE' AND status = 'COMPLETED'
-            ", [':dt' => $closureDate]);
-
-            // Expected COD cash in store register
-            $expectedCodCash = (float)db_fetch_val("
-                SELECT COALESCE(SUM(amount), 0.00) 
-                FROM `money_transactions` 
-                WHERE DATE(created_at) = :dt AND txn_category IN ('CUSTOMER_PAYMENT_COD', 'COD_DEPOSIT_STORE') AND status = 'COMPLETED'
-            ", [':dt' => $closureDate]);
-
-            if ($expectedCodCash <= 0) {
-                $expectedCodCash = (float)db_fetch_val("
-                    SELECT COALESCE(SUM(p.amount_paid), 0.00) 
-                    FROM `payments` p 
-                    JOIN `orders` o ON p.order_id = o.order_id 
-                    WHERE DATE(o.placed_at) = :dt AND p.payment_mode = 'COD' AND p.payment_status = 'SUCCESSFUL'
-                ", [':dt' => $closureDate]);
-            }
-
-            $discrepancy = round($physicalCash - $expectedCodCash, 2);
-
-            db_query("
-                INSERT INTO `cash_register_closures` 
-                (`closure_date`, `closing_admin_id`, `closing_admin_name`, `total_orders_count`, `gross_sales`, `online_payments_total`, `expected_cod_cash`, `actual_physical_cash`, `discrepancy_amount`, `discrepancy_reason`, `status`, `closed_at`)
-                VALUES 
-                (:dt, :aid, :aname, :tot_ord, :gross, :online, :exp_cod, :act_cod, :disc, :reason, 'SEALED', NOW())
-            ", [
-                ':dt'      => $closureDate,
-                ':aid'     => (int)($currentUser['id'] ?? 1),
-                ':aname'   => $currentUser['name'] ?? 'Store Manager',
-                ':tot_ord' => $totalOrders,
-                ':gross'   => $grossSales,
-                ':online'  => $onlinePayments,
-                ':exp_cod' => $expectedCodCash,
-                ':act_cod' => $physicalCash,
-                ':disc'    => $discrepancy,
-                ':reason'  => $discrepancyReason
-            ]);
-            $closureId = (int)db_fetch_val("SELECT LAST_INSERT_ID()");
-
-            set_flash('success', "Cash drawer successfully closed & sealed for {$closureDate}. Z-Report generated (Ref #ZREP-{$closureId}).");
-            header("Location: " . ADMIN_URL . "/financial-transactions.php?zreport={$closureId}");
-            exit;
-        }
+        $res = FinanceService::handleFinancialAction($_POST, $currentUser);
+        setFlash($res['type'], $res['message']);
+        $zParam = !empty($res['zreport_id']) ? ('?zreport=' . (int)$res['zreport_id']) : '';
+        header("Location: " . ADMIN_URL . "/financial-transactions.php" . $zParam);
+        exit;
     }
 }
 
-// Filter params
-$filterCat = clean_input($_GET['category'] ?? 'ALL');
-$filterFlow = clean_input($_GET['flow'] ?? 'ALL');
-$filterStatus = clean_input($_GET['status'] ?? 'ALL');
-$searchQuery = clean_input($_GET['search'] ?? '');
-$dateFrom = clean_input($_GET['date_from'] ?? '');
-$dateTo = clean_input($_GET['date_to'] ?? '');
-
-// Financial KPIs & Summaries
-$kpiTotalInward = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `flow_direction` = 'INWARD' AND `status` = 'COMPLETED'
-");
-
-$kpiOnlinePaid = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `txn_category` = 'CUSTOMER_PAYMENT_ONLINE' AND `status` = 'COMPLETED'
-");
-
-$kpiCodCollected = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `txn_category` = 'CUSTOMER_PAYMENT_COD' AND `status` = 'COMPLETED'
-");
-
-$kpiCodPending = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `txn_category` = 'CUSTOMER_PAYMENT_COD' AND `status` = 'PENDING'
-");
-
-$kpiSalaryOutward = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `txn_category` = 'STAFF_SALARY_PAYOUT'
-");
-
-$kpiRefundOutward = (float)db_fetch_val("
-    SELECT SUM(amount) FROM `money_transactions` 
-    WHERE `txn_category` = 'CUSTOMER_REFUND'
-");
-
-// Build dynamic WHERE clause
-$where = "1=1";
-$params = [];
-
-if ($filterCat !== 'ALL') {
-    $where .= " AND mt.txn_category = :cat";
-    $params[':cat'] = $filterCat;
-}
-
-if ($filterFlow !== 'ALL') {
-    $where .= " AND mt.flow_direction = :flow";
-    $params[':flow'] = $filterFlow;
-}
-
-if ($filterStatus !== 'ALL') {
-    $where .= " AND mt.status = :st";
-    $params[':st'] = $filterStatus;
-}
-
-if (!empty($dateFrom)) {
-    $where .= " AND DATE(mt.created_at) >= :dfrom";
-    $params[':dfrom'] = $dateFrom;
-}
-
-if (!empty($dateTo)) {
-    $where .= " AND DATE(mt.created_at) <= :dto";
-    $params[':dto'] = $dateTo;
-}
-
-if (!empty($searchQuery)) {
-    $where .= " AND (
-        mt.txn_number LIKE :search_txn
-        OR mt.reference_id LIKE :search_reference
-        OR mt.handled_by LIKE :search_handler
-        OR mt.notes LIKE :search_notes
-        OR u.full_name LIKE :search_name
-        OR u.phone_number LIKE :search_phone
-        OR mt.payment_method LIKE :search_method
-        OR mt.txn_category LIKE :search_category
-        OR mt.status LIKE :search_status
-        OR mt.order_id = :search_order_id
-    )";
-    $searchTerm = '%' . $searchQuery . '%';
-    $params[':search_txn'] = $searchTerm;
-    $params[':search_reference'] = $searchTerm;
-    $params[':search_handler'] = $searchTerm;
-    $params[':search_notes'] = $searchTerm;
-    $params[':search_name'] = $searchTerm;
-    $params[':search_phone'] = $searchTerm;
-    $params[':search_method'] = $searchTerm;
-    $params[':search_category'] = $searchTerm;
-    $params[':search_status'] = $searchTerm;
-    $params[':search_order_id'] = (int)preg_replace('/[^0-9]/', '', $searchQuery);
-}
-
-// Count all matching transactions so pagination and result labels stay accurate.
-$totalTransactions = (int)db_fetch_val("
-    SELECT COUNT(*)
-    FROM `money_transactions` mt
-    LEFT JOIN `users` u ON mt.user_id = u.user_id
-    WHERE $where
-", $params);
-
-$pageSize = 50;
-$totalPages = max(1, (int)ceil($totalTransactions / $pageSize));
-$currentPage = min(max(1, (int)($_GET['page'] ?? 1)), $totalPages);
-$offset = ($currentPage - 1) * $pageSize;
-$firstResult = $totalTransactions > 0 ? $offset + 1 : 0;
-$lastResult = min($offset + $pageSize, $totalTransactions);
-
-// Query the current page with customer / staff counterparty info.
-$transactions = db_fetch_all("
-    SELECT mt.*, 
-           u.full_name AS counterparty_name, 
-           u.phone_number AS counterparty_phone, 
-           u.email AS counterparty_email,
-           o.order_status,
-           o.total_amount AS order_total_bill
-    FROM `money_transactions` mt
-    LEFT JOIN `users` u ON mt.user_id = u.user_id
-    LEFT JOIN `orders` o ON mt.order_id = o.order_id
-    WHERE $where
-    ORDER BY mt.created_at DESC, mt.txn_id DESC
-    LIMIT $pageSize OFFSET $offset
-", $params);
-
-$paginationParams = $_GET;
-unset($paginationParams['page'], $paginationParams['zreport'], $paginationParams['export']);
-$searchFormParams = [
-    'category' => $filterCat,
-    'flow' => $filterFlow,
-    'status' => $filterStatus,
-    'date_from' => $dateFrom,
-    'date_to' => $dateTo
-];
-
-// Fetch list of riders with outstanding COD cash balance for settlement modal
-$ridersWithCod = db_fetch_all("
-    SELECT sp.*, u.full_name, u.phone_number 
-    FROM `staff_profiles` sp 
-    JOIN `users` u ON sp.user_id = u.user_id 
-    WHERE sp.department = 'DELIVERY' AND sp.cod_balance > 0
-    ORDER BY sp.cod_balance DESC
-");
-
-// Fetch Recent Register Closures
-$recentClosures = db_fetch_all("
-    SELECT * FROM `cash_register_closures` ORDER BY `closed_at` DESC LIMIT 6
-");
-
-// Today's Register Closure Preview Metrics
-$todayClosureDate = date('Y-m-d');
-$todayOrdersSummary = db_fetch_one("
-    SELECT COUNT(*) AS total_orders, COALESCE(SUM(total_amount), 0.00) AS gross_sales 
-    FROM `orders` 
-    WHERE DATE(placed_at) = :dt AND order_status != 'CANCELLED'
-", [':dt' => $todayClosureDate]);
-
-$todayOnlinePayments = (float)db_fetch_val("
-    SELECT COALESCE(SUM(amount), 0.00) 
-    FROM `money_transactions` 
-    WHERE DATE(created_at) = :dt AND txn_category = 'CUSTOMER_PAYMENT_ONLINE' AND status = 'COMPLETED'
-", [':dt' => $todayClosureDate]);
-
-$todayExpectedCod = (float)db_fetch_val("
-    SELECT COALESCE(SUM(amount), 0.00) 
-    FROM `money_transactions` 
-    WHERE DATE(created_at) = :dt AND txn_category IN ('CUSTOMER_PAYMENT_COD', 'COD_DEPOSIT_STORE') AND status = 'COMPLETED'
-", [':dt' => $todayClosureDate]);
-
-if ($todayExpectedCod <= 0) {
-    $todayExpectedCod = (float)db_fetch_val("
-        SELECT COALESCE(SUM(p.amount_paid), 0.00) 
-        FROM `payments` p 
-        JOIN `orders` o ON p.order_id = o.order_id 
-        WHERE DATE(o.placed_at) = :dt AND p.payment_mode = 'COD' AND p.payment_status = 'SUCCESSFUL'
-    ", [':dt' => $todayClosureDate]);
-}
-
-// Active Z-Report viewing if ?zreport=...
-$activeZReport = null;
-if (isset($_GET['zreport'])) {
-    $activeZReport = db_fetch_one("SELECT * FROM `cash_register_closures` WHERE `closure_id` = :id", [':id' => (int)$_GET['zreport']]);
-}
+$finData = FinanceService::getAdminFinancialLedgerData($_GET);
+$filterCat = $finData['filterCat'];
+$filterFlow = $finData['filterFlow'];
+$filterStatus = $finData['filterStatus'];
+$searchQuery = $finData['searchQuery'];
+$dateFrom = $finData['dateFrom'];
+$dateTo = $finData['dateTo'];
+$kpiTotalInward = $finData['kpiTotalInward'];
+$kpiOnlinePaid = $finData['kpiOnlinePaid'];
+$kpiCodCollected = $finData['kpiCodCollected'];
+$kpiCodPending = $finData['kpiCodPending'];
+$kpiSalaryOutward = $finData['kpiSalaryOutward'];
+$kpiRefundOutward = $finData['kpiRefundOutward'];
+$totalTransactions = $finData['totalTransactions'];
+$pageSize = $finData['pageSize'];
+$totalPages = $finData['totalPages'];
+$currentPage = $finData['currentPage'];
+$offset = $finData['offset'];
+$firstResult = $finData['firstResult'];
+$lastResult = $finData['lastResult'];
+$transactions = $finData['transactions'];
+$paginationParams = $finData['paginationParams'];
+$searchFormParams = $finData['searchFormParams'];
+$ridersWithCod = $finData['ridersWithCod'];
+$recentClosures = $finData['recentClosures'];
+$todayClosureDate = $finData['todayClosureDate'];
+$todayOrdersSummary = $finData['todayOrdersSummary'];
+$todayOnlinePayments = $finData['todayOnlinePayments'];
+$todayExpectedCod = $finData['todayExpectedCod'];
+$activeZReport = $finData['activeZReport'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -427,7 +137,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #2E6F40 !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">Gross Inward</span>
-      <h4 class="fw-bold font-outfit text-forest mb-0"><?= format_inr($kpiTotalInward) ?></h4>
+      <h4 class="fw-bold font-outfit text-forest mb-0"><?= formatInr($kpiTotalInward) ?></h4>
       <span class="small text-success" style="font-size:0.72rem;"><i class="bi bi-arrow-down-left"></i> Completed Inward</span>
     </div>
   </div>
@@ -436,7 +146,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #3B82F6 !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">Online Digital</span>
-      <h4 class="fw-bold font-outfit text-primary mb-0"><?= format_inr($kpiOnlinePaid) ?></h4>
+      <h4 class="fw-bold font-outfit text-primary mb-0"><?= formatInr($kpiOnlinePaid) ?></h4>
       <span class="small text-muted" style="font-size:0.72rem;">UPI / Cards / NetBank</span>
     </div>
   </div>
@@ -445,7 +155,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #10B981 !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">COD Cash Collected</span>
-      <h4 class="fw-bold font-outfit text-success mb-0"><?= format_inr($kpiCodCollected) ?></h4>
+      <h4 class="fw-bold font-outfit text-success mb-0"><?= formatInr($kpiCodCollected) ?></h4>
       <span class="small text-success" style="font-size:0.72rem;"><i class="bi bi-check-circle"></i> In Store / Dispatched</span>
     </div>
   </div>
@@ -454,7 +164,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #F59E0B !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">Pending COD Cash</span>
-      <h4 class="fw-bold font-outfit text-warning mb-0"><?= format_inr($kpiCodPending) ?></h4>
+      <h4 class="fw-bold font-outfit text-warning mb-0"><?= formatInr($kpiCodPending) ?></h4>
       <span class="small text-warning" style="font-size:0.72rem;"><i class="bi bi-hourglass-split"></i> Awaiting Doorstep Pay</span>
     </div>
   </div>
@@ -463,7 +173,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #8B5CF6 !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">Staff Salaries Paid</span>
-      <h4 class="fw-bold font-outfit text-dark mb-0"><?= format_inr($kpiSalaryOutward) ?></h4>
+      <h4 class="fw-bold font-outfit text-dark mb-0"><?= formatInr($kpiSalaryOutward) ?></h4>
       <span class="small text-danger" style="font-size:0.72rem;"><i class="bi bi-arrow-up-right"></i> Payroll Disbursed</span>
     </div>
   </div>
@@ -472,7 +182,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 rounded-4 shadow-sm p-3 bg-white h-100" style="border-left: 4px solid #EF4444 !important;">
       <span class="small text-muted fw-bold text-uppercase d-block mb-1" style="font-size:0.7rem;">Customer Refunds</span>
-      <h4 class="fw-bold font-outfit text-danger mb-0"><?= format_inr($kpiRefundOutward) ?></h4>
+      <h4 class="fw-bold font-outfit text-danger mb-0"><?= formatInr($kpiRefundOutward) ?></h4>
       <span class="small text-danger" style="font-size:0.72rem;">Reversed Orders</span>
     </div>
   </div>
@@ -511,7 +221,7 @@ require_once __DIR__ . '/includes/header.php';
         At the end of each shift or business day, perform a cash count and seal the drawer to generate an audited Z-Report balancing expected COD handover against physical cash in drawer.
       </p>
       <button type="button" class="btn btn-outline-forest btn-sm rounded-pill px-4 fw-bold" style="border-color:#2E6F40; color:#2E6F40;" data-bs-toggle="modal" data-bs-target="#closeDrawerModal">
-        Perform Today's Drawer Count (<?= format_inr($todayExpectedCod) ?> Expected)
+        Perform Today's Drawer Count (<?= formatInr($todayExpectedCod) ?> Expected)
       </button>
     </div>
   <?php else: ?>
@@ -535,10 +245,10 @@ require_once __DIR__ . '/includes/header.php';
           <?php foreach ($recentClosures as $cl): ?>
             <?php 
               $variance = (float)$cl['discrepancy_amount'];
-              $varBadge = match(true) {
+              $varBadge = match (true) {
                 $variance == 0.0 => ['class' => 'bg-success-subtle text-success border border-success-subtle', 'text' => 'Balanced (₹0)'],
-                $variance > 0.0  => ['class' => 'bg-info-subtle text-info-emphasis border border-info-subtle', 'text' => '+' . format_inr($variance) . ' Over'],
-                default          => ['class' => 'bg-danger-subtle text-danger border border-danger-subtle', 'text' => '-' . format_inr(abs($variance)) . ' Short']
+                $variance > 0.0  => ['class' => 'bg-info-subtle text-info-emphasis border border-info-subtle', 'text' => '+' . formatInr($variance) . ' Over'],
+                default          => ['class' => 'bg-danger-subtle text-danger border border-danger-subtle', 'text' => '-' . formatInr(abs($variance)) . ' Short']
               };
             ?>
             <tr>
@@ -549,9 +259,9 @@ require_once __DIR__ . '/includes/header.php';
               </td>
               <td><?= e($cl['closing_admin_name']) ?></td>
               <td><span class="badge bg-light text-dark border"><?= (int)$cl['total_orders_count'] ?> orders</span></td>
-              <td class="fw-bold text-dark"><?= format_inr($cl['gross_sales']) ?></td>
-              <td><?= format_inr($cl['expected_cod_cash']) ?></td>
-              <td class="fw-bold text-forest"><?= format_inr($cl['actual_physical_cash']) ?></td>
+              <td class="fw-bold text-dark"><?= formatInr($cl['gross_sales']) ?></td>
+              <td><?= formatInr($cl['expected_cod_cash']) ?></td>
+              <td class="fw-bold text-forest"><?= formatInr($cl['actual_physical_cash']) ?></td>
               <td>
                 <span class="badge <?= $varBadge['class'] ?> rounded-pill px-2 py-1 font-monospace">
                   <?= $varBadge['text'] ?>
@@ -677,7 +387,7 @@ require_once __DIR__ . '/includes/header.php';
           <?php foreach ($transactions as $t): ?>
             <?php 
               $isInward = ($t['flow_direction'] === 'INWARD');
-              $categoryLabel = match($t['txn_category']) {
+              $categoryLabel = match ($t['txn_category']) {
                   'CUSTOMER_PAYMENT_ONLINE' => 'Customer Online Payment',
                   'CUSTOMER_PAYMENT_COD'    => 'Customer Cash on Delivery',
                   'COD_DEPOSIT_STORE'       => 'Rider Cash Store Deposit',
@@ -749,7 +459,7 @@ require_once __DIR__ . '/includes/header.php';
               <!-- Amount -->
               <td>
                 <div class="fw-bold fs-6 font-outfit <?= $isInward ? 'text-forest' : 'text-danger' ?>">
-                  <?= $isInward ? '+' : '-' ?><?= format_inr($t['amount']) ?>
+                  <?= $isInward ? '+' : '-' ?><?= formatInr($t['amount']) ?>
                 </div>
               </td>
 
@@ -786,8 +496,8 @@ require_once __DIR__ . '/includes/header.php';
                   
                   <!-- If COD Pending, allow 1-Click "Mark Collected" -->
                   <?php if ($t['txn_category'] === 'CUSTOMER_PAYMENT_COD' && $t['status'] === 'PENDING'): ?>
-                    <form method="POST" action="<?= ADMIN_URL ?>/financial-transactions.php" class="m-0" onsubmit="return confirm('Confirm that Cash of <?= format_inr($t['amount']) ?> has been received into store balance?');">
-                      <?= csrf_field() ?>
+                    <form method="POST" action="<?= ADMIN_URL ?>/financial-transactions.php" class="m-0" onsubmit="return confirm('Confirm that Cash of <?= formatInr($t['amount']) ?> has been received into store balance?');">
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="mark_cod_collected">
                       <input type="hidden" name="txn_id" value="<?= (int)$t['txn_id'] ?>">
                       <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
@@ -817,7 +527,7 @@ require_once __DIR__ . '/includes/header.php';
                       <div class="modal-body text-start">
                         <div class="p-3 rounded-3 mb-3 text-center" style="background:#F0FDF4; border:1px solid #CEFFDC;">
                           <div class="small text-muted fw-bold text-uppercase">Transaction Amount</div>
-                          <h2 class="fw-bold font-outfit text-forest mb-0"><?= format_inr($t['amount']) ?></h2>
+                          <h2 class="fw-bold font-outfit text-forest mb-0"><?= formatInr($t['amount']) ?></h2>
                           <span class="badge bg-success mt-1"><?= e($t['status']) ?></span>
                         </div>
 
@@ -904,7 +614,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content rounded-4 border-0 shadow">
         <form method="POST" action="<?= ADMIN_URL ?>/financial-transactions.php">
-          <?= csrf_field() ?>
+          <?= csrfField() ?>
           <input type="hidden" name="action" value="settle_rider_deposit">
 
           <div class="modal-header border-bottom pb-3">
@@ -925,7 +635,7 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="">-- Choose Rider --</option>
                 <?php foreach ($ridersWithCod as $r): ?>
                   <option value="<?= (int)$r['user_id'] ?>" data-balance="<?= (float)$r['cod_balance'] ?>">
-                    <?= e($r['full_name']) ?> (Outstanding: <?= format_inr($r['cod_balance']) ?>)
+                    <?= e($r['full_name']) ?> (Outstanding: <?= formatInr($r['cod_balance']) ?>)
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -985,7 +695,7 @@ require_once __DIR__ . '/includes/header.php';
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/financial-transactions.php" id="closeDrawerForm">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="close_cash_register">
         <input type="hidden" id="systemExpectedCodVal" value="<?= (float)$todayExpectedCod ?>">
 
@@ -993,7 +703,7 @@ require_once __DIR__ . '/includes/header.php';
           
           <div class="mb-3">
             <label class="form-label small fw-bold text-dark">Register Closure Business Date</label>
-            <input type="text" class="form-control rounded-3 bg-light" value="<?= date('d M Y', strtotime($todayClosureDate)) ?>" readonly>
+            <input type="text" class="form-control rounded-3 bg-light" value="<?= date('d M Y', (int)(strtotime((string)$todayClosureDate) ?: time())) ?>" readonly>
             <input type="hidden" name="closure_date" value="<?= e($todayClosureDate) ?>">
           </div>
 
@@ -1003,19 +713,19 @@ require_once __DIR__ . '/includes/header.php';
             
             <div class="d-flex justify-content-between py-1 border-bottom small">
               <span class="text-muted">Orders Placed &amp; Completed:</span>
-              <span class="fw-bold text-dark font-monospace"><?= (int)$todayOrdersSummary['total_orders'] ?> orders</span>
+              <span class="fw-bold text-dark font-monospace"><?= (int)($todayOrdersSummary['total_orders'] ?? 0) ?> orders</span>
             </div>
             <div class="d-flex justify-content-between py-1 border-bottom small">
               <span class="text-muted">Gross Transaction Value:</span>
-              <span class="fw-bold text-dark font-monospace"><?= format_inr($todayOrdersSummary['gross_sales']) ?></span>
+              <span class="fw-bold text-dark font-monospace"><?= formatInr($todayOrdersSummary['gross_sales'] ?? 0) ?></span>
             </div>
             <div class="d-flex justify-content-between py-1 border-bottom small">
               <span class="text-muted">Digital UPI / Card Prepayments:</span>
-              <span class="fw-bold text-primary font-monospace"><?= format_inr($todayOnlinePayments) ?></span>
+              <span class="fw-bold text-primary font-monospace"><?= formatInr($todayOnlinePayments) ?></span>
             </div>
             <div class="d-flex justify-content-between pt-2 small">
               <span class="fw-bold text-dark">Expected Cash in Drawer:</span>
-              <span class="fw-bold text-forest fs-6 font-monospace" id="expectedCodDisplay"><?= format_inr($todayExpectedCod) ?></span>
+              <span class="fw-bold text-forest fs-6 font-monospace" id="expectedCodDisplay"><?= formatInr($todayExpectedCod) ?></span>
             </div>
           </div>
 
@@ -1118,19 +828,19 @@ require_once __DIR__ . '/includes/header.php';
           </div>
           <div class="d-flex justify-content-between py-1">
             <span>GROSS ORDER VALUE:</span>
-            <span><?= format_inr($activeZReport['gross_sales']) ?></span>
+            <span><?= formatInr($activeZReport['gross_sales']) ?></span>
           </div>
           <div class="d-flex justify-content-between py-1">
             <span>ONLINE PREPAYMENTS:</span>
-            <span><?= format_inr($activeZReport['online_payments_total']) ?></span>
+            <span><?= formatInr($activeZReport['online_payments_total']) ?></span>
           </div>
           <div class="d-flex justify-content-between py-1 border-top pt-1">
             <span>EXPECTED COD CASH:</span>
-            <strong><?= format_inr($activeZReport['expected_cod_cash']) ?></strong>
+            <strong><?= formatInr($activeZReport['expected_cod_cash']) ?></strong>
           </div>
           <div class="d-flex justify-content-between py-1">
             <span>ACTUAL PHYSICAL COUNT:</span>
-            <strong><?= format_inr($activeZReport['actual_physical_cash']) ?></strong>
+            <strong><?= formatInr($activeZReport['actual_physical_cash']) ?></strong>
           </div>
 
           <div class="zreport-divider-double"></div>
@@ -1140,7 +850,7 @@ require_once __DIR__ . '/includes/header.php';
           ?>
           <div class="d-flex justify-content-between fw-bold fs-6">
             <span>CASH VARIANCE:</span>
-            <span><?= ($zVar >= 0 ? '+' : '') . format_inr($zVar) ?></span>
+            <span><?= ($zVar >= 0 ? '+' : '') . formatInr($zVar) ?></span>
           </div>
           <div class="d-flex justify-content-between small text-muted">
             <span>DRAWER STATUS:</span>

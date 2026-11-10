@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Offers, Discounts & Coupon Hub
  * Zippy - Online Food Ordering Platform
@@ -9,7 +10,7 @@ $activePage = 'offers';
 
 require_once __DIR__ . '/includes/header.php';
 
-$coupons = get_available_coupons();
+$coupons = getAvailableCoupons();
 ?>
 
 <main class="py-4">

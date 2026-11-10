@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dish Catalog & Live Stock Inventory Management (CRUD)
  * Zippy - Online Food Ordering Platform
@@ -11,8 +12,8 @@ $activePage = 'dishes';
 // Bootstrap core libraries before HTML output (prevents "headers already sent")
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle CSV Export
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
@@ -21,12 +22,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $output = fopen('php://output', 'w');
     fputcsv($output, ['Dish ID', 'Dish Name', 'Category', 'Kitchen Station', 'Diet Type', 'Healthy', 'Mood', 'Price (INR)', 'Stock Quantity', 'Prep Time (Mins)', 'Availability', 'Rating', 'Total Reviews', 'Created At']);
 
-    $exportDishes = db_fetch_all("
-        SELECT m.*, c.category_name 
-        FROM `menu_items` m
-        JOIN `categories` c ON m.category_id = c.category_id
-        ORDER BY m.category_id ASC, m.item_name ASC
-    ");
+    $exportDishes = CatalogService::getDishesForExport();
 
     foreach ($exportDishes as $d) {
         fputcsv($output, [
@@ -51,169 +47,32 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 }
 
 // Available Kitchen Stations
-$kitchenStations = [
-    'Main Kitchen',
-    'Tandoor & Grills',
-    'Curry & Biryani',
-    'Salad & Cold Bar',
-    'Fryer & Snacks',
-    'Beverage Bar',
-    'Dessert Bar'
-];
+$kitchenStations = CatalogService::KITCHEN_STATIONS;
 
 // Handle Add / Edit / Stock Update / Delete
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } elseif ($_POST['action'] === 'add_dish') {
-        $name = clean_input($_POST['item_name']);
-        $catId = (int)$_POST['category_id'];
-        $station = clean_input($_POST['kitchen_station'] ?? 'Main Kitchen');
-        $price = (float)$_POST['price'];
-        $stock = (int)$_POST['stock_quantity'];
-        $prep = (int)$_POST['prep_time_minutes'];
-        $isVeg = !empty($_POST['is_veg']) ? 1 : 0;
-        $isHealthy = !empty($_POST['is_healthy']) ? 1 : 0;
-        $mood = clean_input($_POST['mood'] ?? 'comfort');
-        $image = clean_input($_POST['image_url'] ?? '');
-        $desc = clean_input($_POST['description']);
-
-        if (empty($station)) {
-            $station = 'Main Kitchen';
-        }
-
-        // Check if a food photo was uploaded
-        $upload = handle_food_photo_upload('dish_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/dishes.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $image = $upload['url'];
-            }
-        }
-
-        if (empty($image)) {
-            $image = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
-        }
-
-        if (!empty($name) && $price > 0) {
-            db_query("
-                INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `image_url`) 
-                VALUES (:cid, :name, :desc, :price, :stock, 1, :veg, :healthy, :mood, :prep, :station, :img)
-            ", [
-                ':cid' => $catId,
-                ':name' => $name,
-                ':desc' => $desc,
-                ':price' => $price,
-                ':stock' => $stock,
-                ':veg' => $isVeg,
-                ':healthy' => $isHealthy,
-                ':mood' => $mood,
-                ':prep' => $prep,
-                ':station' => $station,
-                ':img' => $image
-            ]);
-            set_flash('success', "Food item '{$name}' added to catalog under {$station}.");
+        $res = CatalogService::createDish($_POST);
+        setFlash($res['type'], $res['message']);
+        if (!empty($res['should_redirect'])) {
             header("Location: " . ADMIN_URL . "/dishes.php");
             exit;
-        } else {
-            set_flash('danger', 'Dish name and a valid positive price are required.');
         }
     } elseif ($_POST['action'] === 'edit_dish') {
-        $itemId = (int)$_POST['item_id'];
-        $name = clean_input($_POST['item_name']);
-        $catId = (int)$_POST['category_id'];
-        $station = clean_input($_POST['kitchen_station'] ?? 'Main Kitchen');
-        $price = (float)$_POST['price'];
-        $stock = (int)$_POST['stock_quantity'];
-        $prep = (int)$_POST['prep_time_minutes'];
-        $isVeg = !empty($_POST['is_veg']) ? 1 : 0;
-        $isHealthy = !empty($_POST['is_healthy']) ? 1 : 0;
-        $mood = clean_input($_POST['mood'] ?? 'comfort');
-        $isAvailable = !empty($_POST['is_available']) ? 1 : 0;
-        $image = clean_input($_POST['image_url'] ?? '');
-        $desc = clean_input($_POST['description']);
-
-        if (empty($station)) {
-            $station = 'Main Kitchen';
-        }
-
-        // Check if a new food photo was uploaded
-        $upload = handle_food_photo_upload('dish_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/dishes.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $image = $upload['url'];
-            }
-        }
-
-        // If no new photo was uploaded and image_url is empty, retain current existing image from DB
-        if (empty($image)) {
-            $existing = db_fetch_val("SELECT `image_url` FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-            if ($existing) {
-                $image = $existing;
-            }
-        }
-
-        db_query("
-            UPDATE `menu_items` 
-            SET `category_id` = :cid, `item_name` = :name, `description` = :desc, 
-                `price` = :price, `stock_quantity` = :stock, `is_available` = :avail, 
-                `is_veg` = :veg, `is_healthy` = :healthy, `mood` = :mood, `prep_time_minutes` = :prep, 
-                `kitchen_station` = :station, `image_url` = :img 
-            WHERE `item_id` = :id
-        ", [
-            ':cid' => $catId,
-            ':name' => $name,
-            ':desc' => $desc,
-            ':price' => $price,
-            ':stock' => $stock,
-            ':avail' => $isAvailable,
-            ':veg' => $isVeg,
-            ':healthy' => $isHealthy,
-            ':mood' => $mood,
-            ':prep' => $prep,
-            ':station' => $station,
-            ':img' => $image,
-            ':id' => $itemId
-        ]);
-        set_flash('success', "Food item '{$name}' updated successfully.");
+        $res = CatalogService::updateDish($_POST);
+        setFlash($res['type'], $res['message']);
         header("Location: " . ADMIN_URL . "/dishes.php");
         exit;
     } elseif ($_POST['action'] === 'quick_stock') {
-        // Fallback synchronous POST handler (if JS is disabled)
-        $itemId = (int)$_POST['item_id'];
-        $delta = (int)$_POST['delta'];
-        db_query("UPDATE `menu_items` SET `stock_quantity` = GREATEST(0, `stock_quantity` + :d), `is_available` = IF(`stock_quantity` + :d > 0, 1, 0) WHERE `item_id` = :id", [
-            ':d' => $delta,
-            ':id' => $itemId
-        ]);
-        set_flash('success', "Stock quantity adjusted.");
+        $res = CatalogService::adjustDishStock((int)($_POST['item_id'] ?? 0), (int)($_POST['delta'] ?? 0));
+        setFlash($res['type'], $res['message']);
         header("Location: " . ADMIN_URL . "/dishes.php");
         exit;
     } elseif ($_POST['action'] === 'delete_dish') {
-        $itemId = (int)$_POST['item_id'];
-        $dish = db_fetch_one("SELECT item_name FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-        $dishName = $dish ? $dish['item_name'] : 'Dish';
-
-        // Check if dish has past order history in order_items
-        $orderCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_items` WHERE `item_id` = :id", [':id' => $itemId]);
-
-        if ($orderCount > 0) {
-            // Prevent breaking foreign key constraints on past order receipts
-            // Soft-archive by setting availability to 0 and stock to 0
-            db_query("UPDATE `menu_items` SET `is_available` = 0, `stock_quantity` = 0 WHERE `item_id` = :id", [':id' => $itemId]);
-            set_flash('warning', "Dish '{$dishName}' cannot be permanently deleted because it exists in {$orderCount} past customer order(s). It has been safely archived and 86-ed / hidden from customer menus instead.");
-        } else {
-            // Safe to permanently delete
-            db_query("DELETE FROM `menu_items` WHERE `item_id` = :id", [':id' => $itemId]);
-            set_flash('success', "Dish '{$dishName}' permanently removed from catalog.");
-        }
+        $res = CatalogService::softDeleteDish((int)($_POST['item_id'] ?? 0));
+        setFlash($res['type'], $res['message']);
         header("Location: " . ADMIN_URL . "/dishes.php");
         exit;
     }
@@ -221,120 +80,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
 
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch categories for filter and dropdowns
-$categories = db_fetch_all("SELECT * FROM `categories` ORDER BY `display_order` ASC");
-
-// Compute initial version fingerprints for live change detection & notifications
-$catFingerprintData = array_map(function($c) {
-    return [(int)$c['category_id'], $c['category_name'], (int)$c['display_order'], (int)$c['is_active']];
-}, $categories);
-$dishFingerprintData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id ASC");
-$initialCatVer = md5(json_encode($catFingerprintData));
-$initialDishVer = md5(json_encode($dishFingerprintData));
-$initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
-
-// Calculate KPI Summary Metrics
-$kpiTotalDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items`");
-$kpiAvailableDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 1 AND `stock_quantity` > 0");
-$kpiLowStockDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 1 AND `stock_quantity` > 0 AND `stock_quantity` <= 15");
-$kpiSoldOutDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_available` = 0 OR `stock_quantity` <= 0");
-$kpiVegDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_veg` = 1");
-$kpiNonVegDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `is_veg` = 0");
-$kpiAvgPrice = (float)db_fetch_val("SELECT AVG(`price`) FROM `menu_items`");
-
-// Filter, Search, and Sort Parameters
-$searchQuery = clean_input($_GET['search'] ?? '');
-$filterCat = clean_input($_GET['category'] ?? '');
-$filterStation = clean_input($_GET['station'] ?? '');
-$filterDiet = clean_input($_GET['diet'] ?? '');
-$filterMood = clean_input($_GET['mood'] ?? '');
-$filterStock = clean_input($_GET['stock_status'] ?? '');
-$sortBy = clean_input($_GET['sort'] ?? 'category');
-$foodMoods = get_food_moods();
-
-$where = "1=1";
-$params = [];
-
-if (!empty($searchQuery)) {
-    $where .= " AND (m.item_name LIKE :search OR m.description LIKE :search)";
-    $params[':search'] = '%' . $searchQuery . '%';
-}
-
-if (!empty($filterCat)) {
-    $where .= " AND m.category_id = :cid";
-    $params[':cid'] = (int)$filterCat;
-}
-
-if (!empty($filterStation)) {
-    $where .= " AND m.kitchen_station = :station";
-    $params[':station'] = $filterStation;
-}
-
-if ($filterDiet === 'veg') {
-    $where .= " AND m.is_veg = 1";
-} elseif ($filterDiet === 'non_veg') {
-    $where .= " AND m.is_veg = 0";
-} elseif ($filterDiet === 'healthy') {
-    $where .= " AND m.is_healthy = 1";
-}
-
-if (!empty($filterMood) && $filterMood !== 'all') {
-    $where .= " AND (FIND_IN_SET(:mood, m.mood) > 0 OR m.mood LIKE :mood_like)";
-    $params[':mood'] = $filterMood;
-    $params[':mood_like'] = '%' . $filterMood . '%';
-}
-
-if ($filterStock === 'in_stock') {
-    $where .= " AND m.is_available = 1 AND m.stock_quantity > 0";
-} elseif ($filterStock === 'low_stock') {
-    $where .= " AND m.stock_quantity > 0 AND m.stock_quantity <= 15";
-} elseif ($filterStock === 'out_of_stock') {
-    $where .= " AND (m.is_available = 0 OR m.stock_quantity <= 0)";
-}
-
-$orderBy = "m.category_id ASC, m.item_name ASC";
-switch ($sortBy) {
-    case 'name_asc':
-        $orderBy = "m.item_name ASC";
-        break;
-    case 'price_low':
-        $orderBy = "m.price ASC";
-        break;
-    case 'price_high':
-        $orderBy = "m.price DESC";
-        break;
-    case 'stock_low':
-        $orderBy = "m.stock_quantity ASC";
-        break;
-    case 'stock_high':
-        $orderBy = "m.stock_quantity DESC";
-        break;
-    case 'prep_time':
-        $orderBy = "m.prep_time_minutes ASC";
-        break;
-    case 'rating':
-        $orderBy = "m.rating DESC, m.total_reviews DESC";
-        break;
-    default:
-        $orderBy = "m.category_id ASC, m.item_name ASC";
-        break;
-}
-
-$dishes = db_fetch_all("
-    SELECT m.*, c.category_name,
-           (SELECT ROUND(AVG(dr.appearance_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_appearance,
-           (SELECT ROUND(AVG(dr.taste_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_taste,
-           (SELECT ROUND(AVG(dr.portion_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_portion,
-           (SELECT ROUND(AVG(dr.value_rating), 1) FROM `dish_reviews` dr WHERE dr.item_id = m.item_id) AS avg_value
-    FROM `menu_items` m
-    JOIN `categories` c ON m.category_id = c.category_id
-    WHERE $where
-    ORDER BY $orderBy
-", $params);
-
-$customSummaryMap = get_all_dishes_customization_counts();
-
-$hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filterStation) || !empty($filterDiet) || !empty($filterMood) || !empty($filterStock) || ($sortBy !== 'category');
+$dishesData = CatalogService::getAdminDishesData($_GET);
+$categories = $dishesData['categories'];
+$initialCatVer = $dishesData['initialCatVer'];
+$initialDishVer = $dishesData['initialDishVer'];
+$initialCombinedVer = $dishesData['initialCombinedVer'];
+$kpiTotalDishes = $dishesData['kpiTotalDishes'];
+$kpiAvailableDishes = $dishesData['kpiAvailableDishes'];
+$kpiLowStockDishes = $dishesData['kpiLowStockDishes'];
+$kpiSoldOutDishes = $dishesData['kpiSoldOutDishes'];
+$kpiVegDishes = $dishesData['kpiVegDishes'];
+$kpiNonVegDishes = $dishesData['kpiNonVegDishes'];
+$kpiAvgPrice = $dishesData['kpiAvgPrice'];
+$searchQuery = $dishesData['searchQuery'];
+$filterCat = $dishesData['filterCat'];
+$filterStation = $dishesData['filterStation'];
+$filterDiet = $dishesData['filterDiet'];
+$filterMood = $dishesData['filterMood'];
+$filterStock = $dishesData['filterStock'];
+$sortBy = $dishesData['sortBy'];
+$foodMoods = $dishesData['foodMoods'];
+$dishes = $dishesData['dishes'];
+$customSummaryMap = $dishesData['customSummaryMap'];
+$hasActiveFilters = $dishesData['hasActiveFilters'];
 ?>
 
 <style>
@@ -564,7 +332,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
         <option value="">Mood: All</option>
         <?php foreach ($foodMoods as $mKey => $mInfo): ?>
           <option value="<?= e($mKey) ?>" <?= ($filterMood === $mKey) ? 'selected' : '' ?>>
-            <?= $mInfo['emoji'] ?> <?= e($mInfo['short_name']) ?>
+            <?= e($mInfo['emoji']) ?> <?= e($mInfo['short_name']) ?>
           </option>
         <?php endforeach; ?>
       </select>
@@ -678,7 +446,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
               <td>
                 <div class="d-flex align-items-center gap-3">
                   <div class="position-relative flex-shrink-0">
-                    <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" 
+                    <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" 
                          alt="<?= e($dish['item_name']) ?>" 
                          class="rounded-3 object-fit-cover shadow-sm dish-table-thumb" 
                          onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
@@ -690,16 +458,16 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                          class="text-decoration-none text-warning d-inline-flex align-items-center gap-1"
                          title="View customer feedback on this dish in Reviews console">
                         <i class="bi bi-star-fill"></i>
-                        <span class="fw-bold text-dark"><?= number_format($dish['rating'] ?? 4.5, 1) ?></span>
+                        <span class="fw-bold text-dark"><?= number_format((float)($dish['rating'] ?? 4.5), 1) ?></span>
                         <span class="text-muted" style="font-size:0.75rem;">(<?= (int)($dish['total_reviews'] ?? 0) ?>)</span>
                       </a>
                     </div>
                     <?php if (!empty($dish['avg_taste'])): ?>
                       <div class="d-flex align-items-center gap-1 mb-1 flex-wrap" style="font-size:0.65rem;">
-                        <span class="badge bg-light text-primary border py-0 px-1" title="Appearance Score">🎨 <?= $dish['avg_appearance'] ?>★</span>
-                        <span class="badge bg-light text-danger border py-0 px-1" title="Taste Score">🍲 <?= $dish['avg_taste'] ?>★</span>
-                        <span class="badge bg-light text-warning text-dark border py-0 px-1" title="Portion Size Score">🥣 <?= $dish['avg_portion'] ?>★</span>
-                        <span class="badge bg-light text-success border py-0 px-1" title="Value Score">🏷️ <?= $dish['avg_value'] ?>★</span>
+                        <span class="badge bg-light text-primary border py-0 px-1" title="Appearance Score">🎨 <?= e((string)$dish['avg_appearance']) ?>★</span>
+                        <span class="badge bg-light text-danger border py-0 px-1" title="Taste Score">🍲 <?= e((string)$dish['avg_taste']) ?>★</span>
+                        <span class="badge bg-light text-warning text-dark border py-0 px-1" title="Portion Size Score">🥣 <?= e((string)$dish['avg_portion']) ?>★</span>
+                        <span class="badge bg-light text-success border py-0 px-1" title="Value Score">🏷️ <?= e((string)$dish['avg_value']) ?>★</span>
                       </div>
                     <?php endif; ?>
                     <div class="small text-muted text-truncate" style="max-width: 250px;" title="<?= e($dish['description']) ?>">
@@ -740,19 +508,19 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                   <?php endif; ?>
 
                   <?php 
-                    $dishMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
+                    $dishMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
                     if ($dishMood):
                   ?>
-                    <span class="badge rounded-pill border px-2 py-1 d-inline-flex align-items-center gap-1" style="background:<?= $dishMood['badge_bg'] ?>; color:<?= $dishMood['badge_color'] ?>; font-size:0.65rem; border-color:<?= $dishMood['border_color'] ?> !important;" title="Mood: <?= e($dish['mood'] ?? '') ?>">
-                      <img src="<?= e(get_mood_image_url($dishMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
-                      <?= $dishMood['emoji'] ?> <?= e($dishMood['short_name']) ?>
+                    <span class="badge rounded-pill border px-2 py-1 d-inline-flex align-items-center gap-1" style="background:<?= e($dishMood['badge_bg']) ?>; color:<?= e($dishMood['badge_color']) ?>; font-size:0.65rem; border-color:<?= e($dishMood['border_color']) ?> !important;" title="Mood: <?= e($dish['mood'] ?? '') ?>">
+                      <img src="<?= e(getMoodImageUrl($dishMood['id'])) ?>" alt="" style="width: 12px; height: 12px; border-radius: 50%; object-fit: cover;">
+                      <?= e($dishMood['emoji']) ?> <?= e($dishMood['short_name']) ?>
                     </span>
                   <?php endif; ?>
                 </div>
               </td>
 
               <!-- Price -->
-              <td class="fw-bold text-forest fs-6"><?= format_inr($dish['price']) ?></td>
+              <td class="fw-bold text-forest fs-6"><?= formatInr($dish['price']) ?></td>
 
               <!-- Live Stock (Tri-State Badge + AJAX Stepper) -->
               <td>
@@ -807,7 +575,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                            role="switch" 
                            id="dishSwitch<?= (int)$dish['item_id'] ?>"
                            data-item-id="<?= (int)$dish['item_id'] ?>"
-                           data-item-name="<?= e(addslashes($dish['item_name'])) ?>"
+                           data-item-name="<?= e($dish['item_name']) ?>"
                            <?= ($isAvail && $stock > 0) ? 'checked' : '' ?>
                            style="cursor: pointer; width: 2.2em; height: 1.2em;">
                   </div>
@@ -847,7 +615,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
                           data-mood="<?= e($dish['mood'] ?? 'comfort') ?>"
                           data-available="<?= (int)$dish['is_available'] ?>"
                           data-image="<?= e($dish['image_url'] ?? '') ?>"
-                          data-display-image="<?= e(get_dish_image_url($dish['image_url'])) ?>"
+                          data-display-image="<?= e(getDishImageUrl($dish['image_url'])) ?>"
                           data-description="<?= e($dish['description'] ?? '') ?>">
                     <i class="bi bi-pencil me-1"></i> Edit
                   </button>
@@ -904,7 +672,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/dishes.php" enctype="multipart/form-data">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_dish">
         <input type="hidden" name="item_id" id="editDishId" value="">
 
@@ -1035,7 +803,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
               <label class="form-label small fw-bold">🎭 Curated Food Mood</label>
               <select name="mood" id="editDishMood" class="form-select form-select-sm rounded-3">
                 <?php foreach ($foodMoods as $mKey => $mInfo): ?>
-                  <option value="<?= e($mKey) ?>"><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></option>
+                  <option value="<?= e($mKey) ?>"><?= e($mInfo['emoji']) ?> <?= e($mInfo['name']) ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -1089,7 +857,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/dishes.php" enctype="multipart/form-data">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_dish">
 
         <div class="modal-body p-4">
@@ -1217,7 +985,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
               <label class="form-label small fw-bold">🎭 Curated Food Mood</label>
               <select name="mood" class="form-select form-select-sm rounded-3">
                 <?php foreach ($foodMoods as $mKey => $mInfo): ?>
-                  <option value="<?= e($mKey) ?>"><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></option>
+                  <option value="<?= e($mKey) ?>"><?= e($mInfo['emoji']) ?> <?= e($mInfo['name']) ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -1257,7 +1025,7 @@ $hasActiveFilters = !empty($searchQuery) || !empty($filterCat) || !empty($filter
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/dishes.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="delete_dish">
         <input type="hidden" name="item_id" id="deleteDishId" value="">
 
@@ -1364,6 +1132,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  const adminCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
   // Instant 86-List AJAX Toggle Switch
   document.querySelectorAll('.dish-stock-toggle').forEach(function(toggle) {
     toggle.addEventListener('change', function() {
@@ -1376,8 +1146,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
       fetch('<?= ADMIN_URL ?>/ajax/toggle-stock.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: itemId, is_available: isAvailable })
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': adminCsrfToken
+        },
+        body: JSON.stringify({ item_id: itemId, is_available: isAvailable, csrf_token: adminCsrfToken })
       })
       .then(response => response.json())
       .then(data => {
@@ -1428,8 +1201,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
       fetch('<?= ADMIN_URL ?>/ajax/adjust-stock.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: itemId, delta: delta })
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': adminCsrfToken
+        },
+        body: JSON.stringify({ item_id: itemId, delta: delta, csrf_token: adminCsrfToken })
       })
       .then(response => response.json())
       .then(data => {
@@ -1510,8 +1286,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     fetch('<?= ADMIN_URL ?>/ajax/bulk-dishes.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: action, item_ids: checked })
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': adminCsrfToken
+      },
+      body: JSON.stringify({ action: action, item_ids: checked, csrf_token: adminCsrfToken })
     })
     .then(res => res.json())
     .then(data => {
@@ -1535,9 +1314,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Real-Time Catalog Synchronization & Live Change Detection
   let dishesSyncCountdown = 5;
-  let currentCatVer = <?= json_encode($initialCatVer ?? '') ?>;
-  let currentDishVer = <?= json_encode($initialDishVer ?? '') ?>;
-  let currentCombinedVer = <?= json_encode($initialCombinedVer ?? '') ?>;
+  let currentCatVer = <?= jsJson($initialCatVer ?? '') ?>;
+  let currentDishVer = <?= jsJson($initialDishVer ?? '') ?>;
+  let currentCombinedVer = <?= jsJson($initialCombinedVer ?? '') ?>;
 
   setInterval(async () => {
     dishesSyncCountdown--;

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * End-to-End Test Suite for Advance Scheduled Meal Orders
  * Validates DB Schema, Order Placement, Queue Processing, Admin Ledger, and KDS Poller logic.
@@ -13,11 +14,12 @@ echo "======================================================\n";
 echo " ADVANCE SCHEDULED MEAL ORDERS - E2E TEST SUITE \n";
 echo "======================================================\n\n";
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 $passed = 0;
 $failed = 0;
 
-function assert_test($description, $condition) {
+function assertTest(string $description, bool $condition): void
+{
     global $passed, $failed;
     if ($condition) {
         echo " [PASS] $description\n";
@@ -35,17 +37,17 @@ $pdo->query("DELETE FROM orders WHERE order_number LIKE 'TEST-SCHED-%'");
 // 1. Verify Database Schema
 echo "--- 1. Database Schema Verification ---\n";
 $stmt = $pdo->query("SHOW COLUMNS FROM orders LIKE 'is_scheduled'");
-assert_test("Column 'is_scheduled' exists in 'orders'", $stmt->rowCount() > 0);
+assertTest("Column 'is_scheduled' exists in 'orders'", $stmt->rowCount() > 0);
 
 $stmt = $pdo->query("SHOW COLUMNS FROM orders LIKE 'scheduled_for'");
-assert_test("Column 'scheduled_for' exists in 'orders'", $stmt->rowCount() > 0);
+assertTest("Column 'scheduled_for' exists in 'orders'", $stmt->rowCount() > 0);
 
 $stmt = $pdo->query("SHOW COLUMNS FROM orders LIKE 'scheduled_slot'");
-assert_test("Column 'scheduled_slot' exists in 'orders'", $stmt->rowCount() > 0);
+assertTest("Column 'scheduled_slot' exists in 'orders'", $stmt->rowCount() > 0);
 
 // Check index
 $stmt = $pdo->query("SHOW INDEX FROM orders WHERE Key_name = 'idx_orders_scheduled'");
-assert_test("Index 'idx_orders_scheduled' exists", $stmt->rowCount() > 0);
+assertTest("Index 'idx_orders_scheduled' exists", $stmt->rowCount() > 0);
 
 // 2. Insert a Test Scheduled Order
 echo "\n--- 2. Placing a Scheduled Order Simulation ---\n";
@@ -79,7 +81,7 @@ $stmt = $pdo->prepare($sql);
 $res = $stmt->execute([$testOrderNum, $userId, $subtotal, $total, $scheduledFor, $scheduledSlot, $scheduledFor]);
 $testOrderId = $pdo->lastInsertId();
 
-assert_test("Scheduled order created with ID $testOrderId and number $testOrderNum", $res && $testOrderId > 0);
+assertTest("Scheduled order created with ID $testOrderId and number $testOrderNum", $res && $testOrderId > 0);
 
 // Insert sample order item
 $oiStmt = $pdo->prepare("INSERT INTO order_items (order_id, item_id, quantity, unit_price, line_total) VALUES (?, ?, 2, ?, ?)");
@@ -90,15 +92,15 @@ $checkStmt = $pdo->prepare("SELECT is_scheduled, scheduled_for, scheduled_slot, 
 $checkStmt->execute([$testOrderId]);
 $fetchedOrder = $checkStmt->fetch();
 
-assert_test("Order has is_scheduled = 1", (int)$fetchedOrder['is_scheduled'] === 1);
-assert_test("Order has scheduled_slot matching input", $fetchedOrder['scheduled_slot'] === $scheduledSlot);
-assert_test("Order has scheduled_for properly populated", !empty($fetchedOrder['scheduled_for']));
+assertTest("Order has is_scheduled = 1", (int)$fetchedOrder['is_scheduled'] === 1);
+assertTest("Order has scheduled_slot matching input", $fetchedOrder['scheduled_slot'] === $scheduledSlot);
+assertTest("Order has scheduled_for properly populated", !empty($fetchedOrder['scheduled_for']));
 
-// 3. Test get_order_kpis()
+// 3. Test getOrderKpis()
 echo "\n--- 3. KPI & Analytics Calculation ---\n";
-$kpis = get_order_kpis();
-assert_test("get_order_kpis() contains 'scheduled' key", isset($kpis['scheduled']));
-assert_test("get_order_kpis() scheduled count >= 1 (value: " . ($kpis['scheduled'] ?? 0) . ")", ($kpis['scheduled'] ?? 0) >= 1);
+$kpis = getOrderKpis();
+assertTest("getOrderKpis() contains 'scheduled' key", isset($kpis['scheduled']));
+assertTest("getOrderKpis() scheduled count >= 1 (value: " . ($kpis['scheduled'] ?? 0) . ")", ($kpis['scheduled'] ?? 0) >= 1);
 
 // 4. Test WSJF Queue Prioritization
 echo "\n--- 4. WSJF Queue Processing ---\n";
@@ -114,10 +116,10 @@ foreach ($prioritizedOrders as $o) {
         break;
     }
 }
-assert_test("Advance scheduled order appears in WSJF prioritized queue", $foundInQueue);
+assertTest("Advance scheduled order appears in WSJF prioritized queue", $foundInQueue);
 if ($foundInQueue) {
-    assert_test("Order maintains is_scheduled flag in queue", (int)$foundOrderData['is_scheduled'] === 1);
-    assert_test("Order has scheduled_slot in queue record", !empty($foundOrderData['scheduled_slot']));
+    assertTest("Order maintains is_scheduled flag in queue", (int)$foundOrderData['is_scheduled'] === 1);
+    assertTest("Order has scheduled_slot in queue record", !empty($foundOrderData['scheduled_slot']));
     $urgencyLabel = is_array($foundOrderData['urgency_badge']) ? ($foundOrderData['urgency_badge']['label'] ?? 'OK') : $foundOrderData['urgency_badge'];
     echo "    -> WSJF Score: " . $foundOrderData['wsjf_score'] . ", Urgency: " . $urgencyLabel . "\n";
 }
@@ -139,8 +141,8 @@ foreach ($exceptions as $exc) {
         }
     }
 }
-assert_test("Advance scheduled order (due tomorrow) is NOT falsely flagged in overdue cooking triage", !$flaggedAsOverdue);
-assert_test("Advance scheduled order (due tomorrow) is NOT falsely flagged in awaiting kitchen triage", !$flaggedAsStalled);
+assertTest("Advance scheduled order (due tomorrow) is NOT falsely flagged in overdue cooking triage", !$flaggedAsOverdue);
+assertTest("Advance scheduled order (due tomorrow) is NOT falsely flagged in awaiting kitchen triage", !$flaggedAsStalled);
 
 // 6. Test Admin Ledger Query
 echo "\n--- 6. Admin Ledger 'status=SCHEDULED' Filter ---\n";
@@ -156,7 +158,7 @@ foreach ($adminScheduledOrders as $ao) {
         break;
     }
 }
-assert_test("Admin query for scheduled orders successfully retrieves test order", $foundInAdmin);
+assertTest("Admin query for scheduled orders successfully retrieves test order", $foundInAdmin);
 
 // 7. Test KDS Advance Scheduled Queue
 echo "\n--- 7. KDS Advance Scheduled Orders Query ---\n";
@@ -173,13 +175,13 @@ foreach ($kdsOrders as $ko) {
         break;
     }
 }
-assert_test("KDS scheduled query retrieves the advance order for display in Advance Scheduled tab", $foundInKds);
+assertTest("KDS scheduled query retrieves the advance order for display in Advance Scheduled tab", $foundInKds);
 
 // 8. Clean up test order
 echo "\n--- 8. Cleanup ---\n";
 $pdo->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$testOrderId]);
 $pdo->prepare("DELETE FROM orders WHERE order_id = ?")->execute([$testOrderId]);
-assert_test("Cleaned up simulated test order $testOrderId", true);
+assertTest("Cleaned up simulated test order $testOrderId", true);
 
 echo "\n======================================================\n";
 echo " RESULTS: Passed: $passed, Failed: $failed\n";

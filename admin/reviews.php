@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Food Reviews & Star Ratings Console
  * Zippy - Online Food Ordering Platform
@@ -10,7 +11,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Enforce strict Role-Based Access Control before any processing or file export
-require_admin();
+requireAdmin();
 
 $pageTitle = 'Customer Food Reviews & Star Ratings';
 $activePage = 'reviews';
@@ -19,7 +20,7 @@ $activePage = 'reviews';
 // CSV EXPORT HANDLER (Executed before HTML headers are sent)
 // =============================================================================
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    $exportTab = clean_input($_GET['tab'] ?? 'orders');
+    $exportTab = cleanInput($_GET['tab'] ?? 'orders');
     header('Content-Type: text/csv; charset=utf-8');
 
     if ($exportTab === 'dishes') {
@@ -44,16 +45,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
             'Review Date'
         ]);
 
-        $dishReviewsExport = db_fetch_all("
-            SELECT dr.*, m.item_name, m.price, m.is_veg, c.category_name,
-                   COALESCE(u.full_name, 'Guest Customer') AS customer_name,
-                   COALESCE(u.email, 'N/A') AS customer_email
-            FROM `dish_reviews` dr
-            JOIN `menu_items` m ON dr.item_id = m.item_id
-            LEFT JOIN `categories` c ON m.category_id = c.category_id
-            LEFT JOIN `users` u ON dr.user_id = u.user_id
-            ORDER BY dr.created_at DESC
-        ");
+        $dishReviewsExport = AdminService::getDishReviewsForExport();
 
         foreach ($dishReviewsExport as $dr) {
             fputcsv($output, [
@@ -82,24 +74,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
         $output = fopen('php://output', 'w');
         fputcsv($output, ['Review ID', 'Order ID', 'Customer Name', 'Customer Email', 'Order Total (INR)', 'Food Rating', 'Rider Rating', 'Delivery Partner', 'Rider Tip (INR)', 'Ordered Items', 'Customer Feedback', 'Review Date']);
 
-        $orderReviewsExport = db_fetch_all("
-            SELECT r.*,
-                   COALESCE(u.full_name, 'Guest Customer') AS customer_name,
-                   COALESCE(u.email, 'N/A') AS customer_email,
-                   o.total_amount,
-                   COALESCE(d.delivery_partner_name, 'Unassigned Rider') AS delivery_partner_name,
-                   (
-                       SELECT GROUP_CONCAT(CONCAT(oi.quantity, 'x ', mi.item_name) SEPARATOR ', ')
-                       FROM `order_items` oi
-                       JOIN `menu_items` mi ON oi.item_id = mi.item_id
-                       WHERE oi.order_id = r.order_id
-                   ) AS items_summary
-            FROM `order_reviews` r
-            LEFT JOIN `users` u ON r.user_id = u.user_id
-            LEFT JOIN `orders` o ON r.order_id = o.order_id
-            LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-            ORDER BY r.created_at DESC
-        ");
+        $orderReviewsExport = AdminService::getOrderReviewsForExport();
 
         foreach ($orderReviewsExport as $or) {
             fputcsv($output, [
@@ -126,147 +101,35 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 require_once __DIR__ . '/includes/header.php';
 
 // Request Parameters
-$viewTab = clean_input($_GET['tab'] ?? 'orders');
-if (!in_array($viewTab, ['orders', 'dishes'])) {
+$viewTab = cleanInput($_GET['tab'] ?? 'orders');
+if (!in_array($viewTab, ['orders', 'dishes'], true)) {
     $viewTab = 'orders';
 }
 $starFilter = isset($_GET['star']) ? (int)$_GET['star'] : 0;
-$sentimentFilter = clean_input($_GET['sentiment'] ?? 'all');
-$searchQuery = clean_input($_GET['search'] ?? '');
+$sentimentFilter = cleanInput($_GET['sentiment'] ?? 'all');
+$searchQuery = cleanInput($_GET['search'] ?? '');
 
-// =============================================================================
-// KEY PERFORMANCE INDICATORS & STATISTICAL METRICS
-// =============================================================================
-$totalOrderReviews = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews`") ?: 0;
-$avgFoodRating = $totalOrderReviews > 0 ? (float)db_fetch_val("SELECT AVG(food_rating) FROM `order_reviews`") : 0.0;
-$avgRiderRating = $totalOrderReviews > 0 ? (float)db_fetch_val("SELECT AVG(rider_rating) FROM `order_reviews`") : 0.0;
-$fiveStarFoodCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews` WHERE `food_rating` = 5") ?: 0;
-$criticalReviewsCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews` WHERE `food_rating` <= 2 OR `rider_rating` <= 2") ?: 0;
-$totalTips = (float)db_fetch_val("SELECT COALESCE(SUM(rider_tip), 0.00) FROM `order_reviews`") ?: 0.00;
-
-// Dish Level Metrics & Dimension Feedback (Appearance, Taste, Portion Size, Value)
-$totalDishReviews = (int)db_fetch_val("SELECT COUNT(*) FROM `dish_reviews`") ?: 0;
-$avgDishRating = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(rating) FROM `dish_reviews`") : 0.0;
-$criticalDishReviewsCount = (int)db_fetch_val("SELECT COUNT(*) FROM `dish_reviews` WHERE `rating` <= 2") ?: 0;
-$avgAppearance = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(appearance_rating) FROM `dish_reviews`") : 0.0;
-$avgTaste = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(taste_rating) FROM `dish_reviews`") : 0.0;
-$avgPortion = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(portion_rating) FROM `dish_reviews`") : 0.0;
-$avgValue = $totalDishReviews > 0 ? (float)db_fetch_val("SELECT AVG(value_rating) FROM `dish_reviews`") : 0.0;
-
-// Star Distributions for Histogram
-$orderStarDist = [];
-for ($s = 5; $s >= 1; $s--) {
-    $orderStarDist[$s] = (int)db_fetch_val("SELECT COUNT(*) FROM `order_reviews` WHERE `food_rating` = :s", [':s' => $s]) ?: 0;
-}
-
-$dishStarDist = [];
-for ($s = 5; $s >= 1; $s--) {
-    $dishStarDist[$s] = (int)db_fetch_val("SELECT COUNT(*) FROM `dish_reviews` WHERE `rating` = :s", [':s' => $s]) ?: 0;
-}
-
-// Active dataset distribution based on view tab
-$activeDist = ($viewTab === 'dishes') ? $dishStarDist : $orderStarDist;
-$activeTotal = ($viewTab === 'dishes') ? $totalDishReviews : $totalOrderReviews;
-
-// =============================================================================
-// FETCH FILTERED ORDER REVIEWS
-// =============================================================================
-$orderReviewSql = "
-    SELECT r.*,
-           COALESCE(u.full_name, 'Guest Customer') AS customer_name,
-           COALESCE(u.email, 'N/A') AS customer_email,
-           COALESCE(u.phone_number, '') AS customer_phone,
-           o.total_amount, o.order_status, o.placed_at,
-           COALESCE(d.delivery_partner_name, 'Unassigned Rider') AS delivery_partner_name,
-           d.delivery_partner_phone,
-           (
-               SELECT GROUP_CONCAT(CONCAT(oi.quantity, 'x ', mi.item_name) SEPARATOR ', ')
-               FROM `order_items` oi
-               JOIN `menu_items` mi ON oi.item_id = mi.item_id
-               WHERE oi.order_id = r.order_id
-           ) AS items_summary
-    FROM `order_reviews` r
-    LEFT JOIN `users` u ON r.user_id = u.user_id
-    LEFT JOIN `orders` o ON r.order_id = o.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE 1=1
-";
-$orderParams = [];
-
-if ($starFilter >= 1 && $starFilter <= 5) {
-    $orderReviewSql .= " AND r.food_rating = :sf";
-    $orderParams[':sf'] = $starFilter;
-}
-
-if ($sentimentFilter === 'critical') {
-    $orderReviewSql .= " AND (r.food_rating <= 2 OR r.rider_rating <= 2)";
-} elseif ($sentimentFilter === 'positive') {
-    $orderReviewSql .= " AND r.food_rating >= 4";
-} elseif ($sentimentFilter === 'with_comments') {
-    $orderReviewSql .= " AND r.comments IS NOT NULL AND TRIM(r.comments) != ''";
-}
-
-if (!empty($searchQuery)) {
-    $orderReviewSql .= " AND (
-        u.full_name LIKE :sq
-        OR u.email LIKE :sq
-        OR r.comments LIKE :sq
-        OR d.delivery_partner_name LIKE :sq
-        OR CAST(r.order_id AS CHAR) LIKE :sq
-    )";
-    $orderParams[':sq'] = "%{$searchQuery}%";
-}
-
-$orderReviewSql .= " ORDER BY r.created_at DESC";
-$orderReviewsList = db_fetch_all($orderReviewSql, $orderParams);
-
-// =============================================================================
-// FETCH FILTERED DISH REVIEWS
-// =============================================================================
-$dishReviewSql = "
-    SELECT dr.*,
-           m.item_name, m.image_url, m.price, m.is_veg,
-           c.category_name,
-           COALESCE(u.full_name, 'Guest Customer') AS customer_name,
-           COALESCE(u.email, 'N/A') AS customer_email,
-           COALESCE(u.phone_number, '') AS customer_phone
-    FROM `dish_reviews` dr
-    JOIN `menu_items` m ON dr.item_id = m.item_id
-    LEFT JOIN `categories` c ON m.category_id = c.category_id
-    LEFT JOIN `users` u ON dr.user_id = u.user_id
-    WHERE 1=1
-";
-$dishParams = [];
-
-if ($starFilter >= 1 && $starFilter <= 5) {
-    $dishReviewSql .= " AND dr.rating = :sf";
-    $dishParams[':sf'] = $starFilter;
-}
-
-if ($sentimentFilter === 'critical') {
-    $dishReviewSql .= " AND dr.rating <= 2";
-} elseif ($sentimentFilter === 'positive') {
-    $dishReviewSql .= " AND dr.rating >= 4";
-} elseif ($sentimentFilter === 'with_comments') {
-    $dishReviewSql .= " AND dr.review_text IS NOT NULL AND TRIM(dr.review_text) != ''";
-}
-
-if (!empty($searchQuery)) {
-    $dishReviewSql .= " AND (
-        m.item_name LIKE :sq
-        OR u.full_name LIKE :sq
-        OR u.email LIKE :sq
-        OR dr.review_text LIKE :sq
-        OR dr.tags LIKE :sq
-        OR CAST(dr.order_id AS CHAR) LIKE :sq
-    )";
-    $dishParams[':sq'] = "%{$searchQuery}%";
-}
-
-$dishReviewSql .= " ORDER BY dr.created_at DESC";
-$dishReviewsList = db_fetch_all($dishReviewSql, $dishParams);
-
-$hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($searchQuery));
+$revData = AdminService::getAdminReviewsData($viewTab, $starFilter, $sentimentFilter, $searchQuery);
+$totalOrderReviews = $revData['totalOrderReviews'];
+$avgFoodRating = $revData['avgFoodRating'];
+$avgRiderRating = $revData['avgRiderRating'];
+$fiveStarFoodCount = $revData['fiveStarFoodCount'];
+$criticalReviewsCount = $revData['criticalReviewsCount'];
+$totalTips = $revData['totalTips'];
+$totalDishReviews = $revData['totalDishReviews'];
+$avgDishRating = $revData['avgDishRating'];
+$criticalDishReviewsCount = $revData['criticalDishReviewsCount'];
+$avgAppearance = $revData['avgAppearance'];
+$avgTaste = $revData['avgTaste'];
+$avgPortion = $revData['avgPortion'];
+$avgValue = $revData['avgValue'];
+$orderStarDist = $revData['orderStarDist'];
+$dishStarDist = $revData['dishStarDist'];
+$activeDist = $revData['activeDist'];
+$activeTotal = $revData['activeTotal'];
+$orderReviewsList = $revData['orderReviewsList'];
+$dishReviewsList = $revData['dishReviewsList'];
+$hasActiveFilters = $revData['hasActiveFilters'];
 ?>
 
 <!-- =========================================================================
@@ -315,7 +178,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small mt-2 d-flex align-items-center justify-content-between">
           <span class="text-muted">Plating &amp; visual presentation</span>
-          <span class="text-warning"><?= render_star_rating_html($avgAppearance) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgAppearance) ?></span>
         </div>
       </div>
     </div>
@@ -339,7 +202,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small mt-2 d-flex align-items-center justify-content-between">
           <span class="text-muted">Flavor, aroma &amp; seasoning</span>
-          <span class="text-warning"><?= render_star_rating_html($avgTaste) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgTaste) ?></span>
         </div>
       </div>
     </div>
@@ -363,7 +226,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small mt-2 d-flex align-items-center justify-content-between">
           <span class="text-muted">Serving size &amp; fullness</span>
-          <span class="text-warning"><?= render_star_rating_html($avgPortion) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgPortion) ?></span>
         </div>
       </div>
     </div>
@@ -387,7 +250,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small mt-2 d-flex align-items-center justify-content-between">
           <span class="text-muted">Price-to-quality rating</span>
-          <span class="text-warning"><?= render_star_rating_html($avgValue) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgValue) ?></span>
         </div>
       </div>
     </div>
@@ -412,7 +275,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small mt-2 d-flex align-items-center justify-content-between">
           <span class="text-muted">Based on <?= $totalOrderReviews ?> order reviews</span>
-          <span class="text-warning"><?= render_star_rating_html($avgFoodRating) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgFoodRating) ?></span>
         </div>
       </div>
     </div>
@@ -435,8 +298,8 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
           <?php endif; ?>
         </div>
         <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
-          <span>Tips remitted: <strong class="text-forest"><?= format_inr($totalTips) ?></strong></span>
-          <span class="text-success"><?= render_star_rating_html($avgRiderRating) ?></span>
+          <span>Tips remitted: <strong class="text-forest"><?= formatInr($totalTips) ?></strong></span>
+          <span class="text-success"><?= renderStarRatingHtml($avgRiderRating) ?></span>
         </div>
       </div>
     </div>
@@ -484,7 +347,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         </div>
         <div class="small text-muted mt-2 d-flex align-items-center justify-content-between">
           <span>Taste, Appearance &amp; Portion</span>
-          <span class="text-warning"><?= render_star_rating_html($avgDishRating) ?></span>
+          <span class="text-warning"><?= renderStarRatingHtml($avgDishRating) ?></span>
         </div>
       </div>
     </div>
@@ -507,7 +370,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
         <?= $activeTotal > 0 ? number_format($viewTab === 'dishes' ? $avgDishRating : $avgFoodRating, 1) : '0.0' ?>
       </div>
       <div class="mb-2 fs-5">
-        <?= render_star_rating_html($viewTab === 'dishes' ? $avgDishRating : $avgFoodRating) ?>
+        <?= renderStarRatingHtml($viewTab === 'dishes' ? $avgDishRating : $avgFoodRating) ?>
       </div>
       <div class="small text-muted">
         Total of <strong><?= $activeTotal ?></strong> verified <?= $viewTab === 'dishes' ? 'item' : 'order' ?> rating(s)
@@ -764,7 +627,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                 <td class="ps-4">
                   <div class="d-flex align-items-center gap-2">
                     <span class="fw-bold text-dark font-monospace">#ZIP-<?= (int)$rev['order_id'] ?></span>
-                    <span class="badge bg-light text-forest border fw-bold"><?= format_inr($rev['total_amount'] ?? 0) ?></span>
+                    <span class="badge bg-light text-forest border fw-bold"><?= formatInr($rev['total_amount'] ?? 0) ?></span>
                   </div>
                   <?php if (!empty($rev['items_summary'])): ?>
                     <div class="small text-muted text-truncate mt-1" style="max-width: 240px;" title="<?= e($rev['items_summary']) ?>">
@@ -784,7 +647,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
 
                 <!-- Food Rating (Icon-based) -->
                 <td>
-                  <div><?= render_star_rating_html($foodRate) ?></div>
+                  <div><?= renderStarRatingHtml($foodRate) ?></div>
                   <span class="badge <?= $foodRate >= 4 ? 'bg-success bg-opacity-25 text-success' : ($foodRate === 3 ? 'bg-warning bg-opacity-25 text-dark' : 'bg-danger bg-opacity-25 text-danger') ?> fw-bold mt-1" style="font-size:0.7rem;">
                     <?= $foodRate ?> / 5.0 Food
                   </span>
@@ -796,12 +659,12 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                     <i class="bi bi-bicycle text-forest"></i> <?= e($rev['delivery_partner_name']) ?>
                   </div>
                   <div class="d-flex align-items-center gap-1 small text-warning mt-1">
-                    <?= render_star_rating_html($riderRate) ?>
+                    <?= renderStarRatingHtml($riderRate) ?>
                     <span class="text-muted ms-1" style="font-size:0.75rem;">(<?= $riderRate ?>/5)</span>
                   </div>
                   <?php if ((float)$rev['rider_tip'] > 0): ?>
                     <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 fw-bold px-2 py-0 mt-1" style="font-size:0.7rem;">
-                      <i class="bi bi-heart-fill me-1 text-danger"></i> <?= format_inr($rev['rider_tip']) ?> Tip
+                      <i class="bi bi-heart-fill me-1 text-danger"></i> <?= formatInr($rev['rider_tip']) ?> Tip
                     </span>
                   <?php endif; ?>
                 </td>
@@ -835,12 +698,12 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                               'customer_name' => $rev['customer_name'],
                               'customer_email' => $rev['customer_email'],
                               'customer_phone' => $rev['customer_phone'] ?? '',
-                              'total_amount' => format_inr($rev['total_amount'] ?? 0),
+                              'total_amount' => formatInr($rev['total_amount'] ?? 0),
                               'items_summary' => $rev['items_summary'] ?? 'N/A',
                               'food_rating' => $rev['food_rating'],
                               'rider_rating' => $rev['rider_rating'],
                               'delivery_partner' => $rev['delivery_partner_name'],
-                              'rider_tip' => format_inr($rev['rider_tip'] ?? 0),
+                              'rider_tip' => formatInr($rev['rider_tip'] ?? 0),
                               'comments' => $rev['comments'] ?: 'No comments provided',
                               'created_at' => date('d M Y, h:i A', strtotime($rev['created_at']))
                             ]), ENT_QUOTES, 'UTF-8') ?>)"
@@ -905,7 +768,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                 <!-- Dish Info -->
                 <td class="ps-4">
                   <div class="d-flex align-items-center gap-3">
-                    <img src="<?= e(get_dish_image_url($dr['image_url'])) ?>" 
+                    <img src="<?= e(getDishImageUrl($dr['image_url'])) ?>" 
                          alt="<?= e($dr['item_name']) ?>" 
                          class="rounded-3 object-fit-cover shadow-xs border" 
                          style="width: 48px; height: 48px;">
@@ -918,7 +781,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                         <span class="badge bg-light text-muted border px-1 py-0" style="font-size:0.6rem;">
                           <?= e($dr['category_name'] ?? 'Menu') ?>
                         </span>
-                        <span class="small text-forest fw-bold ms-1" style="font-size:0.75rem;"><?= format_inr($dr['price']) ?></span>
+                        <span class="small text-forest fw-bold ms-1" style="font-size:0.75rem;"><?= formatInr($dr['price']) ?></span>
                       </div>
                     </div>
                   </div>
@@ -940,7 +803,7 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
 
                 <!-- Overall Star Rating -->
                 <td>
-                  <div><?= render_star_rating_html($rating) ?></div>
+                  <div><?= renderStarRatingHtml($rating) ?></div>
                   <span class="badge <?= $rating >= 4 ? 'bg-success bg-opacity-25 text-success' : ($rating === 3 ? 'bg-warning bg-opacity-25 text-dark' : 'bg-danger bg-opacity-25 text-danger') ?> fw-bold mt-1" style="font-size:0.7rem;">
                     <?= $rating ?> / 5.0 Stars
                   </span>
@@ -1015,8 +878,8 @@ $hasActiveFilters = ($starFilter > 0 || $sentimentFilter !== 'all' || !empty($se
                               'item_id' => $dr['item_id'],
                               'item_name' => $dr['item_name'],
                               'category_name' => $dr['category_name'] ?? 'General',
-                              'image_url' => get_dish_image_url($dr['image_url']),
-                              'price' => format_inr($dr['price']),
+                              'image_url' => getDishImageUrl($dr['image_url']),
+                              'price' => formatInr($dr['price']),
                               'is_veg' => (bool)$dr['is_veg'],
                               'customer_name' => $dr['customer_name'],
                               'customer_email' => $dr['customer_email'],

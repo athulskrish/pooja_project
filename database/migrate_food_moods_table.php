@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Create and Seed food_moods Table for Dynamic Admin Mood Management
  * Zippy - Online Food Ordering Platform
@@ -7,7 +8,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }

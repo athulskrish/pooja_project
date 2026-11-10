@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Add Mood-Based Food Selection Column and Curate Mood Tags for Dishes
  * Zippy - Online Food Ordering Platform
@@ -8,7 +9,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }
@@ -17,7 +18,7 @@ echo "======================================================\n";
 echo "1. Checking menu_items table schema for 'mood' column...\n";
 echo "======================================================\n";
 
-$cols = db_fetch_all("SHOW COLUMNS FROM `menu_items` LIKE 'mood'");
+$cols = dbFetchAll("SHOW COLUMNS FROM `menu_items` LIKE 'mood'");
 if (empty($cols)) {
     $pdo->exec("ALTER TABLE `menu_items` ADD COLUMN `mood` VARCHAR(100) NOT NULL DEFAULT 'comfort' AFTER `is_healthy`");
     echo "   -> Added `mood` column to `menu_items`.\n";
@@ -58,7 +59,7 @@ $moodMappings = [
 $updateStmt = $pdo->prepare("UPDATE `menu_items` SET `mood` = :mood WHERE `item_id` = :id");
 
 foreach ($moodMappings as $itemId => $mood) {
-    $item = db_fetch_one("SELECT item_name FROM `menu_items` WHERE item_id = :id", [':id' => $itemId]);
+    $item = dbFetchOne("SELECT item_name FROM `menu_items` WHERE item_id = :id", [':id' => $itemId]);
     if ($item) {
         $updateStmt->execute([':mood' => $mood, ':id' => $itemId]);
         echo "   -> [ID {$itemId}] {$item['item_name']} => Mood: {$mood}\n";

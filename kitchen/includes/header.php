@@ -1,8 +1,10 @@
+<?php declare(strict_types=1); ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="csrf-token" content="<?= csrfToken() ?>">
   <title>Kitchen Atelier & KDS | Zippy Operations</title>
 
   <!-- Google Fonts: Outfit & Plus Jakarta Sans & Space Grotesk -->
@@ -977,7 +979,7 @@
             </li>
             <li><a class="dropdown-item small py-2 fw-semibold" href="javascript:void(0)" onclick="showHistoryTab()"><i class="bi bi-clock-history me-2 text-primary"></i> Order History &amp; Fulfilled Dockets</a></li>
             <li><a class="dropdown-item small py-2" href="javascript:void(0)" onclick="showSalaryTab()"><i class="bi bi-wallet2 me-2 text-success"></i> Chef Salary &amp; Payslips</a></li>
-            <?php if (is_admin()): ?>
+            <?php if (isAdmin()): ?>
               <li><a class="dropdown-item small py-2" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2 text-warning"></i> Admin Console</a></li>
             <?php endif; ?>
             <li><hr class="dropdown-divider"></li>
@@ -1004,7 +1006,7 @@
 
     <!-- Flash Notifications -->
     <div id="flashContainer">
-      <?php display_flash(); ?>
+      <?php displayFlash(); ?>
     </div>
 
     <!-- Live Audio Notification Banner -->

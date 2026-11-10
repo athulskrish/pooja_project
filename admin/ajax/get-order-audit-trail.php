@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * AJAX Endpoint: Retrieve Complete Lifecycle Audit Trail for an Order
  * Zippy - Online Food Ordering Platform
@@ -12,7 +13,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!is_admin()) {
+if (!isAdmin()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Unauthorized. Administrator access required.']);
     exit;
@@ -25,7 +26,7 @@ if ($orderId <= 0) {
 }
 
 // 1. Fetch Order details
-$order = db_fetch_one("
+$order = dbFetchOne("
     SELECT o.*, 
            u.full_name AS customer_name, 
            u.phone_number AS customer_phone, 
@@ -50,7 +51,7 @@ if (!$order) {
 }
 
 // 2. Fetch full chronological audit trail
-$trails = db_fetch_all("
+$trails = dbFetchAll("
     SELECT a.*, 
            u.full_name AS actor_name, 
            r.role_name AS actor_role
@@ -62,12 +63,12 @@ $trails = db_fetch_all("
 ", [':oid' => $orderId]);
 
 $timeline = [];
-$prevTime = !empty($order['placed_at']) ? strtotime($order['placed_at']) : null;
+$prevTime = !empty($order['placed_at']) ? (strtotime((string)$order['placed_at']) ?: null) : null;
 $firstTime = $prevTime;
 $lastTime = null;
 
 foreach ($trails as $idx => $t) {
-    $curTime = strtotime($t['change_timestamp']);
+    $curTime = (int)(strtotime((string)($t['change_timestamp'] ?? '')) ?: time());
     if ($firstTime === null) {
         $firstTime = $curTime;
     }
@@ -101,11 +102,11 @@ foreach ($trails as $idx => $t) {
         'actor_role' => $actorRole,
         'actor_name' => $actorName,
         'timestamp' => date('d M Y, h:i:s A', $curTime),
-        'time_ago' => format_time_ago($curTime),
+        'time_ago' => formatTimeAgo($curTime),
         'dwell_seconds' => $dwellSeconds,
         'dwell_formatted' => $dwellFormatted,
-        'old_badge' => get_status_badge($t['old_status'] ?: 'PLACED'),
-        'new_badge' => get_status_badge($t['new_status'])
+        'old_badge' => getStatusBadge($t['old_status'] ?: 'PLACED'),
+        'new_badge' => getStatusBadge($t['new_status'])
     ];
 }
 
@@ -130,14 +131,14 @@ echo json_encode([
         'order_id' => (int)$order['order_id'],
         'order_number' => $order['order_number'] ?: ('ZIP-' . $order['order_id']),
         'order_status' => $order['order_status'],
-        'status_badge' => get_status_badge($order['order_status']),
-        'total_amount' => format_inr($order['total_amount']),
+        'status_badge' => getStatusBadge($order['order_status']),
+        'total_amount' => formatInr($order['total_amount']),
         'payment_mode' => $order['payment_mode'] ?: 'N/A',
         'payment_status' => $order['payment_status'] ?: 'PENDING',
         'customer_name' => $order['customer_name'] ?: 'Guest Customer',
         'customer_phone' => $order['customer_phone'] ?: '',
         'placed_at' => !empty($order['placed_at']) ? date('d M Y, h:i A', strtotime($order['placed_at'])) : '—',
-        'placed_time_ago' => !empty($order['placed_at']) ? format_time_ago(strtotime($order['placed_at'])) : '—',
+        'placed_time_ago' => !empty($order['placed_at']) ? formatTimeAgo(strtotime($order['placed_at'])) : '—',
         'rider_name' => $order['delivery_partner_name'] ?: null,
         'rider_phone' => $order['delivery_partner_phone'] ?: null,
         'delivery_otp' => $order['delivery_otp'] ?: null,

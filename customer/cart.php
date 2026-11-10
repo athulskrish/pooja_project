@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dedicated Shopping Cart Page
  * Zippy - Online Food Ordering Platform
@@ -9,10 +10,10 @@ $activePage = 'cart';
 
 require_once __DIR__ . '/includes/header.php';
 
-$coupons = get_available_coupons();
+$coupons = getAvailableCoupons();
 $previousMeal = null;
 if ($currentUser && !empty($currentUser['id'])) {
-    $previousMeal = get_customer_previous_meal((int)$currentUser['id']);
+    $previousMeal = getCustomerPreviousMeal((int)$currentUser['id']);
 }
 ?>
 
@@ -54,12 +55,12 @@ if ($currentUser && !empty($currentUser['id'])) {
             <span class="small text-muted">Previous Meal (#ZIP-<?= (int)$cartPmOrder['order_id'] ?>)</span>
           </div>
           <div class="small fw-semibold text-dark mb-2">
-            <?= implode(' &bull; ', array_map(fn($i) => e($i['item_name']) . ' &times;' . (int)$i['quantity'], $previousMeal['items'])) ?>
+            <?= implode(' &bull; ', array_map(fn(array $i): string => e($i['item_name']) . ' &times;' . (int)$i['quantity'], $previousMeal['items'])) ?>
           </div>
           <div class="d-flex align-items-center justify-content-between pt-2 border-top">
             <div>
               <span class="small text-muted d-block" style="font-size: 0.72rem;">Previous Bill</span>
-              <span class="fw-bold text-forest fs-6"><?= format_inr($cartPmOrder['total_amount']) ?></span>
+              <span class="fw-bold text-forest fs-6"><?= formatInr($cartPmOrder['total_amount']) ?></span>
             </div>
             <button type="button" class="btn btn-success btn-sm rounded-pill px-3 py-2 fw-bold shadow-sm d-flex align-items-center gap-1" style="background:#2E6F40; border-color:#2E6F40;" onclick="oneTapReorderMeal(<?= $cartPmPayloadJson ?>, <?= (int)$cartPmOrder['order_id'] ?>, false, this)">
               <i class="fa-solid fa-rotate-right me-1"></i>1-Tap Reorder Previous Meal

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Portal Header & Navbar
  * Zippy - Online Food Ordering Platform
@@ -14,18 +15,19 @@ header("Expires: 0");
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 
-$currentUser = current_user();
+$currentUser = getCurrentUser();
 $pageTitle = $pageTitle ?? 'Zippy - Online Food Delivery';
 $activePage = $activePage ?? '';
 
 // Check database status
-$dbStatus = checkDBStatus();
+$dbStatus = checkDbStatus();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="<?= csrfToken() ?>">
   
   <!-- Anti-Cache Meta Directives for Stale Prevention -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -51,25 +53,16 @@ $dbStatus = checkDBStatus();
 
   <script>
     <?php
-    $catalogRows = db_fetch_all("SELECT item_id, image_url FROM `menu_items`");
-    $dishImageMap = [];
-    if (!empty($catalogRows)) {
-        foreach ($catalogRows as $cr) {
-            $dishImageMap[$cr['item_id']] = get_dish_image_url($cr['image_url'] ?? '');
-        }
-    }
-
-    // Compute active catalog version for customer side real-time change detection
-    $catVerData = db_fetch_all("SELECT category_id, category_name, display_order, is_active FROM `categories` ORDER BY category_id");
-    $dishVerData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id");
-    $initialCatalogVer = md5(md5(json_encode($catVerData)) . '_' . md5(json_encode($dishVerData)));
+    $headerCatalog = CatalogService::getHeaderCatalogState();
+    $dishImageMap = $headerCatalog['dish_image_map'];
+    $initialCatalogVer = $headerCatalog['catalog_version'];
     ?>
-    window.POOJA_DISH_IMAGES = <?= json_encode($dishImageMap) ?>;
-    window.DISH_IMAGES_MAP = <?= json_encode($dishImageMap) ?>;
-    window.POOJA_CATALOG_VER = <?= json_encode($initialCatalogVer) ?>;
-    window.API_URL = <?= json_encode(BASE_URL . '/api') ?>;
-    window.CUSTOMER_URL = <?= json_encode(CUSTOMER_URL) ?>;
-    window.BASE_URL = <?= json_encode(BASE_URL) ?>;
+    window.POOJA_DISH_IMAGES = <?= jsJson($dishImageMap) ?>;
+    window.DISH_IMAGES_MAP = <?= jsJson($dishImageMap) ?>;
+    window.POOJA_CATALOG_VER = <?= jsJson($initialCatalogVer) ?>;
+    window.API_URL = <?= jsJson(BASE_URL . '/api') ?>;
+    window.CUSTOMER_URL = <?= jsJson(CUSTOMER_URL) ?>;
+    window.BASE_URL = <?= jsJson(BASE_URL) ?>;
   </script>
 </head>
 <body>
@@ -158,23 +151,23 @@ $dbStatus = checkDBStatus();
                   <div class="fw-bold text-dark text-truncate"><?= e($currentUser['name']) ?></div>
                   <div class="small text-muted text-truncate mb-1"><?= e($currentUser['email']) ?></div>
                   <div class="d-flex align-items-center gap-1 flex-wrap">
-                    <?= get_role_badge($currentUser['role_name'] ?? 'CUSTOMER') ?>
+                    <?= getRoleBadge($currentUser['role_name'] ?? 'CUSTOMER') ?>
                     <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 font-monospace" style="font-size: 0.65rem;" title="Isolated Session: ZIPPY_CUSTOMER_SESS">Customer Scope</span>
                   </div>
                 </li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/profile.php"><i class="bi bi-person me-2 text-success"></i>My Profile</a></li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/order-history.php"><i class="bi bi-receipt me-2 text-success"></i>Orders & History</a></li>
                 <li><a class="dropdown-item py-2" href="<?= CUSTOMER_URL ?>/manage-addresses.php"><i class="bi bi-geo-alt me-2 text-success"></i>Saved Addresses</a></li>
-                <?php if (is_admin()): ?>
+                <?php if (isAdmin()): ?>
                   <li><hr class="dropdown-divider"></li>
                   <li><h6 class="dropdown-header small text-uppercase fw-bold text-muted" style="font-size:0.7rem;">Staff & Ops Portals</h6></li>
                   <li><a class="dropdown-item py-2 text-danger fw-semibold" href="<?= ADMIN_URL ?>/index.php"><i class="bi bi-speedometer2 me-2"></i>Admin Console</a></li>
                   <li><a class="dropdown-item py-2 text-warning fw-semibold" href="<?= KITCHEN_URL ?>/index.php"><i class="fa-solid fa-fire-burner me-2"></i>Kitchen KDS</a></li>
                   <li><a class="dropdown-item py-2 text-info fw-semibold" href="<?= DELIVERY_URL ?>/index.php"><i class="bi bi-bicycle me-2"></i>Delivery Fleet</a></li>
-                <?php elseif (is_kitchen()): ?>
+                <?php elseif (isKitchen()): ?>
                   <li><hr class="dropdown-divider"></li>
                   <li><a class="dropdown-item py-2 text-warning fw-semibold" href="<?= KITCHEN_URL ?>/index.php"><i class="fa-solid fa-fire-burner me-2"></i>Kitchen Station KDS</a></li>
-                <?php elseif (is_rider()): ?>
+                <?php elseif (isRider()): ?>
                   <li><hr class="dropdown-divider"></li>
                   <li><a class="dropdown-item py-2 text-info fw-semibold" href="<?= DELIVERY_URL ?>/index.php"><i class="bi bi-bicycle me-2"></i>Delivery Fleet App</a></li>
                 <?php endif; ?>
@@ -201,25 +194,14 @@ $dbStatus = checkDBStatus();
 
   <!-- Flash Messages Banner -->
   <div class="container-xl pt-3">
-    <?php display_flash(); ?>
+    <?php displayFlash(); ?>
   </div>
 
   <?php
   // Check for any unreviewed delivered orders for logged-in customer
   $unreviewedDeliveredOrder = null;
   if (!empty($currentUser['id']) && basename($_SERVER['PHP_SELF']) !== 'rate-order.php' && basename($_SERVER['PHP_SELF']) !== 'order-status.php') {
-      $unreviewedDeliveredOrder = db_fetch_one("
-          SELECT o.order_id, o.order_number, o.placed_at, o.total_amount,
-                 d.delivered_at, d.delivery_partner_name
-          FROM `orders` o
-          LEFT JOIN `order_reviews` r ON o.order_id = r.order_id
-          LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-          WHERE o.user_id = :uid 
-            AND o.order_status = 'DELIVERED'
-            AND r.review_id IS NULL
-          ORDER BY COALESCE(d.delivered_at, o.placed_at) DESC
-          LIMIT 1
-      ", [':uid' => $currentUser['id']]);
+      $unreviewedDeliveredOrder = OrderService::getCustomerUnreviewedDeliveredOrder((int)$currentUser['id']);
   }
   ?>
 

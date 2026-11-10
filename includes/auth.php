@@ -1,10 +1,82 @@
 <?php
+declare(strict_types=1);
 /**
  * Authentication & RBAC Access Control Engine
  * Zippy - Online Food Ordering Platform
  */
 
 require_once __DIR__ . '/functions.php';
+
+/**
+ * Predefined account recovery security questions
+ * 
+ * @return array<int, string>
+ */
+function getSecurityQuestions(): array
+{
+    return [
+        'What was the name of your first school?',
+        'What was the name of your first pet?',
+        'In which city were you born?',
+        "What is your mother's maiden name?",
+        'What is your favorite childhood food?',
+        'What was your childhood nickname?'
+    ];
+}
+
+/**
+ * Normalize security question answer for case-insensitive matching
+ */
+function normalizeSecurityAnswer(string $answer): string
+{
+    return strtolower(trim((string)preg_replace('/\s+/', ' ', $answer)));
+}
+
+/**
+ * Ensure `security_question` and `security_answer_hash` columns exist in `users`
+ * Provides automatic plug-and-play schema compatibility on XAMPP setups.
+ */
+function ensureSecurityQuestionColumns(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    try {
+        $cols = $pdo->query("SHOW COLUMNS FROM `users` LIKE 'security_question'")->fetchAll();
+        if (empty($cols)) {
+            $pdo->exec("
+                ALTER TABLE `users`
+                ADD COLUMN `security_question` VARCHAR(255) NULL DEFAULT NULL AFTER `password_hash`,
+                ADD COLUMN `security_answer_hash` VARCHAR(255) NULL DEFAULT NULL AFTER `security_question`
+            ");
+        }
+        $checked = true;
+    } catch (Throwable $e) {
+        error_log("Security columns check failed: " . $e->getMessage());
+    }
+}
+
+/**
+ * Resolve convenient demo email aliases to canonical database email
+ */
+function resolveEmailAlias(string $email): string
+{
+    $lookupEmail = trim(strtolower($email));
+    if (!defined('APP_DEMO_MODE') || !APP_DEMO_MODE) {
+        return $lookupEmail;
+    }
+    $aliases = [
+        'pooja@zippy.com'    => 'admin@zippy.com',
+        'sajeev@zippy.com'   => 'chef@zippy.com',
+        'rider@zippy.com'    => 'shaji@zippy.com',
+        'customer@zippy.com' => 'athul@example.com',
+        'athul@zippy.com'    => 'athul@example.com',
+        'amal@zippy.com'     => 'amal@example.com',
+        'abhijith@zippy.com' => 'abhijith@example.com',
+    ];
+    return $aliases[$lookupEmail] ?? $lookupEmail;
+}
 
 /**
  * Attempt user authentication
@@ -14,24 +86,9 @@ require_once __DIR__ . '/functions.php';
  * @param string|null $requiredRole Optional required role name (e.g. 'ADMIN' or 'CUSTOMER')
  * @return array ['success' => bool, 'message' => string, 'user' => array|null]
  */
-function attempt_login(string $email, string $password, ?string $requiredRole = null): array {
-    $email = trim(strtolower($email));
-    
-    // Support convenient email aliases
-    $lookupEmail = $email;
-    if ($lookupEmail === 'pooja@zippy.com') {
-        $lookupEmail = 'admin@zippy.com';
-    } elseif ($lookupEmail === 'sajeev@zippy.com') {
-        $lookupEmail = 'chef@zippy.com';
-    } elseif ($lookupEmail === 'rider@zippy.com') {
-        $lookupEmail = 'shaji@zippy.com';
-    } elseif ($lookupEmail === 'customer@zippy.com' || $lookupEmail === 'athul@zippy.com') {
-        $lookupEmail = 'athul@example.com';
-    } elseif ($lookupEmail === 'amal@zippy.com') {
-        $lookupEmail = 'amal@example.com';
-    } elseif ($lookupEmail === 'abhijith@zippy.com') {
-        $lookupEmail = 'abhijith@example.com';
-    }
+function loginUser(string $email, string $password, ?string $requiredRole = null): array
+{
+    $lookupEmail = resolveEmailAlias($email);
     
     $sql = "SELECT u.*, r.role_name 
             FROM `users` u 
@@ -39,7 +96,7 @@ function attempt_login(string $email, string $password, ?string $requiredRole = 
             WHERE LOWER(u.email) = :email 
             LIMIT 1";
     
-    $user = db_fetch_one($sql, [':email' => $lookupEmail]);
+    $user = dbFetchOne($sql, [':email' => $lookupEmail]);
 
     if (!$user) {
         return ['success' => false, 'message' => 'No account found with this email address.', 'user' => null];
@@ -54,18 +111,13 @@ function attempt_login(string $email, string $password, ?string $requiredRole = 
         return ['success' => false, 'message' => "Access denied. This login is reserved for {$requiredRole}s.", 'user' => null];
     }
 
-    // Verify Password (Argon2id / Bcrypt with rehash support)
-    $passwordValid = false;
-    if (password_verify($password, $user['password_hash'])) {
-        $passwordValid = true;
-    } elseif ($password === 'password123' || $password === $user['password_hash']) {
-        // Fallback for development seed sync
-        $passwordValid = true;
-        // Upgrade password to standard hash
+    // Verify Password (Argon2id / Bcrypt with transparent algorithm rehash)
+    $passwordValid = password_verify($password, (string)$user['password_hash']);
+    if ($passwordValid && password_needs_rehash((string)$user['password_hash'], PASSWORD_DEFAULT)) {
         $newHash = password_hash($password, PASSWORD_DEFAULT);
-        db_query("UPDATE `users` SET `password_hash` = :h WHERE `user_id` = :id", [
+        dbQuery("UPDATE `users` SET `password_hash` = :h WHERE `user_id` = :id", [
             ':h' => $newHash,
-            ':id' => $user['user_id']
+            ':id' => (int)$user['user_id']
         ]);
     }
 
@@ -89,7 +141,7 @@ function attempt_login(string $email, string $password, ?string $requiredRole = 
     }
 
     // Set a portal companion cookie for multi-actor status tracking on launchpad
-    $portal = get_current_portal();
+    $portal = getCurrentPortal();
     $actorCookie = 'ZIPPY_ACTOR_' . strtoupper($portal);
     $actorData = json_encode([
         'id' => (int)$user['user_id'],
@@ -114,15 +166,31 @@ function attempt_login(string $email, string $password, ?string $requiredRole = 
 }
 
 /**
- * Register a new customer
+ * Register a new customer with offline recovery security question
  */
-function register_customer(string $fullName, string $email, string $phone, string $password, ?string $address = null, ?string $pincode = null): array {
+function registerCustomer(
+    string $fullName,
+    string $email,
+    string $phone,
+    string $password,
+    ?string $address = null,
+    ?string $pincode = null,
+    ?string $securityQuestion = null,
+    ?string $securityAnswer = null
+): array
+{
     $fullName = trim($fullName);
     $email = trim(strtolower($email));
     $phone = trim($phone);
+    $securityQuestion = $securityQuestion !== null ? trim($securityQuestion) : '';
+    $securityAnswer = $securityAnswer !== null ? normalizeSecurityAnswer($securityAnswer) : '';
 
     if (empty($fullName) || empty($email) || empty($phone) || empty($password)) {
         return ['success' => false, 'message' => 'Please fill in all required fields.'];
+    }
+
+    if (strlen($password) < 6) {
+        return ['success' => false, 'message' => 'Password must be at least 6 characters long.'];
     }
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -130,32 +198,42 @@ function register_customer(string $fullName, string $email, string $phone, strin
     }
 
     // Check if email already exists
-    $existing = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE LOWER(email) = :email", [':email' => $email]);
+    $existing = dbFetchVal("SELECT COUNT(*) FROM `users` WHERE LOWER(email) = :email", [':email' => $email]);
     if ($existing > 0) {
         return ['success' => false, 'message' => 'An account with this email address already exists.'];
     }
 
     // Check if phone already exists
-    $existingPhone = db_fetch_val("SELECT COUNT(*) FROM `users` WHERE phone_number = :phone", [':phone' => $phone]);
+    $existingPhone = dbFetchVal("SELECT COUNT(*) FROM `users` WHERE phone_number = :phone", [':phone' => $phone]);
     if ($existingPhone > 0) {
         return ['success' => false, 'message' => 'An account with this phone number already exists.'];
     }
 
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $pdo = getDBConnection();
+    $secAnswerHash = !empty($securityAnswer) ? password_hash($securityAnswer, PASSWORD_DEFAULT) : null;
+    $secQuestionVal = !empty($securityQuestion) && !empty($secAnswerHash) ? $securityQuestion : null;
+
+    $pdo = getDbConnection();
     if (!$pdo) {
         return ['success' => false, 'message' => 'Database connection failed.'];
     }
 
+    ensureSecurityQuestionColumns($pdo);
+
     try {
         $pdo->beginTransaction();
 
-        $stmt = $pdo->prepare("INSERT INTO `users` (`role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) VALUES (2, :name, :email, :phone, :hash, 1)");
+        $stmt = $pdo->prepare("
+            INSERT INTO `users` (`role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `security_question`, `security_answer_hash`, `is_active`) 
+            VALUES (2, :name, :email, :phone, :hash, :sq, :sa, 1)
+        ");
         $stmt->execute([
-            ':name' => $fullName,
+            ':name'  => $fullName,
             ':email' => $email,
             ':phone' => $phone,
-            ':hash' => $hash
+            ':hash'  => $hash,
+            ':sq'    => $secQuestionVal,
+            ':sa'    => $secAnswerHash
         ]);
 
         $userId = (int)$pdo->lastInsertId();
@@ -199,10 +277,160 @@ function register_customer(string $fullName, string $email, string $phone, strin
 }
 
 /**
+ * Step 1 of Offline Password Reset: Look up user and return their recovery question
+ */
+function lookupUserSecurityQuestion(string $email): array
+{
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        return ['success' => false, 'message' => 'Database connection failed.'];
+    }
+    ensureSecurityQuestionColumns($pdo);
+
+    $lookupEmail = resolveEmailAlias($email);
+    if (empty($lookupEmail) || !filter_var($lookupEmail, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'message' => 'Please enter a valid registered email address.'];
+    }
+
+    $user = dbFetchOne("
+        SELECT `user_id`, `full_name`, `email`, `security_question`, `security_answer_hash`, `is_active`
+        FROM `users`
+        WHERE LOWER(`email`) = :email
+        LIMIT 1
+    ", [':email' => $lookupEmail]);
+
+    if (!$user) {
+        return ['success' => false, 'message' => 'No account found with that email address.'];
+    }
+
+    if (!$user['is_active']) {
+        return ['success' => false, 'message' => 'This account is inactive. Please contact support.'];
+    }
+
+    if (empty($user['security_question']) || empty($user['security_answer_hash'])) {
+        return ['success' => false, 'message' => 'No security question is configured for this account. Please sign in and set one under My Profile, or contact an Administrator.'];
+    }
+
+    return [
+        'success'           => true,
+        'user_id'           => (int)$user['user_id'],
+        'full_name'         => $user['full_name'],
+        'email'             => $user['email'],
+        'security_question' => $user['security_question']
+    ];
+}
+
+/**
+ * Step 2 of Offline Password Reset: Verify security answer and update password hash atomically
+ */
+function resetPasswordWithSecurityAnswer(
+    string $email,
+    string $answer,
+    string $newPassword,
+    string $confirmPassword
+): array
+{
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        return ['success' => false, 'message' => 'Database connection failed.'];
+    }
+    ensureSecurityQuestionColumns($pdo);
+
+    $lookupEmail = resolveEmailAlias($email);
+    $normalizedAnswer = normalizeSecurityAnswer($answer);
+
+    if ($normalizedAnswer === '') {
+        return ['success' => false, 'message' => 'Please enter the answer to your security question.'];
+    }
+
+    if (strlen($newPassword) < 6) {
+        return ['success' => false, 'message' => 'New password must be at least 6 characters long.'];
+    }
+
+    if ($newPassword !== $confirmPassword) {
+        return ['success' => false, 'message' => 'New password and confirmation password do not match.'];
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare("
+            SELECT `user_id`, `security_question`, `security_answer_hash`, `is_active`
+            FROM `users`
+            WHERE LOWER(`email`) = :email
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $stmt->execute([':email' => $lookupEmail]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user || !$user['is_active']) {
+            $pdo->rollBack();
+            return ['success' => false, 'message' => 'Account not found or inactive.'];
+        }
+
+        if (empty($user['security_answer_hash']) || !password_verify($normalizedAnswer, $user['security_answer_hash'])) {
+            $pdo->rollBack();
+            return ['success' => false, 'message' => 'Incorrect security answer. Please check spelling and try again.'];
+        }
+
+        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        $updStmt = $pdo->prepare("UPDATE `users` SET `password_hash` = :hash WHERE `user_id` = :id");
+        $updStmt->execute([
+            ':hash' => $newHash,
+            ':id'   => (int)$user['user_id']
+        ]);
+
+        $pdo->commit();
+
+        return [
+            'success' => true,
+            'message' => 'Your password has been reset successfully! Please sign in with your new password.'
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Password reset error: " . $e->getMessage());
+        return ['success' => false, 'message' => 'Unable to reset password right now. Please try again.'];
+    }
+}
+
+/**
+ * Update a logged-in user's recovery security question and answer
+ */
+function updateUserSecurityQuestion(int $userId, string $question, string $answer): array
+{
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        return ['success' => false, 'message' => 'Database connection failed.'];
+    }
+    ensureSecurityQuestionColumns($pdo);
+
+    $question = trim($question);
+    $normalizedAnswer = normalizeSecurityAnswer($answer);
+
+    if ($question === '' || $normalizedAnswer === '') {
+        return ['success' => false, 'message' => 'Please select a security question and provide an answer.'];
+    }
+
+    $answerHash = password_hash($normalizedAnswer, PASSWORD_DEFAULT);
+    $stmt = $pdo->prepare("UPDATE `users` SET `security_question` = :sq, `security_answer_hash` = :sa WHERE `user_id` = :uid");
+    $stmt->execute([
+        ':sq'  => $question,
+        ':sa'  => $answerHash,
+        ':uid' => $userId
+    ]);
+
+    return ['success' => true, 'message' => 'Account recovery security question updated successfully.'];
+}
+
+/**
  * Logout and clear session
  */
-function logout_user(): void {
-    $portal = get_current_portal();
+function logoutUser(): void
+{
+    $portal = getCurrentPortal();
     $actorCookie = 'ZIPPY_ACTOR_' . strtoupper($portal);
     setcookie($actorCookie, '', time() - 3600, '/');
 
@@ -215,8 +443,9 @@ function logout_user(): void {
 /**
  * Get role details for a given user ID
  */
-function get_user_role(int $userId): ?array {
-    return db_fetch_one("
+function getUserRole(int $userId): ?array
+{
+    return dbFetchOne("
         SELECT r.role_id, r.role_name, r.description 
         FROM `users` u 
         JOIN `roles` r ON u.role_id = r.role_id 
@@ -227,18 +456,19 @@ function get_user_role(int $userId): ?array {
 /**
  * Update user role with safety verification
  */
-function update_user_role(int $userId, int $newRoleId): array {
-    $cur = current_user();
-    if (!is_admin()) {
+function updateUserRole(int $userId, int $newRoleId): array
+{
+    $cur = getCurrentUser();
+    if (!isAdmin()) {
         return ['success' => false, 'message' => 'Administrator privileges required to update user roles.'];
     }
 
-    $validRole = db_fetch_one("SELECT * FROM `roles` WHERE `role_id` = :rid", [':rid' => $newRoleId]);
+    $validRole = dbFetchOne("SELECT * FROM `roles` WHERE `role_id` = :rid", [':rid' => $newRoleId]);
     if (!$validRole) {
         return ['success' => false, 'message' => 'Specified role does not exist.'];
     }
 
-    $targetUser = db_fetch_one("
+    $targetUser = dbFetchOne("
         SELECT u.*, r.role_name 
         FROM `users` u 
         JOIN `roles` r ON u.role_id = r.role_id 
@@ -256,7 +486,7 @@ function update_user_role(int $userId, int $newRoleId): array {
 
     // Safety 2: Ensure at least one active administrator remains
     if ((int)$targetUser['role_id'] === 1 && $newRoleId !== 1) {
-        $otherAdmins = (int)db_fetch_val("
+        $otherAdmins = (int)dbFetchVal("
             SELECT COUNT(*) FROM `users` 
             WHERE `role_id` = 1 AND `is_active` = 1 AND `user_id` != :id
         ", [':id' => $userId]);
@@ -265,7 +495,7 @@ function update_user_role(int $userId, int $newRoleId): array {
         }
     }
 
-    $updated = db_query("UPDATE `users` SET `role_id` = :rid WHERE `user_id` = :id", [
+    $updated = dbQuery("UPDATE `users` SET `role_id` = :rid WHERE `user_id` = :id", [
         ':rid' => $newRoleId,
         ':id' => $userId
     ]);

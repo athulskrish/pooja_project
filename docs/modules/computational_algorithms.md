@@ -1,59 +1,51 @@
-# 🧠 Module: Computational Algorithms (computational_algorithms.md)
+# Module: Computational Algorithms
 
-> **Context Domain:** Data Science, Scheduling, Forecasting & Queue Operations  
-> **Relevant Classes:** `AprioriEngine`, `WSJFQueue`, `SESDemandForecast`, `FCFSQueue`  
-> **Location:** `includes/`
+All analytical engines live in `includes/`, declare `strict_types=1`, execute parameterized PDO queries via `dbFetchAll()` / `dbFetchVal()` / `getDbConnection()`, and follow PSR-12 class/method formatting.
 
 ---
 
-## 1. Algorithm Catalog & Mathematical Formulations
-
-### 1.1 Market Basket Cross-Selling (`includes/AprioriEngine.php`)
-- **Purpose:** Identifies item pairings that frequently appear together in past completed orders and surfaces contextual add-ons in the cart.
-- **Formulas:**
-  $$\text{Support}(A \cup B) = \frac{\text{Orders containing both } A \text{ and } B}{\text{Total Orders}}$$
-  $$\text{Confidence}(A \to B) = \frac{\text{Support}(A \cup B)}{\text{Support}(A)}$$
-  $$\text{Lift}(A \to B) = \frac{\text{Confidence}(A \to B)}{\text{Support}(B)}$$
-- **Thresholds:** Minimum support $\ge 0.05$, minimum confidence $\ge 0.20$, minimum lift $> 1.0$.
-- **Algorithmic Flow:**
-  1. **$L_1$ Generation:** Frequency counts of individual itemsets filtered by `minSupport`.
-  2. **Candidate Generation ($C_k$):** $(k-1)$-itemset join with Apriori downward-closure property subset pruning.
-  3. **Candidate Verification ($L_k$):** Transaction scanning and support filtering up to $k=3$.
-  4. **Rule Derivation:** Generates non-empty proper subsets $A \subset X$, evaluates Confidence & Lift, and ranks rules by $\text{Lift} > \text{Confidence} > \text{Support}$.
-  5. **Caching & Decoupling:** In-memory 60s TTL rule cache; standalone execution support via `runApriori($transactions)`.
-- **Public API:**
-  - `AprioriEngine::getRecommendations(array $cartItemIds, int $limit = 4, float $minSupport = 0.05, float $minConfidence = 0.20): array`
-  - `AprioriEngine::mineAssociationRules(float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0, bool $forceRefresh = false): array`
-  - `AprioriEngine::runApriori(array $transactions, float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0, int $maxK = 3): array`
-  - `AprioriEngine::getAssociationRulesReport(float $minSupport = 0.05, float $minConfidence = 0.20, float $minLift = 1.0): array`
-  - `AprioriEngine::getFallbackItems(array $excludeItemIds = [], int $limit = 4): array`
+## 1. Apriori Association Rule Mining (`includes/AprioriEngine.php`)
+Computes **"Frequently Bought Together"** cross-sell suggestions from completed/placed historical orders.
+- **Thresholds & Constants:**
+  - `DEFAULT_MIN_SUPPORT = 0.05` *(5% minimum co-occurrence)*
+  - `DEFAULT_MIN_CONFIDENCE = 0.20` *(20% conditional likelihood)*
+  - `DEFAULT_MIN_LIFT = 1.0` *(positive correlation filter)*
+  - `MIN_TRANSACTIONS_THRESHOLD = 5`, `MAX_ITEMSET_K = 3`, `CACHE_TTL_SECONDS = 60`
+- **Key Methods:**
+  - `AprioriEngine::getRecommendations(array $cartItemIds, int $limit = 4, float $minSupport = ..., float $minConfidence = ...): array`
+  - `AprioriEngine::mineAssociationRules(...)`, `runApriori(...)`, `getAssociationRulesReport(...)`, `clearCache()`
+  - `private static function getTransactionsFromDb(): array` *(reads multi-item baskets for non-cancelled orders)*
+- **Governance:** Enforces `is_active = 1` when hydrating dish metadata or fallback recommendations (`populateDishDetails()`, `getFallbackItems()`).
 
 ---
 
-### 1.2 Weighted Shortest Job First Queue (`includes/WSJFQueue.php`)
-- **Purpose:** Dynamically sorts the kitchen line orders so high-urgency, short-prep orders are completed quickly without starving large orders.
+## 2. Single Exponential Smoothing (`includes/SESDemandForecast.php`)
+Predicts next-day and 7-day culinary demand per active dish using real daily sales history.
 - **Formula:**
-  $$\text{WSJF} = \frac{\text{Cost of Delay}}{\text{Duration}}$$
-- **Parameters:**
-  - Cost of Delay (CoD) = $\text{Total Value} \times 0.4 + \text{Wait Time (mins)} \times 0.6$
-  - Duration = Maximum `prep_time_minutes` among items in the order.
+  $$\hat{Y}_{t+1} = \alpha Y_t + (1 - \alpha)\hat{Y}_t$$
+  - `DEFAULT_ALPHA = 0.3` *(clamped to `[0.05, 0.95]`)*
+  - `HISTORY_PERIOD_DAYS = 7`
+- **Key Methods:**
+  - `SESDemandForecast::forecastCatalogDemand(float $alpha = self::DEFAULT_ALPHA): array`
+  - `SESDemandForecast::forecastSingleItem(int $itemId, float $alpha = self::DEFAULT_ALPHA): array`
+- **Governance:** Filters catalog dishes by `is_active = 1` so archived menu items do not distort restock alerts.
 
 ---
 
-### 1.3 Single Exponential Smoothing Demand Forecast (`includes/SESDemandForecast.php`)
-- **Purpose:** Predicts future daily order volumes and ingredient demand based on historical moving averages.
-- **Formula:**
-  $$\hat{Y}_{t+1} = \alpha Y_t + (1 - \alpha) \hat{Y}_t$$
-- **Smoothing Constant:** $\alpha \in [0.2, 0.4]$ (default: $0.3$).
+## 3. Weighted Shortest Job First (`includes/WSJFQueue.php`)
+Maximizes kitchen throughput and prevents starvation of waiting customer orders.
+- **Core Implementation (`WSJFQueue::getPrioritizedOrders()`):**
+  - `jobDuration = maxPrepTime + (totalPortions * 1.5)` *(floored to at least `1.0` minute)*
+  - **Immediate orders (`is_scheduled = 0`):**
+    - `costOfDelay = elapsedMinutes * urgencyWeight`
+    - `urgencyWeight`: `1.5` (`PLACED` / `CONFIRMED`), `1.2` (`COOKING`), `0.5` (`READY`)
+    - `WSJF Score = costOfDelay / jobDuration`
+  - **Scheduled orders (`is_scheduled = 1`):** Computed dynamically relative to target `scheduled_for` lead window so upcoming advance orders escalate cleanly ahead of prep deadline without blocking urgent immediate tickets prematurely.
 
 ---
 
-### 1.4 First-Come-First-Served Dispatch Queue (`includes/FCFSQueue.php`)
-- **Purpose:** Allocates ready orders to available delivery riders fairly while strictly enforcing concurrency limits (maximum 1 active delivery per rider).
-
----
-
-## 2. Invariants & Usage
-
-1. **Decoupling:** Algorithm classes must remain independent of direct HTML rendering; they consume raw arrays or PDO instances and return structured associative arrays.
-2. **Defensive Defaults:** If historical order data is insufficient (e.g. fewer than 5 orders for Apriori or SES), the engine must gracefully fallback to top-rated catalog items without raising exceptions.
+## 4. First-Come First-Served (`includes/FCFSQueue.php` & `includes/functions.php`)
+Enforces fair chronological dispatch assignment and SLA exception monitoring for ready orders and delivery riders.
+- **Key Functions / Methods:**
+  - `FCFSQueue::getPrioritizedOrders()` & `FCFSQueue::getTriageExceptions()` *(sorts queued/dispatched orders strictly chronologically and flags SLA breaches)*
+  - `autoAllocateReadyOrdersFcfs()` in `includes/functions.php` *(runs inside `dbTransactional()` locking ready orders, free `ON_DUTY` riders, and `delivery_dispatches` via `FOR UPDATE`, assigning at most one active order per rider)*

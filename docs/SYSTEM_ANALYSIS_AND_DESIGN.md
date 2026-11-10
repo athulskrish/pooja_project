@@ -879,35 +879,35 @@ Depicts the computational service architecture, analytical algorithmic engines, 
 ```mermaid
 classDiagram
     class DatabaseConnection {
-        +getDBConnection() PDO
-        +db_query(string sql, array params) PDOStatement
-        +db_fetch_all(string sql, array params) array
-        +db_fetch_one(string sql, array params) array
-        +db_fetch_val(string sql, array params) mixed
+        +getDbConnection() PDO
+        +dbQuery(string sql, array params) PDOStatement
+        +dbFetchAll(string sql, array params) array
+        +dbFetchOne(string sql, array params) array
+        +dbFetchVal(string sql, array params) mixed
     }
 
     class AuthenticationService {
-        +attempt_login(string email, string password, string requiredRole) array
-        +register_customer(string fullName, string email, string phone, string password, string address, string pincode) array
-        +logout_user() void
-        +current_user() array
-        +has_role(string roleName) bool
+        +loginUser(string email, string password, string requiredRole) array
+        +registerCustomer(string fullName, string email, string phone, string password, string address, string pincode) array
+        +logoutUser() void
+        +getCurrentUser() array
+        +hasRole(string roleName) bool
     }
 
     class OrderFulfillmentService {
-        +calculate_bill_totals(array cartItems, string couponCode) array
-        +process_acid_checkout(int userId, int addressId, string payMode, string orderNotes) int
-        +cancel_order(int orderId, int userId) array
-        +get_session_cart() array
-        +set_session_cart(array cart) void
-        +clear_session_cart() void
+        +calculateBillTotals(array cartItems, string couponCode) array
+        +processCheckout(int userId, int addressId, string payMode, string orderNotes) int
+        +cancelCustomerOrder(int orderId, int userId) array
+        +getSessionCart() array
+        +setSessionCart(array cart) void
+        +clearSessionCart() void
     }
 
     class DeliveryDispatchService {
-        +toggle_duty(bool onDuty) void
-        +claim_order(int orderId, string partnerName, string partnerPhone) bool
-        +verify_doorstep_otp(int orderId, string enteredOtp) bool
-        +get_active_delivery(int riderUserId) array
+        +toggleRiderDuty(int riderId, bool onDuty) array
+        +claimOrder(int orderId, int riderId, string partnerName, string partnerPhone) array
+        +verifyDeliveryOtp(int orderId, int riderId, string enteredOtp) array
+        +getDriverActiveDelivery(int riderUserId) array
     }
 
     class WSJFQueue {

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Database Migration: Add Advance Meal Order Scheduling Support
  * Zippy - Online Food Ordering Platform
@@ -9,7 +10,7 @@ require_once __DIR__ . '/../config/database.php';
 
 echo "Running Migration: Advance Meal Order Scheduling...\n";
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Error: Could not connect to database.\n");
 }
@@ -35,14 +36,15 @@ try {
     if ($scheduledCount === 0) {
         // Set Order #1002 as a scheduled advance order for tonight / tomorrow
         $tomorrowLunch = date('Y-m-d 13:00:00', strtotime('+1 day'));
-        $pdo->exec("
+        $stmt = $pdo->prepare("
             UPDATE `orders` 
             SET `is_scheduled` = 1,
-                `scheduled_for` = '{$tomorrowLunch}',
+                `scheduled_for` = :scheduled_for,
                 `scheduled_slot` = 'Tomorrow Lunch (01:00 PM - 01:30 PM)',
                 `order_notes` = CONCAT(COALESCE(`order_notes`, ''), ' [ADVANCE SCHEDULED: Deliver for tomorrow team lunch]')
             WHERE `order_id` = 1002
         ");
+        $stmt->execute([':scheduled_for' => $tomorrowLunch]);
         echo "Updated demo order #1002 as an advance scheduled order for tomorrow lunch.\n";
     }
 

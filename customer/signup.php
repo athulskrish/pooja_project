@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Registration Portal
  * Zippy - Online Food Ordering Platform
@@ -8,32 +9,48 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 // If already logged in, redirect
-if (is_logged_in()) {
+if (isLoggedIn()) {
     header("Location: " . CUSTOMER_URL . "/index.php");
     exit;
 }
 
 $registerError = null;
+$securityQuestions = getSecurityQuestions();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $registerError = 'Session expired. Please try again.';
     } else {
-        $fullName = clean_input($_POST['full_name'] ?? '');
-        $email = clean_input($_POST['email'] ?? '');
-        $phone = clean_input($_POST['phone_number'] ?? '');
+        $fullName = cleanInput($_POST['full_name'] ?? '');
+        $email = cleanInput($_POST['email'] ?? '');
+        $phone = cleanInput($_POST['phone_number'] ?? '');
         $password = $_POST['password'] ?? '';
-        $address = clean_input($_POST['address_line'] ?? '');
-        $pincode = clean_input($_POST['pincode'] ?? '560038');
+        $address = cleanInput($_POST['address_line'] ?? '');
+        $pincode = cleanInput($_POST['pincode'] ?? '560038');
+        $securityQuestion = cleanInput($_POST['security_question'] ?? '');
+        $securityAnswer = $_POST['security_answer'] ?? '';
 
-        $regResult = register_customer($fullName, $email, $phone, $password, $address, $pincode);
-
-        if ($regResult['success']) {
-            set_flash('success', $regResult['message']);
-            header("Location: " . CUSTOMER_URL . "/index.php");
-            exit;
+        if (empty($securityQuestion) || trim($securityAnswer) === '') {
+            $registerError = 'Please select a security question and provide an answer for offline password recovery.';
         } else {
-            $registerError = $regResult['message'];
+            $regResult = registerCustomer(
+                $fullName,
+                $email,
+                $phone,
+                $password,
+                $address,
+                $pincode,
+                $securityQuestion,
+                $securityAnswer
+            );
+
+            if ($regResult['success']) {
+                setFlash('success', $regResult['message']);
+                header("Location: " . CUSTOMER_URL . "/index.php");
+                exit;
+            } else {
+                $registerError = $regResult['message'];
+            }
         }
     }
 }
@@ -66,7 +83,7 @@ require_once __DIR__ . '/includes/header.php';
           <?php endif; ?>
 
           <form method="POST" action="<?= CUSTOMER_URL ?>/signup.php">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
 
             <div class="row g-3 mb-3">
               <div class="col-12">
@@ -89,9 +106,34 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="password" name="password" class="form-control rounded-3" placeholder="Minimum 6 characters" minlength="6" required>
               </div>
 
+              <!-- Offline Account Recovery: Security Question -->
+              <div class="col-12">
+                <div class="p-3 rounded-3 border" style="background: #F5FAF6; border-color: #D2E8D8 !important;">
+                  <div class="small fw-bold text-forest mb-2">
+                    <i class="bi bi-shield-lock-fill me-1"></i> Account Recovery Security Question *
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label small fw-semibold text-muted mb-1">Choose a Security Question</label>
+                    <select name="security_question" class="form-select rounded-3" required>
+                      <option value="">-- Select a security question --</option>
+                      <?php foreach ($securityQuestions as $sq): ?>
+                        <option value="<?= e($sq) ?>" <?= (($_POST['security_question'] ?? '') === $sq) ? 'selected' : '' ?>>
+                          <?= e($sq) ?>
+                        </option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label small fw-semibold text-muted mb-1">Your Secret Answer</label>
+                    <input type="text" name="security_answer" class="form-control rounded-3" placeholder="e.g. St. Joseph's High School" value="<?= e($_POST['security_answer'] ?? '') ?>" required>
+                    <div class="form-text" style="font-size: 0.72rem;">Used to reset your password offline without email/SMS. Answer is stored securely hashed.</div>
+                  </div>
+                </div>
+              </div>
+
               <div class="col-12">
                 <label class="form-label small fw-bold">Delivery Address Line (Optional)</label>
-                <textarea name="address_line" class="form-control rounded-3" rows="2" placeholder="Flat No, Apartment, Street Name, Indiranagar"></textarea>
+                <textarea name="address_line" class="form-control rounded-3" rows="2" placeholder="Flat No, Apartment, Street Name, Indiranagar"><?= e($_POST['address_line'] ?? '') ?></textarea>
               </div>
 
               <div class="col-md-6">

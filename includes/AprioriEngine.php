@@ -69,7 +69,8 @@ class AprioriEngine
         int $limit = 4,
         float $minSupport = self::DEFAULT_MIN_SUPPORT,
         float $minConfidence = self::DEFAULT_MIN_CONFIDENCE
-    ): array {
+    ): array
+    {
         $limit = max(1, min(12, $limit));
         $cartIds = self::sanitizeItemIds($cartItemIds);
 
@@ -158,13 +159,14 @@ class AprioriEngine
         float $minConfidence = self::DEFAULT_MIN_CONFIDENCE,
         float $minLift = self::DEFAULT_MIN_LIFT,
         bool $forceRefresh = false
-    ): array {
+    ): array
+    {
         $now = time();
         if (!$forceRefresh && self::$rulesCache !== null && ($now - self::$rulesCacheTime) < self::CACHE_TTL_SECONDS) {
             return self::$rulesCache;
         }
 
-        $transactions = self::getTransactionsFromDB();
+        $transactions = self::getTransactionsFromDb();
         if (count($transactions) < self::MIN_TRANSACTIONS_THRESHOLD) {
             self::$rulesCache = [];
             self::$rulesCacheTime = $now;
@@ -202,7 +204,8 @@ class AprioriEngine
         float $minConfidence = self::DEFAULT_MIN_CONFIDENCE,
         float $minLift = self::DEFAULT_MIN_LIFT,
         int $maxK = self::MAX_ITEMSET_K
-    ): array {
+    ): array
+    {
         $normalized = [];
         foreach ($transactions as $t) {
             $cleaned = self::sanitizeItemIds($t);
@@ -287,8 +290,9 @@ class AprioriEngine
         float $minSupport = self::DEFAULT_MIN_SUPPORT,
         float $minConfidence = self::DEFAULT_MIN_CONFIDENCE,
         float $minLift = self::DEFAULT_MIN_LIFT
-    ): array {
-        $transactions = self::getTransactionsFromDB();
+    ): array
+    {
+        $transactions = self::getTransactionsFromDb();
         $totalTransactions = count($transactions);
 
         if ($totalTransactions < self::MIN_TRANSACTIONS_THRESHOLD) {
@@ -317,8 +321,8 @@ class AprioriEngine
 
         $formattedRules = [];
         foreach ($miningResult['rules'] as $rule) {
-            $antNames = array_map(fn($id) => $itemNames[$id] ?? "Item #$id", $rule['antecedent']);
-            $conNames = array_map(fn($id) => $itemNames[$id] ?? "Item #$id", $rule['consequent']);
+            $antNames = array_map(fn(int|string $id): string => $itemNames[$id] ?? "Item #$id", $rule['antecedent']);
+            $conNames = array_map(fn(int|string $id): string => $itemNames[$id] ?? "Item #$id", $rule['consequent']);
 
             $formattedRules[] = [
                 'antecedent_ids' => $rule['antecedent'],
@@ -358,36 +362,48 @@ class AprioriEngine
         $excludeIds = self::sanitizeItemIds($excludeItemIds);
         $limit = max(1, min(12, $limit));
 
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         if ($pdo) {
             try {
-                $whereClause = 'm.is_available = 1';
+                $whereClause = 'm.is_active = 1 AND m.is_available = 1';
+                $conditions = ['m.is_active = 1', 'm.is_available = 1', 'c.is_active = 1'];
                 $params = [];
 
                 if (!empty($excludeIds)) {
-                    $placeholders = implode(',', array_fill(0, count($excludeIds), '?'));
-                    $whereClause .= " AND m.item_id NOT IN ($placeholders)";
-                    $params = $excludeIds;
+                    $cleanExcludes = array_values(array_filter(array_map('intval', $excludeIds), static fn(int $id): bool => $id > 0));
+                    if (!empty($cleanExcludes)) {
+                        $placeholders = implode(',', array_fill(0, count($cleanExcludes), '?'));
+                        $conditions[] = "m.item_id NOT IN ({$placeholders})";
+                        $params = $cleanExcludes;
+                    }
                 }
+
+                $whereClause = 'WHERE ' . implode(' AND ', $conditions);
 
                 $sql = "
                     SELECT m.*, c.category_name
                     FROM `menu_items` m
                     JOIN `categories` c ON m.category_id = c.category_id
-                    WHERE $whereClause
+                    {$whereClause}
                     ORDER BY 
                         CASE WHEN m.category_id IN (2, 6, 7) THEN 0 ELSE 1 END,
                         m.rating DESC,
                         m.price ASC
-                    LIMIT " . (int)$limit;
+                    LIMIT ?
+                ";
 
                 $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
+                $pos = 1;
+                foreach ($params as $idVal) {
+                    $stmt->bindValue($pos++, (int)$idVal, PDO::PARAM_INT);
+                }
+                $stmt->bindValue($pos, max(1, (int)$limit), PDO::PARAM_INT);
+                $stmt->execute();
                 $rows = $stmt->fetchAll();
 
                 if (!empty($rows)) {
                     foreach ($rows as &$item) {
-                        $item['image_url'] = get_dish_image_url($item['image_url'] ?? '');
+                        $item['image_url'] = getDishImageUrl($item['image_url'] ?? '');
                         $item['support'] = 0.0;
                         $item['confidence'] = 0.0;
                         $item['lift'] = 1.0;
@@ -433,7 +449,8 @@ class AprioriEngine
         int $totalTransactions,
         float $minSupport,
         array &$itemsetCounts
-    ): array {
+    ): array
+    {
         $c1 = [];
         foreach ($transactions as $t) {
             foreach ($t as $itemId) {
@@ -450,7 +467,7 @@ class AprioriEngine
             }
         }
 
-        usort($l1, fn($a, $b) => $a[0] <=> $b[0]);
+        usort($l1, fn(array $a, array $b): int => $a[0] <=> $b[0]);
         return $l1;
     }
 
@@ -532,7 +549,8 @@ class AprioriEngine
         int $totalTransactions,
         float $minSupport,
         array &$itemsetCounts
-    ): array {
+    ): array
+    {
         $nextL = [];
 
         foreach ($candidates as $candidate) {
@@ -568,7 +586,8 @@ class AprioriEngine
         int $totalTransactions,
         float $minConfidence,
         float $minLift
-    ): array {
+    ): array
+    {
         $rules = [];
 
         foreach ($frequentItemsets as $k => $itemsets) {
@@ -653,9 +672,9 @@ class AprioriEngine
      *
      * @return array<int, array<int>> List of transactions (arrays of item IDs)
      */
-    private static function getTransactionsFromDB(): array
+    private static function getTransactionsFromDb(): array
     {
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         if (!$pdo) {
             return [];
         }
@@ -709,7 +728,7 @@ class AprioriEngine
         }
 
         $itemIds = array_keys($metaMap);
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
 
         if ($pdo) {
             try {
@@ -718,7 +737,7 @@ class AprioriEngine
                     SELECT m.*, c.category_name
                     FROM `menu_items` m
                     JOIN `categories` c ON m.category_id = c.category_id
-                    WHERE m.item_id IN ($placeholders) AND m.is_available = 1
+                    WHERE m.item_id IN ($placeholders) AND m.is_active = 1 AND m.is_available = 1 AND c.is_active = 1
                 ";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($itemIds);
@@ -727,7 +746,7 @@ class AprioriEngine
                 $indexedRows = [];
                 foreach ($rows as $row) {
                     $id = (int)$row['item_id'];
-                    $row['image_url'] = get_dish_image_url($row['image_url'] ?? '');
+                    $row['image_url'] = getDishImageUrl($row['image_url'] ?? '');
                     $row['support'] = $metaMap[$id]['support'] ?? 0.0;
                     $row['confidence'] = $metaMap[$id]['confidence'] ?? 0.0;
                     $row['lift'] = $metaMap[$id]['lift'] ?? 1.0;
@@ -780,7 +799,7 @@ class AprioriEngine
             return [];
         }
 
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         if ($pdo) {
             try {
                 $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
@@ -844,7 +863,7 @@ class AprioriEngine
     {
         $clean = array_values(array_unique(array_filter(
             array_map('intval', $ids),
-            fn($val) => $val > 0
+            fn(int $val): bool => $val > 0
         )));
         sort($clean);
         return $clean;
@@ -923,7 +942,7 @@ class AprioriEngine
 
         return array_values(array_filter(
             $catalog,
-            fn($item) => !in_array($item['item_id'], $excludeIds, true)
+            fn(array $item): bool => !in_array($item['item_id'], $excludeIds, true)
         ));
     }
 }

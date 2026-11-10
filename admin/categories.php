@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Food Categories Catalog Management
  * Zippy - Online Food Ordering Platform
@@ -11,162 +12,35 @@ $activePage = 'categories';
 // Bootstrap core libraries before HTML output
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle Add / Edit / Delete / Toggle Status / Update Order
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session security token. Please try again.');
-    } elseif ($_POST['action'] === 'add_category') {
-        $name = clean_input($_POST['category_name']);
-        $slug = clean_input($_POST['category_slug']) ?: strtolower(preg_replace('/[^A-Za-z0-9-]+/', '-', $name));
-        $desc = clean_input($_POST['category_description']);
-        $image = clean_input($_POST['image_url'] ?? '');
-        $order = isset($_POST['display_order']) && $_POST['display_order'] !== '' ? (int)$_POST['display_order'] : null;
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-
-        // Auto-assign next display order if not specified
-        if ($order === null || $order <= 0) {
-            $maxOrd = (int)db_fetch_val("SELECT MAX(`display_order`) FROM `categories`");
-            $order = $maxOrd + 1;
-        }
-
-        // Check if category photo was uploaded
-        $upload = handle_category_photo_upload('category_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/categories.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $image = $upload['url'];
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session security token. Please try again.');
+    } else {
+        $action = (string)$_POST['action'];
+        if ($action === 'add_category') {
+            $res = CatalogService::createCategory($_POST);
+            setFlash($res['type'], $res['message']);
+        } elseif ($action === 'edit_category') {
+            $res = CatalogService::updateCategory($_POST);
+            setFlash($res['type'], $res['message']);
+        } elseif ($action === 'toggle_status') {
+            $res = CatalogService::toggleCategoryStatus((int)($_POST['category_id'] ?? 0));
+            if ($res !== null) {
+                setFlash($res['type'], $res['message']);
             }
-        }
-
-        if (empty($image)) {
-            $image = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300';
-        }
-
-        if (!empty($name)) {
-            // Check for duplicate name or slug
-            $existing = db_fetch_val("SELECT COUNT(*) FROM `categories` WHERE `category_name` = :name OR `category_slug` = :slug", [
-                ':name' => $name,
-                ':slug' => $slug
-            ]);
-
-            if ($existing > 0) {
-                set_flash('warning', "A category with the name '{$name}' or slug '{$slug}' already exists.");
-            } else {
-                db_query("
-                    INSERT INTO `categories` (`category_name`, `category_slug`, `category_description`, `image_url`, `display_order`, `is_active`) 
-                    VALUES (:name, :slug, :desc, :img, :ord, :act)
-                ", [
-                    ':name' => $name,
-                    ':slug' => $slug,
-                    ':desc' => $desc,
-                    ':img' => $image,
-                    ':ord' => $order,
-                    ':act' => $isActive
-                ]);
-                set_flash('success', "Category '{$name}' created successfully with display order #{$order}.");
-            }
-        }
-        header("Location: " . ADMIN_URL . "/categories.php");
-        exit;
-
-    } elseif ($_POST['action'] === 'edit_category') {
-        $cid = (int)$_POST['category_id'];
-        $name = clean_input($_POST['category_name']);
-        $slug = clean_input($_POST['category_slug']);
-        $desc = clean_input($_POST['category_description']);
-        $image = clean_input($_POST['image_url'] ?? '');
-        $order = (int)($_POST['display_order'] ?? 0);
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-
-        // Check if a new category photo was uploaded
-        $upload = handle_category_photo_upload('category_image');
-        if ($upload !== null) {
-            if (!empty($upload['error'])) {
-                set_flash('danger', 'Photo upload failed: ' . $upload['error']);
-                header("Location: " . ADMIN_URL . "/categories.php");
-                exit;
-            } elseif (!empty($upload['url'])) {
-                $image = $upload['url'];
-            }
-        }
-
-        // If no new file uploaded and image_url is empty, retain current existing image from DB
-        if (empty($image)) {
-            $existing = db_fetch_val("SELECT `image_url` FROM `categories` WHERE `category_id` = :id", [':id' => $cid]);
-            if ($existing) {
-                $image = $existing;
-            }
-        }
-
-        db_query("
-            UPDATE `categories` 
-            SET `category_name` = :name, `category_slug` = :slug, `category_description` = :desc, 
-                `image_url` = :img, `display_order` = :ord, `is_active` = :act
-            WHERE `category_id` = :id
-        ", [
-            ':name' => $name,
-            ':slug' => $slug,
-            ':desc' => $desc,
-            ':img' => $image,
-            ':ord' => $order,
-            ':act' => $isActive,
-            ':id' => $cid
-        ]);
-        set_flash('success', "Category '{$name}' updated successfully.");
-        header("Location: " . ADMIN_URL . "/categories.php");
-        exit;
-
-    } elseif ($_POST['action'] === 'toggle_status') {
-        $cid = (int)$_POST['category_id'];
-        $cat = db_fetch_one("SELECT `category_name`, `is_active` FROM `categories` WHERE `category_id` = :id", [':id' => $cid]);
-        if ($cat) {
-            $newStatus = $cat['is_active'] ? 0 : 1;
-            db_query("UPDATE `categories` SET `is_active` = :status WHERE `category_id` = :id", [
-                ':status' => $newStatus,
-                ':id' => $cid
-            ]);
-            $statusLabel = $newStatus ? 'now visible live on storefront' : 'now hidden from storefront';
-            set_flash('success', "Category '{$cat['category_name']}' is {$statusLabel}.");
-        }
-        header("Location: " . ADMIN_URL . "/categories.php");
-        exit;
-
-    } elseif ($_POST['action'] === 'update_order') {
-        $cid = (int)$_POST['category_id'];
-        $direction = clean_input($_POST['direction'] ?? '');
-        $currentOrder = (int)db_fetch_val("SELECT `display_order` FROM `categories` WHERE `category_id` = :id", [':id' => $cid]);
-        
-        if ($direction === 'up') {
-            $newOrder = max(1, $currentOrder - 1);
-        } elseif ($direction === 'down') {
-            $newOrder = $currentOrder + 1;
-        } else {
-            $newOrder = (int)($_POST['new_order'] ?? $currentOrder);
-        }
-
-        db_query("UPDATE `categories` SET `display_order` = :ord WHERE `category_id` = :id", [
-            ':ord' => $newOrder,
-            ':id' => $cid
-        ]);
-        set_flash('success', "Display priority updated.");
-        header("Location: " . ADMIN_URL . "/categories.php");
-        exit;
-
-    } elseif ($_POST['action'] === 'delete_category') {
-        $cid = (int)$_POST['category_id'];
-        $dishCount = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items` WHERE `category_id` = :id", [':id' => $cid]);
-        if ($dishCount > 0) {
-            set_flash('danger', "Cannot delete category because it contains {$dishCount} active menu dishes. Reassign or delete dishes first.");
-        } else {
-            $catName = db_fetch_val("SELECT `category_name` FROM `categories` WHERE `category_id` = :id", [':id' => $cid]);
-            db_query("DELETE FROM `categories` WHERE `category_id` = :id", [':id' => $cid]);
-            set_flash('success', "Category '{$catName}' deleted successfully.");
+        } elseif ($action === 'update_order') {
+            $cid = (int)($_POST['category_id'] ?? 0);
+            $direction = cleanInput((string)($_POST['direction'] ?? ''));
+            $explicitOrder = isset($_POST['new_order']) ? (int)$_POST['new_order'] : null;
+            $res = CatalogService::updateCategoryOrder($cid, $direction, $explicitOrder);
+            setFlash($res['type'], $res['message']);
+        } elseif ($action === 'delete_category') {
+            $res = CatalogService::softDeleteCategory((int)($_POST['category_id'] ?? 0));
+            setFlash($res['type'], $res['message']);
         }
         header("Location: " . ADMIN_URL . "/categories.php");
         exit;
@@ -175,45 +49,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
 
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch all categories with dish counts and ordering
-$categories = db_fetch_all("
-    SELECT c.*, COUNT(m.item_id) AS total_dishes
-    FROM `categories` c
-    LEFT JOIN `menu_items` m ON c.category_id = m.category_id
-    GROUP BY c.category_id
-    ORDER BY c.display_order ASC, c.category_id ASC
-");
-
-// Calculate real-time summary metrics
-$totalCategories = count($categories);
-$activeCount = 0;
-$hiddenCount = 0;
-$emptyCount = 0;
-$totalDishesMapped = 0;
-
-foreach ($categories as $cat) {
-    if (!empty($cat['is_active'])) {
-        $activeCount++;
-    } else {
-        $hiddenCount++;
-    }
-    if ((int)$cat['total_dishes'] === 0) {
-        $emptyCount++;
-    }
-    $totalDishesMapped += (int)$cat['total_dishes'];
-}
-
-$maxOrder = !empty($categories) ? max(array_column($categories, 'display_order')) : 0;
-$suggestedNextOrder = $maxOrder + 1;
-
-// Compute initial version fingerprints for live change detection & notifications
-$catFingerprintData = array_map(function($c) {
-    return [(int)$c['category_id'], $c['category_name'], (int)$c['display_order'], (int)$c['is_active'], (int)$c['total_dishes']];
-}, $categories);
-$dishFingerprintData = db_fetch_all("SELECT item_id, category_id, item_name, price, stock_quantity, is_available FROM `menu_items` ORDER BY item_id ASC");
-$initialCatVer = md5(json_encode($catFingerprintData));
-$initialDishVer = md5(json_encode($dishFingerprintData));
-$initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
+$catData = CatalogService::getAdminCategoriesData();
+$categories = $catData['categories'];
+$totalCategories = $catData['totalCategories'];
+$activeCount = $catData['activeCount'];
+$hiddenCount = $catData['hiddenCount'];
+$emptyCount = $catData['emptyCount'];
+$totalDishesMapped = $catData['totalDishesMapped'];
+$suggestedNextOrder = $catData['suggestedNextOrder'];
+$initialCatVer = $catData['initialCatVer'];
+$initialDishVer = $catData['initialDishVer'];
+$initialCombinedVer = $catData['initialCombinedVer'];
 ?>
 
 <style>
@@ -484,7 +330,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
                   
                   <div class="d-flex flex-column ms-1">
                     <form method="POST" action="<?= ADMIN_URL ?>/categories.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order">
                       <input type="hidden" name="category_id" value="<?= (int)$cat['category_id'] ?>">
                       <input type="hidden" name="direction" value="up">
@@ -493,7 +339,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
                       </button>
                     </form>
                     <form method="POST" action="<?= ADMIN_URL ?>/categories.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="update_order">
                       <input type="hidden" name="category_id" value="<?= (int)$cat['category_id'] ?>">
                       <input type="hidden" name="direction" value="down">
@@ -508,7 +354,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
               <!-- Category Details: Thumbnail, Name, Slug, Description -->
               <td>
                 <div class="d-flex align-items-center gap-3">
-                  <img src="<?= e(get_category_image_url($cat['image_url'])) ?>" 
+                  <img src="<?= e(getCategoryImageUrl($cat['image_url'])) ?>" 
                        alt="<?= e($cat['category_name']) ?>" 
                        class="rounded-3 object-fit-cover shadow-sm border bg-white flex-shrink-0" 
                        style="width: 50px; height: 50px;"
@@ -558,7 +404,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
               <!-- 1-Click Status Toggle -->
               <td>
                 <form method="POST" action="<?= ADMIN_URL ?>/categories.php" class="m-0 d-inline">
-                  <?= csrf_field() ?>
+                  <?= csrfField() ?>
                   <input type="hidden" name="action" value="toggle_status">
                   <input type="hidden" name="category_id" value="<?= (int)$cat['category_id'] ?>">
                   
@@ -590,7 +436,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
                           data-slug="<?= e($cat['category_slug']) ?>"
                           data-description="<?= e($cat['category_description'] ?? '') ?>"
                           data-image="<?= e($cat['image_url'] ?? '') ?>"
-                          data-display-image="<?= e(get_category_image_url($cat['image_url'])) ?>"
+                          data-display-image="<?= e(getCategoryImageUrl($cat['image_url'])) ?>"
                           data-order="<?= (int)$cat['display_order'] ?>"
                           data-active="<?= (int)$cat['is_active'] ?>"
                           title="Edit Category Details">
@@ -652,7 +498,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/categories.php" enctype="multipart/form-data">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_category">
 
         <div class="modal-body p-4">
@@ -812,7 +658,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
       </div>
 
       <form method="POST" action="<?= ADMIN_URL ?>/categories.php" enctype="multipart/form-data">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_category">
         <input type="hidden" name="category_id" id="editCatId" value="">
 
@@ -947,7 +793,7 @@ $initialCombinedVer = md5($initialCatVer . '_' . $initialDishVer);
         </p>
 
         <form method="POST" action="<?= ADMIN_URL ?>/categories.php" class="m-0">
-          <?= csrf_field() ?>
+          <?= csrfField() ?>
           <input type="hidden" name="action" value="delete_category">
           <input type="hidden" name="category_id" id="deleteCatId" value="">
 
@@ -1194,9 +1040,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // 8. Real-Time Live Sync & Change Detection
   // ---------------------------------------------------------------------------
   let catSyncCountdown = 5;
-  let currentCatVer = <?= json_encode($initialCatVer ?? '') ?>;
-  let currentDishVer = <?= json_encode($initialDishVer ?? '') ?>;
-  let currentCombinedVer = <?= json_encode($initialCombinedVer ?? '') ?>;
+  let currentCatVer = <?= jsJson($initialCatVer ?? '') ?>;
+  let currentDishVer = <?= jsJson($initialDishVer ?? '') ?>;
+  let currentCombinedVer = <?= jsJson($initialCombinedVer ?? '') ?>;
 
   setInterval(async () => {
     catSyncCountdown--;

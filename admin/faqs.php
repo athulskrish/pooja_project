@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dynamic FAQ & Help Desk Knowledge Base Management
  * Zippy - Online Food Ordering Platform
@@ -10,219 +11,33 @@ $activePage = 'faqs';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
-
-/**
- * Sanitize FAQ answer content allowing safe formatting tags
- */
-function sanitize_faq_content(string $input): string {
-    $trimmed = trim($input);
-    // Allowed safe formatting tags for help center
-    $allowed = '<p><br><br/><b><strong><i><em><u><ul><ol><li><code><pre><a><span>';
-    $cleaned = strip_tags($trimmed, $allowed);
-    
-    // If input contains no HTML tags at all, auto-convert newlines to <br>
-    if (!preg_match('/<(?:p|br|ul|ol|li)\b[^>]*>/i', $cleaned)) {
-        $cleaned = nl2br($cleaned);
-    }
-    return $cleaned;
-}
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle Form Submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid or expired session token.');
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid or expired session token.');
+    } else {
+        $res = AdminService::handleFaqAction($_POST);
+        setFlash($res['type'], $res['message']);
     }
-
-    $action = $_POST['action'];
-
-    // 1. Add New FAQ
-    if ($action === 'add_faq') {
-        $question = clean_input($_POST['question'] ?? '');
-        $rawAnswer = $_POST['answer'] ?? '';
-        $answer = sanitize_faq_content($rawAnswer);
-        $category = clean_input($_POST['category'] ?? 'General');
-        $displayOrder = (int)($_POST['display_order'] ?? 10);
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-
-        if (!empty($question) && !empty($answer)) {
-            db_query("
-                INSERT INTO `faqs` (`question`, `answer`, `category`, `display_order`, `is_active`)
-                VALUES (:q, :a, :c, :o, :act)
-            ", [
-                ':q' => $question,
-                ':a' => $answer,
-                ':c' => $category,
-                ':o' => $displayOrder,
-                ':act' => $isActive
-            ]);
-            set_flash('success', 'New FAQ topic published to knowledge base.');
-        } else {
-            set_flash('danger', 'Please provide both question and answer.');
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
-
-    // 2. Edit Existing FAQ
-    if ($action === 'edit_faq') {
-        $faqId = (int)($_POST['faq_id'] ?? 0);
-        $question = clean_input($_POST['question'] ?? '');
-        $rawAnswer = $_POST['answer'] ?? '';
-        $answer = sanitize_faq_content($rawAnswer);
-        $category = clean_input($_POST['category'] ?? 'General');
-        $displayOrder = (int)($_POST['display_order'] ?? 0);
-        $isActive = !empty($_POST['is_active']) ? 1 : 0;
-
-        if ($faqId > 0 && !empty($question) && !empty($answer)) {
-            db_query("
-                UPDATE `faqs`
-                SET `question` = :q, `answer` = :a, `category` = :c, `display_order` = :o, `is_active` = :act
-                WHERE `faq_id` = :id
-            ", [
-                ':q' => $question,
-                ':a' => $answer,
-                ':c' => $category,
-                ':o' => $displayOrder,
-                ':act' => $isActive,
-                ':id' => $faqId
-            ]);
-            set_flash('success', 'FAQ topic updated successfully.');
-        } else {
-            set_flash('danger', 'Valid question and answer are required.');
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
-
-    // 3. Toggle Active Status
-    if ($action === 'toggle_status') {
-        $faqId = (int)($_POST['faq_id'] ?? 0);
-        $newStatus = (int)($_POST['is_active'] ?? 0);
-
-        if ($faqId > 0) {
-            db_query("UPDATE `faqs` SET `is_active` = :act WHERE `faq_id` = :id", [
-                ':act' => $newStatus,
-                ':id' => $faqId
-            ]);
-            set_flash('success', $newStatus ? 'FAQ topic is now live on storefront.' : 'FAQ topic moved to drafts.');
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
-
-    // 4. Delete FAQ
-    if ($action === 'delete_faq') {
-        $faqId = (int)($_POST['faq_id'] ?? 0);
-        if ($faqId > 0) {
-            db_query("DELETE FROM `faqs` WHERE `faq_id` = :id", [':id' => $faqId]);
-            set_flash('success', 'FAQ topic permanently deleted.');
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
-
-    // 5. Quick Reorder (Nudge Up / Down)
-    if ($action === 'reorder_faq') {
-        $faqId = (int)($_POST['faq_id'] ?? 0);
-        $direction = clean_input($_POST['direction'] ?? 'up');
-        if ($faqId > 0) {
-            if ($direction === 'up') {
-                db_query("UPDATE `faqs` SET `display_order` = GREATEST(0, `display_order` - 1) WHERE `faq_id` = :id", [':id' => $faqId]);
-            } else {
-                db_query("UPDATE `faqs` SET `display_order` = `display_order` + 1 WHERE `faq_id` = :id", [':id' => $faqId]);
-            }
-            set_flash('success', 'Display order adjusted.');
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
-
-    // 6. Duplicate FAQ
-    if ($action === 'duplicate_faq') {
-        $faqId = (int)($_POST['faq_id'] ?? 0);
-        if ($faqId > 0) {
-            $existing = db_fetch_one("SELECT * FROM `faqs` WHERE `faq_id` = :id", [':id' => $faqId]);
-            if ($existing) {
-                db_query("
-                    INSERT INTO `faqs` (`question`, `answer`, `category`, `display_order`, `is_active`)
-                    VALUES (:q, :a, :c, :o, 0)
-                ", [
-                    ':q' => 'Copy of ' . $existing['question'],
-                    ':a' => $existing['answer'],
-                    ':c' => $existing['category'],
-                    ':o' => (int)$existing['display_order'] + 1
-                ]);
-                set_flash('success', 'FAQ duplicated as draft. You can now tweak and publish it.');
-            }
-        }
-        header("Location: " . ADMIN_URL . "/faqs.php");
-        exit;
-    }
+    header("Location: " . ADMIN_URL . "/faqs.php");
+    exit;
 }
 
-// -----------------------------------------------------------------------------
-// KPI Summary Calculations
-// -----------------------------------------------------------------------------
-$totalFaqs = (int)(db_fetch_val("SELECT COUNT(*) FROM `faqs`") ?: 0);
-$publishedFaqs = (int)(db_fetch_val("SELECT COUNT(*) FROM `faqs` WHERE `is_active` = 1") ?: 0);
-$draftFaqs = (int)(db_fetch_val("SELECT COUNT(*) FROM `faqs` WHERE `is_active` = 0") ?: 0);
-$totalCategories = (int)(db_fetch_val("SELECT COUNT(DISTINCT `category`) FROM `faqs` WHERE `category` IS NOT NULL AND `category` != ''") ?: 0);
-$maxOrder = (int)(db_fetch_val("SELECT MAX(`display_order`) FROM `faqs`") ?: 0);
-
-// Default + Dynamic Categories
-$defaultCategories = ['General', 'Orders & Cancellation', 'Delivery & Tracking', 'Billing & Payments', 'Account & Privacy'];
-$dbCats = db_fetch_all("SELECT DISTINCT `category` FROM `faqs` WHERE `category` IS NOT NULL AND `category` != ''");
-$existingCats = array_filter(array_column($dbCats, 'category'));
-$categories = array_values(array_unique(array_merge($defaultCategories, $existingCats)));
-sort($categories);
-
-// Category Counts
-$categoryCounts = [];
-$countsRaw = db_fetch_all("SELECT `category`, COUNT(*) as cnt FROM `faqs` GROUP BY `category`");
-foreach ($countsRaw as $cRow) {
-    $categoryCounts[$cRow['category']] = (int)$cRow['cnt'];
-}
-
-// -----------------------------------------------------------------------------
-// Filtering & Query Building
-// -----------------------------------------------------------------------------
-$categoryFilter = clean_input($_GET['category'] ?? '');
-$statusFilter = clean_input($_GET['status'] ?? '');
-$searchQuery = clean_input($_GET['q'] ?? '');
-
-$where = "1=1";
-$params = [];
-
-if (!empty($categoryFilter)) {
-    $where .= " AND `category` = :cat";
-    $params[':cat'] = $categoryFilter;
-}
-
-if ($statusFilter === 'published') {
-    $where .= " AND `is_active` = 1";
-} elseif ($statusFilter === 'draft') {
-    $where .= " AND `is_active` = 0";
-}
-
-if (!empty($searchQuery)) {
-    $where .= " AND (`question` LIKE :q OR `answer` LIKE :q OR `category` LIKE :q)";
-    $params[':q'] = "%{$searchQuery}%";
-}
-
-$faqs = [];
-try {
-    $faqs = db_fetch_all("
-        SELECT * FROM `faqs`
-        WHERE $where
-        ORDER BY `display_order` ASC, `faq_id` ASC
-    ", $params);
-} catch (Exception $e) {
-    $faqs = [];
-}
+$faqData = AdminService::getAdminFaqsData($_GET);
+$totalFaqs = $faqData['totalFaqs'];
+$publishedFaqs = $faqData['publishedFaqs'];
+$draftFaqs = $faqData['draftFaqs'];
+$totalCategories = $faqData['totalCategories'];
+$maxOrder = $faqData['maxOrder'];
+$categories = $faqData['categories'];
+$categoryCounts = $faqData['categoryCounts'];
+$categoryFilter = $faqData['categoryFilter'];
+$statusFilter = $faqData['statusFilter'];
+$searchQuery = $faqData['searchQuery'];
+$faqs = $faqData['faqs'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -409,7 +224,7 @@ require_once __DIR__ . '/includes/header.php';
                   <span class="badge bg-light text-dark border font-monospace px-2 py-1"><?= (int)$faq['display_order'] ?></span>
                   <div class="d-flex flex-column">
                     <form method="POST" action="<?= ADMIN_URL ?>/faqs.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="reorder_faq">
                       <input type="hidden" name="faq_id" value="<?= (int)$faq['faq_id'] ?>">
                       <input type="hidden" name="direction" value="up">
@@ -418,7 +233,7 @@ require_once __DIR__ . '/includes/header.php';
                       </button>
                     </form>
                     <form method="POST" action="<?= ADMIN_URL ?>/faqs.php" class="m-0">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="reorder_faq">
                       <input type="hidden" name="faq_id" value="<?= (int)$faq['faq_id'] ?>">
                       <input type="hidden" name="direction" value="down">
@@ -445,7 +260,7 @@ require_once __DIR__ . '/includes/header.php';
                 
                 <!-- Quick Answer Preview & Inline Accordion Collapse -->
                 <div class="text-muted small mb-1">
-                  <?= strip_tags($faq['answer']) ?>
+                  <?= e(strip_tags((string)$faq['answer'])) ?>
                 </div>
 
                 <div class="mt-1">
@@ -461,7 +276,7 @@ require_once __DIR__ . '/includes/header.php';
                       <span class="text-muted font-monospace" style="font-size: 0.7rem;">ID #<?= (int)$faq['faq_id'] ?></span>
                     </div>
                     <div>
-                      <?= $faq['answer'] ?>
+                      <?= sanitizeFaqContent((string)$faq['answer']) ?>
                     </div>
                   </div>
                 </div>
@@ -470,7 +285,7 @@ require_once __DIR__ . '/includes/header.php';
               <!-- Status Toggle Button -->
               <td class="text-center">
                 <form method="POST" action="<?= ADMIN_URL ?>/faqs.php" class="m-0">
-                  <?= csrf_field() ?>
+                  <?= csrfField() ?>
                   <input type="hidden" name="action" value="toggle_status">
                   <input type="hidden" name="faq_id" value="<?= (int)$faq['faq_id'] ?>">
                   <input type="hidden" name="is_active" value="<?= $faq['is_active'] ? '0' : '1' ?>">
@@ -490,7 +305,7 @@ require_once __DIR__ . '/includes/header.php';
                           data-bs-target="#editFaqModal"
                           data-id="<?= (int)$faq['faq_id'] ?>"
                           data-question="<?= e($faq['question']) ?>"
-                          data-answer="<?= htmlspecialchars($faq['answer'], ENT_QUOTES, 'UTF-8') ?>"
+                          data-answer="<?= htmlspecialchars((string)($faq['answer'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-category="<?= e($faq['category']) ?>"
                           data-order="<?= (int)$faq['display_order'] ?>"
                           data-active="<?= (int)$faq['is_active'] ?>"
@@ -500,7 +315,7 @@ require_once __DIR__ . '/includes/header.php';
 
                   <!-- Duplicate as Draft -->
                   <form method="POST" action="<?= ADMIN_URL ?>/faqs.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="duplicate_faq">
                     <input type="hidden" name="faq_id" value="<?= (int)$faq['faq_id'] ?>">
                     <button type="submit" class="btn btn-sm btn-outline-secondary rounded-pill px-2 py-1" title="Duplicate as new Draft">
@@ -542,7 +357,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="POST" action="<?= ADMIN_URL ?>/faqs.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_faq">
 
         <div class="modal-body p-4">
@@ -642,7 +457,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="POST" action="<?= ADMIN_URL ?>/faqs.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_faq">
         <input type="hidden" name="faq_id" id="editFaqId" value="">
 
@@ -733,7 +548,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="POST" action="<?= ADMIN_URL ?>/faqs.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="delete_faq">
         <input type="hidden" name="faq_id" id="deleteFaqId" value="">
 
@@ -771,18 +586,75 @@ require_once __DIR__ . '/includes/header.php';
     textarea.setSelectionRange(start + openTag.length, start + openTag.length + selected.length);
   }
 
-  // Live render preview
+  // Sanitized live render preview matching DOM allowlist rules
+  function sanitizePreviewHtml(rawHtml) {
+    const allowedTags = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'code', 'pre', 'a', 'span']);
+    const dropTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'form', 'noscript', 'template', 'link', 'meta']);
+    const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
+
+    function cleanNode(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return document.createTextNode(node.textContent || '');
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return null;
+      }
+      const tag = node.tagName.toLowerCase();
+      if (dropTags.has(tag)) {
+        return null;
+      }
+      if (!allowedTags.has(tag)) {
+        const frag = document.createDocumentFragment();
+        Array.from(node.childNodes).forEach(child => {
+          const cleaned = cleanNode(child);
+          if (cleaned) frag.appendChild(cleaned);
+        });
+        return frag;
+      }
+      const el = document.createElement(tag);
+      if (tag === 'a') {
+        const href = (node.getAttribute('href') || '').trim();
+        const compact = href.replace(/[\x00-\x20]+/g, '');
+        if (/^(?:https?:\/\/|mailto:|\/(?!\/))/i.test(compact)) {
+          el.setAttribute('href', href);
+          el.setAttribute('rel', 'noopener noreferrer');
+          if ((node.getAttribute('target') || '').toLowerCase() === '_blank') {
+            el.setAttribute('target', '_blank');
+          }
+        }
+        const title = node.getAttribute('title');
+        if (title) el.setAttribute('title', title);
+      }
+      Array.from(node.childNodes).forEach(child => {
+        const cleaned = cleanNode(child);
+        if (cleaned) el.appendChild(cleaned);
+      });
+      return el;
+    }
+
+    const out = document.createDocumentFragment();
+    Array.from(doc.body.childNodes).forEach(child => {
+      const cleaned = cleanNode(child);
+      if (cleaned) out.appendChild(cleaned);
+    });
+    return out;
+  }
+
   function renderTabPreview(textareaId, previewBoxId) {
     const text = document.getElementById(textareaId)?.value || '';
     const box = document.getElementById(previewBoxId);
     if (!box) return;
+    box.innerHTML = '';
     if (!text.trim()) {
-      box.innerHTML = '<span class="text-muted fst-italic">No answer content written yet.</span>';
+      const empty = document.createElement('span');
+      empty.className = 'text-muted fst-italic';
+      empty.textContent = 'No answer content written yet.';
+      box.appendChild(empty);
       return;
     }
-    // Convert newlines if no html tags
     const hasHtml = /<(?:p|br|ul|ol|li)\b[^>]*>/i.test(text);
-    box.innerHTML = hasHtml ? text : text.replace(/\n/g, '<br>');
+    const prepared = hasHtml ? text : text.replace(/\n/g, '<br>');
+    box.appendChild(sanitizePreviewHtml(prepared));
   }
 
   // Populate dynamic Edit FAQ modal

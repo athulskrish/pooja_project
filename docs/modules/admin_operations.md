@@ -1,34 +1,17 @@
-# 👨‍💼 Module: Admin Operations & Governance (admin_operations.md)
+# Module: Admin Operations, Analytics & Finance
 
-> **Context Domain:** Catalog Management, Reports, Cash Registers, Payroll & Audit Logs  
-> **Relevant Tables:** `menu_items`, `categories`, `money_transactions`, `cash_register_closures`, `staff_profiles`, `staff_salary_payouts`, `order_audit_trail`
+## 1. Overview
+The Admin Portal provides centralized operational control over menu catalog & customizations, food moods, live orders, kitchen/fleet rosters, daily cash register Z-report closures, payouts, BI analytics (`SESDemandForecast` + `AprioriEngine`), reviews, FAQs, RBAC user management, and immutable order audit logs.
 
----
+## 2. Core Services (`includes/Services/`)
+- **`CatalogService.php`**: Category CRUD & sort ordering (`admin/categories.php`), Dish CRUD & bulk/single stock adjustments (`admin/dishes.php`, `admin/ajax/adjust-stock.php`, `admin/ajax/toggle-stock.php`, `admin/ajax/bulk-dishes.php`), Customization groups/options (`admin/dish-customizations.php`), and Mood assignments (`admin/moods.php`).
+- **`OrderService.php`**: Admin order board (`admin/orders.php`: `getAdminOrdersData()`, `batchUpdateOrderStatus()`, `markOrderCodPaid()`) and AJAX single-order transitions (`admin/ajax/update-order-status.php`).
+- **`FinanceService.php`**: Financial ledger & daily cash drawer Z-report closure (`admin/financial-transactions.php`: `discrepancy_amount = actual_physical_cash - expected_cod_cash`), Kitchen HR & salary disbursement (`admin/kitchen-view.php`), and Executive BI reports (`admin/reports.php`).
+- **`FleetService.php`**: Fleet overview, COD cash settlement, and rider payouts (`admin/delivery-view.php`).
+- **`AdminService.php`**: Operations overview KPIs (`admin/index.php`), Global Command Search (`admin/ajax/command-search.php`), FAQ management (`admin/faqs.php` with `sanitizeFaqContent()`), Reviews moderation & CSV export (`admin/reviews.php`), User directory & RBAC transitions (`admin/users.php`), and Audit log explorer (`admin/audit-logs.php`, `admin/ajax/get-order-audit-trail.php`).
 
-## 1. Operational Capabilities
-
-The Admin Console (`admin/`) offers end-to-end governance:
-- **Menu & Stock Management:** Create, edit, toggle availability, and bulk-adjust dish prices and inventory.
-- **Financial Ledger & Cash Register:** Record cash inflows/outflows, reconcile daily sales against drawer cash, and log closures with discrepancy tracking.
-- **Staff & Payroll:** Manage staff designations, calculate monthly payouts, and record disbursement dates.
-- **System Audit Viewer:** Full visibility into `order_audit_trail` and state mutations.
-- **Sales Analytics:** Visual summaries of gross sales, net revenue, bestsellers, and hourly order distributions.
-
----
-
-## 2. Key Source Files
-
-- **`admin/index.php`**: Executive dashboard with KPI counters, revenue charts, and live order status tickers.
-- **`admin/dishes.php` & `admin/categories.php`**: Full CRUD operations on menu catalog and taxonomy.
-- **`admin/financial-transactions.php`**: Cashbook ledger for recording miscellaneous income and operational expenses.
-- **`admin/audit-logs.php`**: Searchable audit log inspector with filter by date, order ID, and user.
-- **`admin/reports.php`**: Demand forecasting reports utilizing Single Exponential Smoothing (SES).
-- **`admin/ajax/toggle-stock.php` & `admin/ajax/adjust-stock.php`**: Fast inline AJAX stock adjustments.
-
----
-
-## 3. Engineering Invariants
-
-1. **Role Assertion:** Every script in `admin/` must execute `requireRole(['ADMIN'])`.
-2. **Double-Entry Financial Checks:** Cash register closures must explicitly compute `cash_discrepancy = closing_cash - (opening_cash + cash_sales)`.
-3. **Soft Deletions Preferred:** When disabling menu items or categories, update `is_active = 0` rather than issuing hard `DELETE` queries to preserve relational integrity with past `order_items`.
+## 3. Data Integrity & Soft-Delete Governance
+1. **Soft Deletes Mandatory:** Archiving users, categories, dishes, customization groups/options, moods, or FAQs executes `UPDATE ... SET is_active = 0` inside domain services (supported by `database/migrate_soft_deletes.php`) so historical `order_items`, `orders`, and `order_audit_trail` foreign keys remain intact.
+2. **Audit Immutability:** `order_audit_trail` (`old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`) has no UI edit/delete controls.
+3. **ACID Multi-Table Mutations:** Stock adjustments, batch status transitions, COD settlements, salary disbursements, and cash drawer closures execute inside `dbTransactional()` with `SELECT ... FOR UPDATE` row locks.
+4. **Strict Sort Allowlists:** Dynamic `ORDER BY` clauses (e.g., `$sortMap` in `CatalogService::getAdminDishesData()`) validate inputs against explicit allowlists.

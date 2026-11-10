@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Live Order Progress Tracker & Courier Dispatch
  * Zippy - Online Food Ordering Platform
@@ -10,79 +11,20 @@ $activePage = 'orders';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
-$currentUser = current_user();
+
+requireCustomer();
+$currentUser = getCurrentUser();
 
 // Handle Customer Order Cancellation (within 60s of placement - Statechart 4.1 & UC-09)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_order') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid or expired session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid or expired session token.');
     } else {
         $cancelOrderId = (int)($_POST['order_id'] ?? 0);
-        $orderToCancel = db_fetch_one("SELECT * FROM `orders` WHERE `order_id` = :id", [':id' => $cancelOrderId]);
-
-        if ($orderToCancel) {
-            // RBAC Access Check: Ensure order belongs to logged-in customer or user is Administrator
-            if ($currentUser && (int)$orderToCancel['user_id'] !== (int)$currentUser['id'] && !is_admin()) {
-                set_flash('danger', 'Access Denied: You do not have permission to cancel orders belonging to other accounts.');
-                header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
-                exit;
-            }
-
-            $placedTs = strtotime($orderToCancel['placed_at']);
-            $elapsedSec = time() - $placedTs;
-
-            if ($elapsedSec <= 60 && in_array($orderToCancel['order_status'], ['PLACED', 'CONFIRMED'])) {
-                $pdo = getDBConnection();
-                if ($pdo) {
-                    try {
-                        $pdo->beginTransaction();
-
-                        // 1. Mark status as CANCELLED
-                        $pdo->prepare("UPDATE `orders` SET `order_status` = 'CANCELLED' WHERE `order_id` = :id")->execute([':id' => $cancelOrderId]);
-
-                        // 2. Restore inventory portions
-                        $pdo->prepare("
-                            UPDATE `menu_items` m
-                            JOIN `order_items` oi ON m.item_id = oi.item_id
-                            SET m.stock_quantity = m.stock_quantity + oi.quantity,
-                                m.is_available = 1
-                            WHERE oi.order_id = :id
-                        ")->execute([':id' => $cancelOrderId]);
-
-                        // 3. Mark payment as REFUNDED
-                        $pdo->prepare("UPDATE `payments` SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() WHERE `order_id` = :id")->execute([':id' => $cancelOrderId]);
-
-                        // 4. Audit trail entry
-                        $pdo->prepare("
-                            INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
-                            VALUES (:oid, :old, 'CANCELLED', :uid, NOW())
-                        ")->execute([
-                            ':oid' => $cancelOrderId,
-                            ':old' => $orderToCancel['order_status'],
-                            ':uid' => $currentUser['id'] ?? $orderToCancel['user_id']
-                        ]);
-
-                        $pdo->commit();
-                        set_flash('success', "Order #ZIP-{$cancelOrderId} cancelled within 60s. 100% refund has been credited to your payment method and inventory restored.");
-                        header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
-                        exit;
-                    } catch (Exception $e) {
-                        if ($pdo->inTransaction()) {
-                            $pdo->rollBack();
-                        }
-                        set_flash('danger', 'Cancellation error: ' . $e->getMessage());
-                    }
-                }
-            } else {
-                if ($elapsedSec > 60) {
-                    set_flash('danger', 'Cancellation window expired: orders can only be cancelled within 60s of placement. The kitchen has already started cooking.');
-                } else {
-                    set_flash('danger', 'Order cannot be cancelled as kitchen preparation has already begun.');
-                }
-                header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
-                exit;
-            }
-        }
+        $cancelRes = OrderService::cancelCustomerOrder($cancelOrderId, (int)$currentUser['id'], isAdmin());
+        setFlash($cancelRes['flash_type'], $cancelRes['message']);
+        header("Location: " . CUSTOMER_URL . "/order-status.php?order_id=" . $cancelOrderId);
+        exit;
     }
 }
 
@@ -101,112 +43,35 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 <?php
 
-$uid = $currentUser['id'] ?? null;
-if (!isset($_GET['order_id'])) {
-    if ($uid) {
-        // Look for the user's latest in-progress order first
-        $activeOrder = db_fetch_one("SELECT order_id FROM `orders` WHERE `user_id` = :uid AND `order_status` IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') ORDER BY `order_id` DESC LIMIT 1", [':uid' => $uid]);
-        if ($activeOrder) {
-            $orderId = (int)$activeOrder['order_id'];
-        } else {
-            $latestUserOrder = db_fetch_one("SELECT order_id FROM `orders` WHERE `user_id` = :uid ORDER BY `order_id` DESC LIMIT 1", [':uid' => $uid]);
-            $orderId = $latestUserOrder ? (int)$latestUserOrder['order_id'] : 1004;
-        }
-    } else {
-        $latestAny = db_fetch_one("SELECT order_id FROM `orders` ORDER BY `order_id` DESC LIMIT 1");
-        $orderId = $latestAny ? (int)$latestAny['order_id'] : 1004;
-    }
-} else {
-    $orderId = (int)$_GET['order_id'];
+$uid = (int)$currentUser['id'];
+$requestedOrderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : null;
+$statusData = OrderService::getOrderStatusData($requestedOrderId, $uid);
+
+if (empty($statusData['found'])) {
+    echo "<div class='container py-5 text-center'><h4>No active orders found</h4><a href='" . CUSTOMER_URL . "/index.php' class='btn btn-success rounded-pill mt-3'>Browse Menu</a></div>";
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
 }
 
-$order = db_fetch_one("
-    SELECT o.*, u.full_name, u.phone_number,
-           a.address_line, a.pincode,
-           p.payment_mode, p.payment_status, p.transaction_reference,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status,
-           d.current_latitude, d.current_longitude, d.delivery_latitude, d.delivery_longitude,
-           d.route_progress, d.distance_remaining_km, d.estimated_minutes_remaining
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_id = :id
-", [':id' => $orderId]);
-
-if (!$order) {
-    // Fallback to latest order
-    $order = db_fetch_one("SELECT * FROM `orders` ORDER BY `order_id` DESC LIMIT 1");
-    if (!$order) {
-        echo "<div class='container py-5 text-center'><h4>No active orders found</h4><a href='" . CUSTOMER_URL . "/index.php' class='btn btn-success rounded-pill mt-3'>Browse Menu</a></div>";
-        require_once __DIR__ . '/includes/footer.php';
-        exit;
-    }
+if (empty($statusData['authorized'])) {
+    echo "<div class='container py-5 text-center'><h4>Access Denied</h4><p class='text-muted small'>You do not have permission to view this order.</p><a href='" . CUSTOMER_URL . "/order-history.php' class='btn btn-success rounded-pill mt-2'>View Your Orders</a></div>";
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
 }
 
-// Check if user has other active in-progress orders
-$otherActiveOrders = [];
-if ($uid) {
-    $otherActiveOrders = db_fetch_all("
-        SELECT order_id, order_status 
-        FROM `orders` 
-        WHERE `user_id` = :uid AND `order_status` IN ('CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') AND `order_id` <> :curId
-        ORDER BY `order_id` DESC
-    ", [':uid' => $uid, ':curId' => $order['order_id']]);
-}
-
-// Fetch line items
-$items = db_fetch_all("
-    SELECT oi.*, m.item_name, m.is_veg, m.image_url 
-    FROM `order_items` oi
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id = :id
-", [':id' => $order['order_id']]);
-
-$statusReorderPayload = array_map(function($it) {
-    return [
-        'id' => (int)$it['item_id'],
-        'name' => $it['item_name'],
-        'price' => (float)$it['unit_price'],
-        'isVeg' => (bool)$it['is_veg'],
-        'restaurant' => 'Meghana Foods',
-        'imageUrl' => get_dish_image_url($it['image_url'] ?? ''),
-        'qty' => (int)$it['quantity']
-    ];
-}, $items);
-$statusReorderJson = htmlspecialchars(json_encode($statusReorderPayload), ENT_QUOTES, 'UTF-8');
-
-// Map statuses to step index (0 to 3)
-$statusMap = [
-    'PLACED' => 0,
-    'CONFIRMED' => 1,
-    'COOKING' => 1,
-    'READY' => 2,
-    'OUT_FOR_DELIVERY' => 2,
-    'DELIVERED' => 3
-];
-$currentStep = $statusMap[strtoupper($order['order_status'])] ?? 1;
-
-$isDelivered = (strtoupper($order['order_status']) === 'DELIVERED');
-$isCancelled = (strtoupper($order['order_status']) === 'CANCELLED');
-
-// Calculate initial ETA countdown
-$etaTimestamp = !empty($order['estimated_delivery_time']) ? strtotime($order['estimated_delivery_time']) : (strtotime($order['placed_at']) + 25 * 60);
-$currentTimestamp = time();
-$remainingSeconds = max(0, $etaTimestamp - $currentTimestamp);
-if ($remainingSeconds <= 0 && !$isDelivered && !$isCancelled) {
-    $remainingSeconds = 15 * 60; // 15 mins fallback for active order
-}
-$initMins = floor($remainingSeconds / 60);
-$initSecs = $remainingSeconds % 60;
-$initialCountdownText = sprintf('%02d:%02d', $initMins, $initSecs);
-$existingReview = db_fetch_one("SELECT review_id FROM `order_reviews` WHERE `order_id` = :id", [':id' => $order['order_id']]);
-$hasReviewed = !empty($existingReview);
-
-$placedTs = strtotime($order['placed_at']);
-$cancellationSecondsLeft = max(0, 60 - (time() - $placedTs));
-$canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_status']), ['PLACED', 'CONFIRMED']));
+$order = $statusData['order'];
+$orderId = $statusData['orderId'];
+$otherActiveOrders = $statusData['otherActiveOrders'];
+$items = $statusData['items'];
+$statusReorderJson = $statusData['statusReorderJson'];
+$currentStep = $statusData['currentStep'];
+$isDelivered = $statusData['isDelivered'];
+$isCancelled = $statusData['isCancelled'];
+$remainingSeconds = $statusData['remainingSeconds'];
+$initialCountdownText = $statusData['initialCountdownText'];
+$hasReviewed = $statusData['hasReviewed'];
+$cancellationSecondsLeft = $statusData['cancellationSecondsLeft'];
+$canCancel = $statusData['canCancel'];
 ?>
 
 <main class="py-4">
@@ -217,7 +82,7 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
         <i class="bi bi-x-octagon-fill fs-2 text-danger"></i>
         <div>
           <h5 class="fw-bold mb-1 text-danger">Order Cancelled & 100% Refund Issued</h5>
-          <p class="small mb-0 text-dark">This order was cancelled within the permissible 60-second window. A full refund of <strong><?= format_inr($order['total_amount']) ?></strong> has been initiated (Status: <strong>REFUNDED</strong>) and all ordered items have been restored to restaurant inventory.</p>
+          <p class="small mb-0 text-dark">This order was cancelled within the permissible 60-second window. A full refund of <strong><?= formatInr($order['total_amount']) ?></strong> has been initiated (Status: <strong>REFUNDED</strong>) and all ordered items have been restored to restaurant inventory.</p>
         </div>
       </div>
     <?php endif; ?>
@@ -232,7 +97,7 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
           </div>
         </div>
         <form method="POST" action="<?= CUSTOMER_URL ?>/order-status.php?order_id=<?= (int)$order['order_id'] ?>" onsubmit="return confirm('Are you sure you want to cancel Order #ZIP-<?= (int)$order['order_id'] ?>? You will receive a 100% instant refund.');" class="m-0">
-          <?= csrf_field() ?>
+          <?= csrfField() ?>
           <input type="hidden" name="action" value="cancel_order">
           <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
           <button type="submit" id="btnCancelOrder" class="btn btn-danger rounded-pill px-4 fw-bold shadow-xs">
@@ -260,7 +125,7 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
         <p class="text-muted small mb-0">Tracking Order <strong class="fs-6 font-monospace text-dark">#ZIP-<?= (int)$order['order_id'] ?></strong> | Placed on <?= date('d M Y, h:i A', strtotime($order['placed_at'])) ?></p>
       </div>
       <div id="topBadgeContainer">
-        <?= get_status_badge($order['order_status']) ?>
+        <?= getStatusBadge($order['order_status']) ?>
       </div>
     </div>
 
@@ -303,9 +168,9 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
                   <i class="bi bi-calendar2-check-fill me-1"></i> ADVANCE PRE-ORDER
                 </span>
                 <h3 class="fw-bold font-outfit mb-0 text-dark" id="statusHeading">
-                  Scheduled for <?= e($order['scheduled_slot'] ?: date('D, d M h:i A', strtotime($order['scheduled_for']))) ?>
+                  Scheduled for <?= e($order['scheduled_slot'] ?: (!empty($order['scheduled_for']) ? date('D, d M h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'Scheduled')) ?>
                 </h3>
-                <div class="text-muted small" id="statusSubtext">Target Delivery: <strong><?= date('d M Y, h:i A', strtotime($order['scheduled_for'])) ?></strong> • Queued in Kitchen KDS</div>
+                <div class="text-muted small" id="statusSubtext">Target Delivery: <strong><?= !empty($order['scheduled_for']) ? date('d M Y, h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'TBD' ?></strong> • Queued in Kitchen KDS</div>
               <?php else: ?>
                 <span class="badge rounded-pill px-3 py-1 mb-1" id="scheduleBadge" style="background:#CEFFDC; color:#243E2C;">
                   ⚡ ON SCHEDULE
@@ -319,7 +184,7 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
                     Order confirmed & queued in kitchen
                   <?php endif; ?>
                 </h3>
-                <div class="text-muted small" id="statusSubtext">Estimated Delivery: <strong><?= date('h:i A', strtotime($order['estimated_delivery_time'] ?: '+25 minutes')) ?></strong></div>
+                <div class="text-muted small" id="statusSubtext">Estimated Delivery: <strong><?= date('h:i A', (int)strtotime((string)($order['estimated_delivery_time'] ?: '+25 minutes'))) ?></strong></div>
               <?php endif; ?>
             </div>
 
@@ -328,25 +193,33 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
               <div class="small text-white-50 text-uppercase fw-semibold" id="countdownLabel" style="font-size: 0.65rem; letter-spacing: 0.5px;">
                 <?= ($isDelivered || $isCancelled) ? 'ORDER STATUS' : (!empty($order['is_scheduled']) ? 'SCHEDULED TARGET' : 'ESTIMATED TIME') ?>
               </div>
-              <div class="fs-2 fw-bold font-monospace text-mint" id="live-eta-countdown" data-status="<?= e($order['order_status']) ?>" data-no-simulation="true">
+              <div class="fs-2 fw-bold font-monospace text-mint" id="live-eta-countdown" 
+                   data-status="<?= e($order['order_status']) ?>" 
+                   data-order-id="<?= (int)$order['order_id'] ?>"
+                   data-remaining-seconds="<?= max(0, (int)$remainingSeconds) ?>"
+                   data-est-time="<?= !empty($order['estimated_delivery_time']) ? date('c', (int)strtotime((string)$order['estimated_delivery_time'])) : '' ?>"
+                   data-placed-at="<?= !empty($order['placed_at']) ? date('c', (int)strtotime((string)$order['placed_at'])) : '' ?>">
                 <?php if ($isDelivered): ?>
                   DELIVERED
                 <?php elseif ($isCancelled): ?>
                   CANCELLED
+                <?php elseif (!empty($order['is_scheduled']) && !empty($order['scheduled_for'])): ?>
+                  <?= date('h:i A', (int)strtotime((string)$order['scheduled_for'])) ?>
                 <?php elseif (!empty($order['is_scheduled'])): ?>
-                  <?= date('h:i A', strtotime($order['scheduled_for'])) ?>
+                  SCHEDULED
                 <?php else: ?>
                   <?= $initialCountdownText ?>
                 <?php endif; ?>
               </div>
               <div class="small text-white-50" id="countdownSubtext" style="font-size: 0.7rem;">
-                <?= !empty($order['is_scheduled']) ? date('d-M', strtotime($order['scheduled_for'])) : 'Arrival Window' ?>
-              </div>
-            </div>
                 <?php if ($isDelivered): ?>
                   ORDER COMPLETED
                 <?php elseif ($isCancelled): ?>
                   CLOSED
+                <?php elseif (!empty($order['is_scheduled']) && !empty($order['scheduled_for'])): ?>
+                  <?= date('d-M', (int)strtotime((string)$order['scheduled_for'])) ?>
+                <?php elseif (!empty($order['is_scheduled'])): ?>
+                  Arrival Window
                 <?php else: ?>
                   MINS REMAINING
                 <?php endif; ?>
@@ -531,11 +404,11 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
                   </div>
                   <?php if (!empty($item['customizations'])): ?>
                     <div class="ps-3 mt-1">
-                      <?= format_customizations_html($item['customizations']) ?>
+                      <?= formatCustomizationsHtml($item['customizations']) ?>
                     </div>
                   <?php endif; ?>
                 </div>
-                <span class="fw-bold text-dark"><?= format_inr($item['line_total']) ?></span>
+                <span class="fw-bold text-dark"><?= formatInr($item['line_total']) ?></span>
               </div>
             <?php endforeach; ?>
           </div>
@@ -543,21 +416,21 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
           <div class="border-top pt-2">
             <div class="d-flex justify-content-between small text-muted mb-1">
               <span>Subtotal</span>
-              <span><?= format_inr($order['subtotal']) ?></span>
+              <span><?= formatInr($order['subtotal']) ?></span>
             </div>
             <div class="d-flex justify-content-between small text-muted mb-1">
               <span>GST & Delivery</span>
-              <span><?= format_inr($order['tax_amount'] + $order['delivery_fee']) ?></span>
+              <span><?= formatInr($order['tax_amount'] + $order['delivery_fee']) ?></span>
             </div>
             <?php if ($order['discount_amount'] > 0): ?>
               <div class="d-flex justify-content-between small text-success mb-1">
                 <span>Discount</span>
-                <span>-<?= format_inr($order['discount_amount']) ?></span>
+                <span>-<?= formatInr($order['discount_amount']) ?></span>
               </div>
             <?php endif; ?>
             <div class="d-flex justify-content-between fw-bold fs-6 text-dark border-top pt-2 mt-2">
               <span>Total Paid</span>
-              <span class="text-forest"><?= format_inr($order['total_amount']) ?></span>
+              <span class="text-forest"><?= formatInr($order['total_amount']) ?></span>
             </div>
             <div class="d-flex justify-content-between small text-muted mt-2 pt-1 border-top">
               <span>Payment Mode:</span>
@@ -615,7 +488,7 @@ $canCancel = ($cancellationSecondsLeft > 0 && in_array(strtoupper($order['order_
         <form id="quickRatingForm" onsubmit="event.preventDefault(); submitQuickRatingModal();">
           <input type="hidden" name="action" value="submit_rating">
           <input type="hidden" name="is_ajax" value="1">
-          <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+          <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
           <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
           <input type="hidden" name="food_rating" id="modalFoodRating" value="5">
           <input type="hidden" name="rider_rating" id="modalRiderRating" value="5">
@@ -724,7 +597,7 @@ function playStatusChime() {
 
 (function() {
   const orderId = <?= (int)$order['order_id'] ?>;
-  let orderStatus = '<?= addslashes(strtoupper($order['order_status'])) ?>';
+  let orderStatus = <?= jsJson(strtoupper($order['order_status'])) ?>;
   let secondsLeft = <?= (int)$remainingSeconds ?>;
   window.__setSecondsLeft = function(s) { secondsLeft = s; };
   const countdownElem = document.getElementById('live-eta-countdown');
@@ -795,7 +668,7 @@ function playStatusChime() {
         iconAnchor: [16, 16]
       });
       L.marker(customerCoords, { icon: homeIcon }).addTo(liveMap)
-        .bindPopup('<strong>Delivery Destination</strong><br><?= e(addslashes($order['address_line'] ?: 'Customer Address')) ?>');
+        .bindPopup('<strong>Delivery Destination</strong><br>' + <?= jsJson(e($order['address_line'] ?: 'Customer Address')) ?>);
 
       // Route Path
       const defaultRoute = [
@@ -822,8 +695,9 @@ function playStatusChime() {
       });
 
       const initialRiderPos = (orderStatus === 'DELIVERED') ? customerCoords : hubCoords;
+      const escapedStatusText = String(orderStatus).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
       riderMarker = L.marker(initialRiderPos, { icon: riderIcon }).addTo(liveMap)
-        .bindPopup('<strong><?= e(addslashes($order['delivery_partner_name'] ?: 'Zippy Express Rider')) ?></strong><br>Status: ' + orderStatus);
+        .bindPopup('<strong>' + <?= jsJson(e($order['delivery_partner_name'] ?: 'Zippy Express Rider')) ?> + '</strong><br>Status: ' + escapedStatusText);
 
       // Fit map bounds to encompass restaurant and customer
       const bounds = L.latLngBounds([hubCoords, customerCoords]);
@@ -1005,7 +879,7 @@ function playStatusChime() {
   pollInterval = setInterval(async () => {
     try {
       // 1. Fetch live coordinates and routing status
-      const locRes = await fetch(`../api/live-location.php?order_id=${orderId}`);
+      const locRes = await fetch(`../api/live-location.php?portal=customer&order_id=${encodeURIComponent(orderId)}`);
       if (locRes.ok) {
         const data = await locRes.json();
         if (data.success && data.status) {

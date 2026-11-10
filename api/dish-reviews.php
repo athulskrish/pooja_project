@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dish Food Reviews & Star Rating API Endpoint
  * Zippy - Online Food Ordering Platform
@@ -8,16 +9,39 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
 
 $action = $_REQUEST['action'] ?? 'get_reviews';
 $itemId = isset($_REQUEST['dish_id']) ? (int)$_REQUEST['dish_id'] : (int)($_REQUEST['item_id'] ?? 0);
 
-if ($itemId <= 0) {
-    echo json_encode(['success' => false, 'error' => 'Invalid dish ID provided.']);
-    exit;
-}
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    $currentUser = getCurrentUser();
+    if (!$currentUser) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Please sign in to submit a dish review.']);
+        exit;
+    }
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $action === 'submit_review') {
+    if (!verifyRequestCsrf()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid or expired CSRF token.']);
+        exit;
+    }
+
+    if ($action !== 'submit_review') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Unsupported review action.']);
+        exit;
+    }
+
+    if ($itemId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Invalid dish ID provided.']);
+        exit;
+    }
+
+    $userId = (int)$currentUser['id'];
+
     $appearance = isset($_POST['appearance_rating']) ? max(1, min(5, (int)$_POST['appearance_rating'])) : null;
     $taste = isset($_POST['taste_rating']) ? max(1, min(5, (int)$_POST['taste_rating'])) : null;
     $portion = isset($_POST['portion_rating']) ? max(1, min(5, (int)$_POST['portion_rating'])) : null;
@@ -38,72 +62,102 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $action === 'submit_revi
     $portionVal = $portion ?? $rating;
     $valueVal = $value ?? $rating;
 
-    $reviewText = clean_input($_POST['review_text'] ?? '');
-    $tags = clean_input($_POST['tags'] ?? '');
-    $currentUser = current_user();
-    $userId = $currentUser ? $currentUser['id'] : 2; // Default to demo customer
+    $reviewText = cleanInput($_POST['review_text'] ?? '');
+    $tags = cleanInput($_POST['tags'] ?? '');
 
-    $res = db_query("
-        INSERT INTO `dish_reviews` (`item_id`, `user_id`, `rating`, `appearance_rating`, `taste_rating`, `portion_rating`, `value_rating`, `review_text`, `tags`)
-        VALUES (:iid, :uid, :r, :a, :t_rate, :p, :v, :t, :tags)
-    ", [
-        ':iid' => $itemId,
-        ':uid' => $userId,
-        ':r' => $rating,
-        ':a' => $appearanceVal,
-        ':t_rate' => $tasteVal,
-        ':p' => $portionVal,
-        ':v' => $valueVal,
-        ':t' => $reviewText,
-        ':tags' => $tags
-    ]);
+    try {
+        $result = dbTransactional(function () use ($itemId, $userId, $rating, $appearanceVal, $tasteVal, $portionVal, $valueVal, $reviewText, $tags): array {
+            // Lock menu item first to serialize rating/total_reviews recalculation
+            $dishRow = dbFetchOne("SELECT `item_id` FROM `menu_items` WHERE `item_id` = :iid FOR UPDATE", [':iid' => $itemId]);
+            if (!$dishRow) {
+                return ['found' => false];
+            }
 
-    if ($res) {
-        // Recalculate average rating & increment total_reviews
-        $stats = db_fetch_one("
-            SELECT AVG(rating) AS avg_rating, COUNT(*) AS count_reviews 
-            FROM `dish_reviews` 
-            WHERE `item_id` = :iid
-        ", [':iid' => $itemId]);
+            $res = dbQuery("
+                INSERT INTO `dish_reviews` (`item_id`, `user_id`, `rating`, `appearance_rating`, `taste_rating`, `portion_rating`, `value_rating`, `review_text`, `tags`)
+                VALUES (:iid, :uid, :r, :a, :t_rate, :p, :v, :t, :tags)
+            ", [
+                ':iid' => $itemId,
+                ':uid' => $userId,
+                ':r' => $rating,
+                ':a' => $appearanceVal,
+                ':t_rate' => $tasteVal,
+                ':p' => $portionVal,
+                ':v' => $valueVal,
+                ':t' => $reviewText,
+                ':tags' => $tags
+            ]);
 
-        $newRating = round((float)($stats['avg_rating'] ?? $rating), 1);
-        $newCount = (int)($stats['count_reviews'] ?? 1);
+            if (!$res) {
+                throw new RuntimeException('Insert into dish_reviews failed.');
+            }
 
-        db_query("
-            UPDATE `menu_items` 
-            SET `rating` = :r, `total_reviews` = GREATEST(`total_reviews` + 1, :cnt) 
-            WHERE `item_id` = :iid
-        ", [
-            ':r' => $newRating,
-            ':cnt' => $newCount,
-            ':iid' => $itemId
-        ]);
+            // Recalculate average rating & increment total_reviews atomically
+            $stats = dbFetchOne("
+                SELECT AVG(rating) AS avg_rating, COUNT(*) AS count_reviews 
+                FROM `dish_reviews` 
+                WHERE `item_id` = :iid
+            ", [':iid' => $itemId]);
 
-        echo json_encode([
-            'success' => true,
-            'message' => 'Dish-level feedback submitted successfully! ⭐',
-            'rating' => $newRating,
-            'total_reviews' => $newCount,
-            'dimensions' => [
-                'appearance' => $appearanceVal,
-                'taste' => $tasteVal,
-                'portion' => $portionVal,
-                'value' => $valueVal
-            ]
-        ]);
-        exit;
-    } else {
+            $newRating = round((float)($stats['avg_rating'] ?? $rating), 1);
+            $newCount = (int)($stats['count_reviews'] ?? 1);
+
+            dbQuery("
+                UPDATE `menu_items` 
+                SET `rating` = :r, `total_reviews` = GREATEST(`total_reviews` + 1, :cnt) 
+                WHERE `item_id` = :iid
+            ", [
+                ':r' => $newRating,
+                ':cnt' => $newCount,
+                ':iid' => $itemId
+            ]);
+
+            return [
+                'found' => true,
+                'rating' => $newRating,
+                'total_reviews' => $newCount
+            ];
+        });
+    } catch (Throwable $e) {
+        error_log("Dish review transaction failed for item {$itemId}: " . $e->getMessage());
+        http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Failed to record dish review in database.']);
         exit;
     }
+
+    if (!$result['found']) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Dish not found.']);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Dish-level feedback submitted successfully! ⭐',
+        'rating' => $result['rating'],
+        'total_reviews' => $result['total_reviews'],
+        'dimensions' => [
+            'appearance' => $appearanceVal,
+            'taste' => $tasteVal,
+            'portion' => $portionVal,
+            'value' => $valueVal
+        ]
+    ]);
+    exit;
 }
 
 // Default: GET reviews for dish
-$dish = db_fetch_one("
+if ($itemId <= 0) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid dish ID provided.']);
+    exit;
+}
+
+$dish = dbFetchOne("
     SELECT m.*, c.category_name 
     FROM `menu_items` m
     JOIN `categories` c ON m.category_id = c.category_id
-    WHERE m.item_id = :id
+    WHERE m.item_id = :id AND m.is_active = 1
 ", [':id' => $itemId]);
 
 if (!$dish) {
@@ -111,10 +165,10 @@ if (!$dish) {
     exit;
 }
 
-$reviews = get_dish_reviews($itemId, 20);
+$reviews = getDishReviews($itemId, 20);
 
 // Dimension statistics calculation
-$dimStats = db_fetch_one("
+$dimStats = dbFetchOne("
     SELECT 
         ROUND(AVG(appearance_rating), 1) AS avg_appearance,
         ROUND(AVG(taste_rating), 1) AS avg_taste,
@@ -154,7 +208,7 @@ echo json_encode([
         'total_feedbacks' => (int)($dimStats['total_feedbacks'] ?? count($reviews))
     ],
     'distribution' => $distribution,
-    'reviews' => array_map(function($r) {
+    'reviews' => array_map(function (array $r): array {
         return [
             'review_id' => (int)$r['dish_review_id'],
             'customer_name' => $r['customer_name'] ?? 'Food Lover',
@@ -164,8 +218,8 @@ echo json_encode([
             'portion_rating' => (int)($r['portion_rating'] ?? $r['rating']),
             'value_rating' => (int)($r['value_rating'] ?? $r['rating']),
             'review_text' => $r['review_text'] ?? '',
-            'tags' => !empty($r['tags']) ? explode(',', $r['tags']) : [],
-            'date' => date('d M Y', strtotime($r['created_at']))
+            'tags' => !empty($r['tags']) ? explode(',', (string)$r['tags']) : [],
+            'date' => date('d M Y', (int)(strtotime((string)($r['created_at'] ?? '')) ?: time()))
         ];
     }, $reviews)
 ]);

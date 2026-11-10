@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dedicated Kitchen Display System (KDS) & Operations Dashboard
  * Zippy - Online Food Ordering Platform
@@ -17,59 +18,25 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/WSJFQueue.php';
 
 // Enforce Kitchen or Admin Access
-require_kitchen();
-$currentUser = current_user();
-
-// Format Wait Time cleanly to eliminate raw ugly minute strings
-if (!function_exists('format_kds_wait_time')) {
-    function format_kds_wait_time(int $minutes, ?string $placedAt = null): array {
-        if ($minutes < 1) {
-            return ['label' => '< 1m', 'class' => 'tag-wait-fresh'];
-        } elseif ($minutes < 60) {
-            $cls = ($minutes >= 20) ? 'tag-wait-alert' : (($minutes >= 10) ? 'tag-wait-warm' : 'tag-wait-fresh');
-            return ['label' => "{$minutes}m", 'class' => $cls];
-        } elseif ($minutes < 1440) {
-            $h = floor($minutes / 60);
-            $m = $minutes % 60;
-            $txt = $m > 0 ? "{$h}h {$m}m" : "{$h}h";
-            return ['label' => "{$txt} DELAY", 'class' => 'tag-wait-alert'];
-        } else {
-            return ['label' => 'OVERDUE', 'class' => 'tag-wait-alert'];
-        }
-    }
-}
-
-// Clean human-friendly priority badge
-if (!function_exists('get_kds_priority_badge')) {
-    function get_kds_priority_badge(array $ticket): array {
-        $badge = $ticket['urgency_badge'] ?? null;
-        $label = $badge['label'] ?? 'NORMAL';
-        if ($label === 'CRITICAL DELAY') {
-            return ['label' => 'RUSH', 'class' => 'tag-priority-critical', 'icon' => 'bi-fire'];
-        } elseif ($label === 'HIGH PRIORITY') {
-            return ['label' => 'PRIORITY', 'class' => 'tag-priority-high', 'icon' => 'bi-lightning-charge-fill'];
-        }
-        return ['label' => 'STANDARD', 'class' => 'tag-priority-normal', 'icon' => 'bi-check-circle'];
-    }
-}
+requireKitchen();
+$currentUser = getCurrentUser();
 
 // Handle Synchronous State Transitions (POST fallback)
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid or expired session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid or expired session token.');
     } else {
         $action = $_POST['action'];
 
         // 1. Advance Order State in KDS Workflow
         if ($action === 'kds_advance') {
             $orderId = (int)($_POST['order_id'] ?? 0);
-            $targetStatus = clean_input($_POST['target_status'] ?? '');
-            $selectedRider = clean_input($_POST['rider_name'] ?? '');
+            $targetStatus = cleanInput($_POST['target_status'] ?? '');
+            $selectedRider = cleanInput($_POST['rider_name'] ?? '');
 
-            // Execute transition via centralized order lifecycle state machine
-            $result = transition_order_status($orderId, $targetStatus, $selectedRider, $currentUser['id'] ?? null);
+            $result = transitionOrderStatus($orderId, $targetStatus, $selectedRider, $currentUser['id'] ?? null);
 
-            $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
+            $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
                       || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
 
             if (!$result['success']) {
@@ -79,7 +46,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                     echo json_encode(['success' => false, 'message' => $blockMsg]);
                     exit;
                 }
-                set_flash('danger', $blockMsg);
+                setFlash('danger', $blockMsg);
                 header("Location: " . KITCHEN_URL . "/index.php");
                 exit;
             }
@@ -95,7 +62,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
                 $msg = $result['message'];
             }
 
-            set_flash('success', $msg);
+            setFlash('success', $msg);
 
             if ($isAjax) {
                 header('Content-Type: application/json');
@@ -109,136 +76,35 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
 
         // 2. Toggle Menu Item Stock (86-List)
         if ($action === 'toggle_stock') {
-            $itemId = (int)($_POST['item_id'] ?? 0);
-            $newStockState = (int)($_POST['is_available'] ?? 0);
-            db_query("UPDATE `menu_items` SET `is_available` = :av WHERE `item_id` = :id", [
-                ':av' => $newStockState,
-                ':id' => $itemId
-            ]);
-            set_flash('info', "Item availability updated.");
+            OrderService::toggleKitchenDishAvailability((int)($_POST['item_id'] ?? 0), (int)($_POST['is_available'] ?? 0));
+            setFlash('info', 'Item availability updated.');
             header("Location: " . KITCHEN_URL . "/index.php");
             exit;
         }
     }
 }
 
-// Fetch Active Orders Sorted by WSJF Priority
-$allActiveOrders = WSJFQueue::getPrioritizedOrders();
-
-// Group by Kanban Swimlanes
-$laneNew = array_values(array_filter($allActiveOrders, fn($o) => in_array($o['order_status'], ['PLACED', 'CONFIRMED'])));
-$laneCooking = array_values(array_filter($allActiveOrders, fn($o) => $o['order_status'] === 'COOKING'));
-$laneReady = array_values(array_filter($allActiveOrders, fn($o) => $o['order_status'] === 'READY'));
-
-// Automatically ensure ready orders are allocated in FCFS order
-auto_allocate_ready_orders_fcfs();
-
-// Sort Ready orders strictly by First-Come First-Served based on food preparation time (ready_at)
-usort($laneReady, function($a, $b) {
-    $timeA = !empty($a['ready_at']) ? strtotime($a['ready_at']) : strtotime($a['placed_at']);
-    $timeB = !empty($b['ready_at']) ? strtotime($b['ready_at']) : strtotime($b['placed_at']);
-    if ($timeA === $timeB) {
-        return (int)$a['order_id'] <=> (int)$b['order_id'];
-    }
-    return $timeA <=> $timeB;
-});
-
-// Fetch Dispatches and Riders details for Ready lane
-$readyOrderIds = array_column($laneReady, 'order_id');
-$dispatchesByOrder = [];
-if (!empty($readyOrderIds)) {
-    $placeholders = implode(',', array_fill(0, count($readyOrderIds), '?'));
-    $dispatches = db_fetch_all("SELECT * FROM `delivery_dispatches` WHERE `order_id` IN ($placeholders)", $readyOrderIds);
-    foreach ($dispatches as $d) {
-        $dispatchesByOrder[$d['order_id']] = $d;
-    }
-}
-
-// Fetch active riders list with 1-driver-1-delivery availability
-$ridersList = get_all_delivery_riders();
-
-// Fetch Complete Fulfilled Kitchen Order History
-$orderHistory = db_fetch_all("
-    SELECT o.*, u.full_name AS customer_name, u.phone_number AS customer_phone,
-           d.delivery_partner_name, d.delivery_otp, d.dispatched_at, d.delivered_at,
-           p.payment_mode, p.payment_status,
-           TIMESTAMPDIFF(MINUTE, o.placed_at, COALESCE(d.dispatched_at, o.placed_at)) AS prep_minutes
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    WHERE o.order_status IN ('OUT_FOR_DELIVERY', 'DELIVERED')
-    ORDER BY COALESCE(d.dispatched_at, o.placed_at) DESC
-    LIMIT 60
-");
-
-// Group line items for history dockets
-$historyOrderIds = array_column($orderHistory, 'order_id');
-$historyItemsGrouped = [];
-if (!empty($historyOrderIds)) {
-    $pl = implode(',', array_fill(0, count($historyOrderIds), '?'));
-    $hItems = db_fetch_all("
-        SELECT oi.*, m.item_name, m.is_veg 
-        FROM `order_items` oi 
-        JOIN `menu_items` m ON oi.item_id = m.item_id 
-        WHERE oi.order_id IN ($pl)
-    ", $historyOrderIds);
-    foreach ($hItems as $hit) {
-        $historyItemsGrouped[$hit['order_id']][] = $hit;
-    }
-}
-
-// Fetch Staff Profile for Payments & Salary Tab
-$chefProfile = db_fetch_one("
-    SELECT sp.*, u.full_name, u.email, u.phone_number 
-    FROM `staff_profiles` sp 
-    JOIN `users` u ON sp.user_id = u.user_id 
-    WHERE sp.user_id = :uid
-", [':uid' => $currentUser['id']]);
-
-if (!$chefProfile) {
-    $chefProfile = db_fetch_one("
-        SELECT sp.*, u.full_name, u.email, u.phone_number 
-        FROM `staff_profiles` sp 
-        JOIN `users` u ON sp.user_id = u.user_id 
-        WHERE sp.department = 'KITCHEN' 
-        ORDER BY sp.profile_id ASC 
-        LIMIT 1
-    ");
-}
-
-// Fetch Salary Payouts History
-$chefPayouts = [];
-if ($chefProfile) {
-    $chefPayouts = db_fetch_all("
-        SELECT * FROM `staff_salary_payouts` 
-        WHERE `user_id` = :uid 
-        ORDER BY `paid_at` DESC
-    ", [':uid' => $chefProfile['user_id']]);
-}
-$recentHandedOver = $orderHistory;
-
-// Fetch Menu Items for 86-List modal
-$allMenuItems = db_fetch_all("
-    SELECT m.*, c.category_name 
-    FROM `menu_items` m
-    JOIN `categories` c ON m.category_id = c.category_id
-    ORDER BY c.display_order ASC, m.item_name ASC
-");
-
-// Active Advance Scheduled Orders
-$scheduledOrders = array_values(array_filter($allActiveOrders, fn($o) => !empty($o['is_scheduled'])));
-$countScheduled = count($scheduledOrders);
-
-// Count stats
-$countNew = count($laneNew);
-$countCooking = count($laneCooking);
-$countReady = count($laneReady);
-$countHandedOver = count($recentHandedOver);
-$totalActive = $countNew + $countCooking + $countReady;
-
-// Canonical state fingerprint for live synchronization
-$kdsInitialStateHash = get_kds_state_hash();
+$kdsData = OrderService::getKitchenDashboardData($currentUser);
+$allActiveOrders = $kdsData['allActiveOrders'];
+$laneNew = $kdsData['laneNew'];
+$laneCooking = $kdsData['laneCooking'];
+$laneReady = $kdsData['laneReady'];
+$dispatchesByOrder = $kdsData['dispatchesByOrder'];
+$ridersList = $kdsData['ridersList'];
+$orderHistory = $kdsData['orderHistory'];
+$historyItemsGrouped = $kdsData['historyItemsGrouped'];
+$chefProfile = $kdsData['chefProfile'];
+$chefPayouts = $kdsData['chefPayouts'];
+$recentHandedOver = $kdsData['recentHandedOver'];
+$allMenuItems = $kdsData['allMenuItems'];
+$scheduledOrders = $kdsData['scheduledOrders'];
+$countScheduled = $kdsData['countScheduled'];
+$countNew = $kdsData['countNew'];
+$countCooking = $kdsData['countCooking'];
+$countReady = $kdsData['countReady'];
+$countHandedOver = $kdsData['countHandedOver'];
+$totalActive = $kdsData['totalActive'];
+$kdsInitialStateHash = $kdsData['kdsInitialStateHash'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -289,7 +155,7 @@ require_once __DIR__ . '/includes/header.php';
                               <i class="bi bi-calendar2-check-fill"></i> ADVANCE: <?= e($t['scheduled_slot'] ?: date('d M, h:i A', strtotime($t['scheduled_for']))) ?>
                             </span>
                           <?php endif; ?>
-                          <?php $pBadge = get_kds_priority_badge($t); ?>
+                          <?php $pBadge = getKdsPriorityBadge($t); ?>
                           <?php if ($pBadge['label'] !== 'STANDARD' && empty($t['is_scheduled'])): ?>
                             <span class="ticket-tag-pill <?= $pBadge['class'] ?>">
                               <i class="bi <?= $pBadge['icon'] ?>"></i> <?= e($pBadge['label']) ?>
@@ -301,7 +167,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="bi bi-alarm"></i> <?= date('d M h:i A', strtotime($t['scheduled_for'])) ?>
                           </span>
                         <?php else: ?>
-                          <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                          <?php $wait = formatKdsWaitTime((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
                           <span class="ticket-tag-pill <?= $wait['class'] ?>">
                             <i class="bi bi-stopwatch"></i> <?= e($wait['label']) ?>
                           </span>
@@ -355,7 +221,7 @@ require_once __DIR__ . '/includes/header.php';
                           <i class="bi bi-printer"></i>
                         </button>
                         <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'COOKING')">
-                          <?= csrf_field() ?>
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="kds_advance">
                           <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                           <input type="hidden" name="target_status" value="COOKING">
@@ -419,7 +285,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="bi bi-alarm"></i> <?= date('d M h:i A', strtotime($t['scheduled_for'])) ?>
                           </span>
                         <?php else: ?>
-                          <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                          <?php $wait = formatKdsWaitTime((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
                           <span class="ticket-tag-pill <?= $wait['class'] ?>">
                             <i class="bi bi-clock-history"></i> <?= e($wait['label']) ?>
                           </span>
@@ -474,7 +340,7 @@ require_once __DIR__ . '/includes/header.php';
                           <i class="bi bi-printer"></i>
                         </button>
                         <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'READY')">
-                          <?= csrf_field() ?>
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="kds_advance">
                           <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                           <input type="hidden" name="target_status" value="READY">
@@ -567,7 +433,7 @@ require_once __DIR__ . '/includes/header.php';
                               <i class="bi bi-cpu me-1"></i> SYSTEM ALLOCATED (FCFS #<?= $fcfsRank ?>)
                             </span>
                             <span class="small font-mono text-muted" style="font-size:0.72rem;">
-                              <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                              <?= !empty($t['ready_at']) ? date('h:i A', (int)strtotime((string)$t['ready_at'])) : 'Prepared' ?>
                             </span>
                           </div>
                           <div class="d-flex align-items-center gap-2 small">
@@ -587,7 +453,7 @@ require_once __DIR__ . '/includes/header.php';
                               <i class="bi bi-hourglass-split me-1"></i> FCFS QUEUE #<?= $fcfsRank ?> (FIRST PREPARED)
                             </span>
                             <span class="small font-mono text-muted" style="font-size:0.72rem;">
-                              <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                              <?= !empty($t['ready_at']) ? date('h:i A', (int)strtotime((string)$t['ready_at'])) : 'Prepared' ?>
                             </span>
                           </div>
                           <div class="small text-muted" style="font-size:0.75rem;">
@@ -633,12 +499,12 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="d-flex justify-content-between align-items-start mb-2">
                       <div class="d-flex align-items-center gap-1">
                         <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">#ZIP-<?= (int)$t['order_id'] ?></span>
-                        <?php $pBadge = get_kds_priority_badge($t); ?>
+                        <?php $pBadge = getKdsPriorityBadge($t); ?>
                         <?php if ($pBadge['label'] !== 'STANDARD'): ?>
                           <span class="ticket-tag-pill <?= $pBadge['class'] ?>"><?= e($pBadge['label']) ?></span>
                         <?php endif; ?>
                       </div>
-                      <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                      <?php $wait = formatKdsWaitTime((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
                       <span class="ticket-tag-pill <?= $wait['class'] ?>"><i class="bi bi-stopwatch"></i> <?= e($wait['label']) ?></span>
                     </div>
 
@@ -672,7 +538,7 @@ require_once __DIR__ . '/includes/header.php';
                         <i class="bi bi-printer"></i>
                       </button>
                       <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'COOKING')">
-                        <?= csrf_field() ?>
+                        <?= csrfField() ?>
                         <input type="hidden" name="action" value="kds_advance">
                         <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                         <input type="hidden" name="target_status" value="COOKING">
@@ -719,7 +585,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">#ZIP-<?= (int)$t['order_id'] ?></span>
                         <span class="ticket-tag-pill" style="background:#FFF7ED; color:#C2410C; border:1px solid #FED7AA;"><i class="fa-solid fa-fire-burner"></i> ON STOVE</span>
                       </div>
-                      <?php $wait = format_kds_wait_time((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
+                      <?php $wait = formatKdsWaitTime((int)$t['elapsed_minutes'], $t['placed_at'] ?? null); ?>
                       <span class="ticket-tag-pill <?= $wait['class'] ?>"><i class="bi bi-clock-history"></i> <?= e($wait['label']) ?></span>
                     </div>
 
@@ -756,7 +622,7 @@ require_once __DIR__ . '/includes/header.php';
                         <i class="bi bi-printer"></i>
                       </button>
                       <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'READY')">
-                        <?= csrf_field() ?>
+                        <?= csrfField() ?>
                         <input type="hidden" name="action" value="kds_advance">
                         <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                         <input type="hidden" name="target_status" value="READY">
@@ -830,7 +696,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="bi bi-cpu me-1"></i> SYSTEM ALLOCATED (FCFS #<?= $fcfsRank ?>)
                           </span>
                           <span class="small font-mono text-muted" style="font-size:0.72rem;">
-                            <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                            <?= !empty($t['ready_at']) ? date('h:i A', (int)strtotime((string)$t['ready_at'])) : 'Prepared' ?>
                           </span>
                         </div>
                         <div class="d-flex align-items-center gap-2 small">
@@ -850,7 +716,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="bi bi-hourglass-split me-1"></i> FCFS QUEUE #<?= $fcfsRank ?> (FIRST PREPARED)
                           </span>
                           <span class="small font-mono text-muted" style="font-size:0.72rem;">
-                            <?= !empty($t['ready_at']) ? date('h:i A', strtotime($t['ready_at'])) : 'Prepared' ?>
+                            <?= !empty($t['ready_at']) ? date('h:i A', (int)strtotime((string)$t['ready_at'])) : 'Prepared' ?>
                           </span>
                         </div>
                         <div class="small text-muted" style="font-size:0.75rem;">
@@ -970,7 +836,7 @@ require_once __DIR__ . '/includes/header.php';
                       </button>
                       <?php if (in_array($t['order_status'], ['PLACED', 'CONFIRMED'])): ?>
                         <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'COOKING')">
-                          <?= csrf_field() ?>
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="kds_advance">
                           <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                           <input type="hidden" name="target_status" value="COOKING">
@@ -981,7 +847,7 @@ require_once __DIR__ . '/includes/header.php';
                         </form>
                       <?php elseif ($t['order_status'] === 'COOKING'): ?>
                         <form method="POST" action="<?= KITCHEN_URL ?>/index.php" class="flex-grow-1 m-0" onsubmit="handleOrderTransition(event, <?= (int)$t['order_id'] ?>, 'READY')">
-                          <?= csrf_field() ?>
+                          <?= csrfField() ?>
                           <input type="hidden" name="action" value="kds_advance">
                           <input type="hidden" name="order_id" value="<?= (int)$t['order_id'] ?>">
                           <input type="hidden" name="target_status" value="READY">
@@ -1051,14 +917,14 @@ require_once __DIR__ . '/includes/header.php';
                   <?php foreach ($orderHistory as $h): ?>
                     <?php 
                       $hItems = $historyItemsGrouped[$h['order_id']] ?? [];
-                      $itemNames = array_map(fn($it) => $it['item_name'], $hItems);
+                      $itemNames = array_map(fn(array $it): string => (string)$it['item_name'], $hItems);
                       $searchRowText = strtolower("ZIP-{$h['order_id']} {$h['customer_name']} {$h['customer_phone']} {$h['delivery_partner_name']} {$h['delivery_otp']} {$h['order_status']} " . implode(' ', $itemNames));
                     ?>
                     <tr class="history-table-row" data-search="<?= e($searchRowText) ?>">
                       <td>
                         <div class="font-mono fw-bold fs-6" style="color:var(--lush-pine);">#ZIP-<?= (int)$h['order_id'] ?></div>
                         <div class="text-muted small font-mono" style="font-size:0.75rem;">
-                          <?= !empty($h['dispatched_at']) ? date('d M, h:i A', strtotime($h['dispatched_at'])) : date('d M, h:i A', strtotime($h['placed_at'])) ?>
+                          <?= !empty($h['dispatched_at']) ? date('d M, h:i A', (int)strtotime((string)$h['dispatched_at'])) : date('d M, h:i A', (int)strtotime((string)$h['placed_at'])) ?>
                         </div>
                       </td>
 
@@ -1100,7 +966,7 @@ require_once __DIR__ . '/includes/header.php';
                       </td>
 
                       <td>
-                        <div class="fw-bold font-mono" style="color:var(--lush-pine);"><?= format_inr($h['total_amount']) ?></div>
+                        <div class="fw-bold font-mono" style="color:var(--lush-pine);"><?= formatInr($h['total_amount']) ?></div>
                         <?php if ($h['payment_mode'] === 'COD'): ?>
                           <span class="badge" style="background:#FEF3C7; color:#92400E; border:1px solid #FDE68A; font-size:0.65rem;">
                             <?= ($h['payment_status'] === 'SUCCESSFUL') ? 'COD CASH PAID' : 'COD PENDING' ?>
@@ -1166,12 +1032,12 @@ require_once __DIR__ . '/includes/header.php';
               <div class="d-flex flex-wrap gap-3">
                 <div class="text-end border-end pe-3">
                   <div class="small text-muted text-uppercase fw-bold" style="font-size:0.68rem;">Base Salary</div>
-                  <div class="fs-4 fw-bold font-mono" style="color:var(--lush-pine);"><?= format_inr($chefProfile['base_salary']) ?></div>
+                  <div class="fs-4 fw-bold font-mono" style="color:var(--lush-pine);"><?= formatInr($chefProfile['base_salary']) ?></div>
                   <div class="small text-muted" style="font-size:0.7rem;">/ month</div>
                 </div>
                 <div class="text-end border-end pe-3">
                   <div class="small text-muted text-uppercase fw-bold" style="font-size:0.68rem;">Per Docket Rate</div>
-                  <div class="fs-4 fw-bold font-mono" style="color:var(--lush-pine);"><?= format_inr($chefProfile['hourly_or_order_rate']) ?></div>
+                  <div class="fs-4 fw-bold font-mono" style="color:var(--lush-pine);"><?= formatInr($chefProfile['hourly_or_order_rate']) ?></div>
                   <div class="small text-muted" style="font-size:0.7rem;">incentive</div>
                 </div>
                 <div class="text-end">
@@ -1233,12 +1099,12 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="fw-bold" style="color:var(--lush-pine);"><?= e($p['month_year']) ?></div>
                       </td>
 
-                      <td class="font-mono"><?= format_inr($p['base_amount']) ?></td>
-                      <td class="font-mono text-success">+<?= format_inr($p['incentives_amount']) ?></td>
-                      <td class="font-mono text-danger">-<?= format_inr($p['deductions_amount']) ?></td>
+                      <td class="font-mono"><?= formatInr($p['base_amount']) ?></td>
+                      <td class="font-mono text-success">+<?= formatInr($p['incentives_amount']) ?></td>
+                      <td class="font-mono text-danger">-<?= formatInr($p['deductions_amount']) ?></td>
 
                       <td>
-                        <div class="fw-bold font-mono fs-6" style="color:var(--lush-forest);"><?= format_inr($p['net_paid']) ?></div>
+                        <div class="fw-bold font-mono fs-6" style="color:var(--lush-forest);"><?= formatInr($p['net_paid']) ?></div>
                       </td>
 
                       <td>
@@ -1293,22 +1159,22 @@ require_once __DIR__ . '/includes/header.php';
 
                             <div class="d-flex justify-content-between mb-2">
                               <span>Base Salary:</span>
-                              <strong><?= format_inr($p['base_amount']) ?></strong>
+                              <strong><?= formatInr($p['base_amount']) ?></strong>
                             </div>
                             <div class="d-flex justify-content-between mb-2 text-success">
                               <span>Cooking & Volume Incentives:</span>
-                              <strong>+<?= format_inr($p['incentives_amount']) ?></strong>
+                              <strong>+<?= formatInr($p['incentives_amount']) ?></strong>
                             </div>
                             <div class="d-flex justify-content-between mb-2 text-danger">
                               <span>Deductions:</span>
-                              <strong>-<?= format_inr($p['deductions_amount']) ?></strong>
+                              <strong>-<?= formatInr($p['deductions_amount']) ?></strong>
                             </div>
 
                             <hr style="border-color:var(--lush-border);">
 
                             <div class="d-flex justify-content-between mb-2 fs-6">
                               <span class="fw-bold">Net Disbursed Amount:</span>
-                              <span class="fw-bold" style="color:var(--lush-forest);"><?= format_inr($p['net_paid']) ?></span>
+                              <span class="fw-bold" style="color:var(--lush-forest);"><?= formatInr($p['net_paid']) ?></span>
                             </div>
 
                             <div class="p-3 rounded-3 mt-3" style="background:var(--lush-mint-soft); border:1px solid var(--lush-border); font-size:0.75rem;">

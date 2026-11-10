@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Interactive Menu & Dish Search
  * Zippy - Online Food Ordering Platform
@@ -9,61 +10,18 @@ $activePage = 'search';
 
 require_once __DIR__ . '/includes/header.php';
 
-$query = clean_input($_GET['q'] ?? '');
-$categorySlug = clean_input($_GET['category'] ?? '');
-$vegOnly = !empty($_GET['veg_only']) ? true : false;
-$healthyOnly = !empty($_GET['healthy_only']) ? true : false;
-$moodFilter = clean_input($_GET['mood'] ?? '');
-$sort = clean_input($_GET['sort'] ?? 'recommended');
-$foodMoods = get_food_moods();
+$query = cleanInput($_GET['q'] ?? '');
+$categorySlug = cleanInput($_GET['category'] ?? '');
+$vegOnly = !empty($_GET['veg_only']);
+$healthyOnly = !empty($_GET['healthy_only']);
+$moodFilter = cleanInput($_GET['mood'] ?? '');
+$sort = cleanInput($_GET['sort'] ?? 'recommended');
 
-// Build SQL
-$conditions = ["m.is_available = 1"];
-$params = [];
-
-if (!empty($query)) {
-    $conditions[] = "(LOWER(m.item_name) LIKE :q OR LOWER(m.description) LIKE :q OR LOWER(c.category_name) LIKE :q)";
-    $params[':q'] = '%' . strtolower($query) . '%';
-}
-
-if (!empty($categorySlug)) {
-    $conditions[] = "c.category_slug = :slug";
-    $params[':slug'] = $categorySlug;
-}
-
-if ($vegOnly) {
-    $conditions[] = "m.is_veg = 1";
-}
-
-if ($healthyOnly) {
-    $conditions[] = "(c.category_slug = 'healthy' OR m.is_healthy = 1 OR LOWER(c.category_name) LIKE '%healthy%' OR LOWER(m.item_name) LIKE '%salad%' OR LOWER(m.item_name) LIKE '%quinoa%' OR LOWER(m.item_name) LIKE '%detox%')";
-}
-
-if (!empty($moodFilter) && $moodFilter !== 'all') {
-    $conditions[] = "(FIND_IN_SET(:mood, m.mood) > 0 OR m.mood LIKE :mood_like)";
-    $params[':mood'] = $moodFilter;
-    $params[':mood_like'] = '%' . $moodFilter . '%';
-}
-
-$orderBy = match($sort) {
-    'price_asc' => "m.price ASC",
-    'price_desc' => "m.price DESC",
-    'prep_time' => "m.prep_time_minutes ASC",
-    default => "m.stock_quantity DESC, m.item_id ASC"
-};
-
-$whereSql = implode(" AND ", $conditions);
-$sql = "
-    SELECT m.*, c.category_name, c.category_slug 
-    FROM `menu_items` m
-    JOIN `categories` c ON m.category_id = c.category_id
-    WHERE $whereSql
-    ORDER BY $orderBy
-";
-
-$dishes = db_fetch_all($sql, $params);
-$categories = db_fetch_all("SELECT * FROM `categories` WHERE `is_active` = 1 ORDER BY `display_order` ASC");
-$customSummaryMap = get_all_dishes_customization_counts();
+$searchResult = CatalogService::searchDishes($query, $categorySlug, $vegOnly, $healthyOnly, $moodFilter, $sort);
+$dishes = $searchResult['dishes'];
+$categories = $searchResult['categories'];
+$foodMoods = $searchResult['foodMoods'];
+$customSummaryMap = $searchResult['customSummaryMap'];
 ?>
 
 <main class="py-4">
@@ -95,7 +53,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
             <option value="">🎭 All Moods</option>
             <?php foreach ($foodMoods as $mKey => $mInfo): ?>
               <option value="<?= e($mKey) ?>" <?= ($moodFilter === $mKey) ? 'selected' : '' ?>>
-                <?= $mInfo['emoji'] ?> <?= e($mInfo['short_name']) ?>
+                <?= e($mInfo['emoji']) ?> <?= e($mInfo['short_name']) ?>
               </option>
             <?php endforeach; ?>
           </select>
@@ -127,7 +85,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
             <!-- Mood Filter Dropdown Pill -->
             <div class="dropdown d-inline-block">
               <button class="btn btn-sm rounded-pill <?= !empty($moodFilter) ? 'btn-success text-white' : 'btn-outline-secondary' ?> dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
-                <span>🎭 <?= !empty($moodFilter) && isset($foodMoods[$moodFilter]) ? $foodMoods[$moodFilter]['emoji'] . ' ' . $foodMoods[$moodFilter]['short_name'] : 'Filter by Mood' ?></span>
+                <span>🎭 <?= !empty($moodFilter) && isset($foodMoods[$moodFilter]) ? e($foodMoods[$moodFilter]['emoji']) . ' ' . e($foodMoods[$moodFilter]['short_name']) : 'Filter by Mood' ?></span>
               </button>
               <ul class="dropdown-menu shadow-sm border-0 rounded-4 mt-1">
                 <li><a class="dropdown-item small" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=&sort=<?= urlencode($sort) ?>">🎭 All Moods</a></li>
@@ -135,8 +93,8 @@ $customSummaryMap = get_all_dishes_customization_counts();
                 <?php foreach ($foodMoods as $mKey => $mInfo): ?>
                   <li>
                     <a class="dropdown-item small d-flex align-items-center gap-2 <?= ($moodFilter === $mKey) ? 'active fw-bold' : '' ?>" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($mKey) ?>&sort=<?= urlencode($sort) ?>">
-                      <img src="<?= e(get_mood_image_url($mKey)) ?>" alt="" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover;">
-                      <span><?= $mInfo['emoji'] ?> <?= e($mInfo['name']) ?></span>
+                      <img src="<?= e(getMoodImageUrl($mKey)) ?>" alt="" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover;">
+                      <span><?= e($mInfo['emoji']) ?> <?= e($mInfo['name']) ?></span>
                     </a>
                   </li>
                 <?php endforeach; ?>
@@ -167,13 +125,13 @@ $customSummaryMap = get_all_dishes_customization_counts();
         <?php foreach ($dishes as $dish): ?>
           <?php 
             $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
-            $dishPrimaryMood = get_dish_primary_mood($dish['mood'] ?? 'comfort');
+            $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
           ?>
           <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
             <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift m3-card" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
               
               <div class="position-relative" style="height: 180px;">
-                <img src="<?= e(get_dish_image_url($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
+                <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="w-100 h-100 object-fit-cover">
                 
                 <div class="position-absolute top-0 start-0 m-2 d-flex flex-column gap-1 align-items-start">
                   <span class="badge bg-white text-<?= $dish['is_veg'] ? 'success border-success' : 'danger border-danger' ?> border px-2 py-1 shadow-sm" style="font-size:0.65rem;">
@@ -185,8 +143,8 @@ $customSummaryMap = get_all_dishes_customization_counts();
                     </span>
                   <?php endif; ?>
                   <?php if ($dishPrimaryMood): ?>
-                    <span class="badge shadow-sm px-2 py-1" style="background:<?= $dishPrimaryMood['badge_bg'] ?>; color:<?= $dishPrimaryMood['badge_color'] ?>; font-size:0.65rem; border:1px solid <?= $dishPrimaryMood['border_color'] ?>;" title="Mood: <?= e($dishPrimaryMood['name']) ?>">
-                      <?= $dishPrimaryMood['emoji'] ?> <?= e($dishPrimaryMood['short_name']) ?>
+                    <span class="badge shadow-sm px-2 py-1" style="background:<?= e($dishPrimaryMood['badge_bg']) ?>; color:<?= e($dishPrimaryMood['badge_color']) ?>; font-size:0.65rem; border:1px solid <?= e($dishPrimaryMood['border_color']) ?>;" title="Mood: <?= e($dishPrimaryMood['name']) ?>">
+                      <?= e($dishPrimaryMood['emoji']) ?> <?= e($dishPrimaryMood['short_name']) ?>
                     </span>
                   <?php endif; ?>
                 </div>
@@ -211,7 +169,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
                     </span>
                     <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted small open-dish-reviews-btn" 
                             style="font-size: 0.72rem;" 
-                            onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
+                            onclick="openDishReviewsModal(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)(!empty($dish['rating']) ? $dish['rating'] : 4.8) ?>, <?= (int)($dish['total_reviews'] ?? 120) ?>)">
                       (<?= (int)($dish['total_reviews'] ?? 120) ?> reviews)
                     </button>
                   </div>
@@ -221,7 +179,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
 
                 <div class="d-flex align-items-center justify-content-between pt-2 border-top">
                   <div>
-                    <span class="fw-bold fs-5 text-forest"><?= format_inr($dish['price']) ?></span>
+                    <span class="fw-bold fs-5 text-forest"><?= formatInr($dish['price']) ?></span>
                     <?php if (!empty($customSummaryMap[$dish['item_id']]['group_count'])): ?>
                       <div class="text-success small fw-medium" style="font-size:0.68rem;"><i class="bi bi-sliders me-1"></i>Customisable</div>
                     <?php endif; ?>
@@ -230,7 +188,7 @@ $customSummaryMap = get_all_dishes_customization_counts();
                   <button 
                     type="button" 
                     class="btn m3-add-btn rounded-pill px-3 py-1 fw-bold shadow-sm"
-                    onclick="addToCart(<?= (int)$dish['item_id'] ?>, '<?= addslashes(e($dish['item_name'])) ?>', <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', '<?= e(get_dish_image_url($dish['image_url'])) ?>')"
+                    onclick="addToCart(<?= (int)$dish['item_id'] ?>, <?= e(jsJson((string)$dish['item_name'])) ?>, <?= (float)$dish['price'] ?>, <?= $dish['is_veg'] ? 1 : 0 ?>, 'Meghana Foods', <?= e(jsJson((string)getDishImageUrl($dish['image_url']))) ?>)"
                   >
                     ADD <i class="bi bi-plus-lg ms-1"></i>
                   </button>

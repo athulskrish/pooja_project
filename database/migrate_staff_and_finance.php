@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration & Seeder: Staff Profiles, Salaries, and Money Transactions
  * Zippy - Online Food Ordering Platform
@@ -8,7 +9,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }
@@ -153,13 +154,13 @@ $staffList = [
 ];
 
 foreach ($staffList as $staff) {
-    $user = db_fetch_one("SELECT user_id FROM `users` WHERE `email` = :em", [':em' => $staff['email']]);
+    $user = dbFetchOne("SELECT user_id FROM `users` WHERE `email` = :em", [':em' => $staff['email']]);
     if (!$user) {
         continue;
     }
     $uid = (int)$user['user_id'];
 
-    db_query("
+    dbQuery("
         INSERT INTO `staff_profiles` 
         (`user_id`, `department`, `designation`, `specialization`, `duty_status`, `shift_timings`, `vehicle_details`, `driving_license`, `base_salary`, `hourly_or_order_rate`, `joined_date`, `cod_balance`, `total_orders_handled`, `rating`) 
         VALUES (:uid, :dept, :desig, :spec, :duty, :shift, :veh, :dl, :sal, :rate, :joined, :cod, :ord, :rat)
@@ -196,10 +197,10 @@ foreach ($staffList as $staff) {
 echo "   -> Staff profiles upserted for Chef Sajeev, Shaji, Kichu, Abhi.\n";
 
 echo "6. Seeding Historical Salary Payouts...\n";
-$chefId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'chef@zippy.com'") ?: 5);
-$shajiId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'shaji@zippy.com'") ?: 6);
-$kichuId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'kichu@zippy.com'") ?: 7);
-$abhiId = (int)(db_fetch_val("SELECT user_id FROM `users` WHERE `email` = 'abhi@zippy.com'") ?: 8);
+$chefId = (int)(dbFetchVal("SELECT user_id FROM `users` WHERE `email` = 'chef@zippy.com'") ?: 5);
+$shajiId = (int)(dbFetchVal("SELECT user_id FROM `users` WHERE `email` = 'shaji@zippy.com'") ?: 6);
+$kichuId = (int)(dbFetchVal("SELECT user_id FROM `users` WHERE `email` = 'kichu@zippy.com'") ?: 7);
+$abhiId = (int)(dbFetchVal("SELECT user_id FROM `users` WHERE `email` = 'abhi@zippy.com'") ?: 8);
 
 $salarySeedData = [
     [
@@ -284,12 +285,12 @@ $salarySeedData = [
 
 foreach ($salarySeedData as $sal) {
     if ($sal['user_id'] <= 0) continue;
-    $exists = db_fetch_val("SELECT payout_id FROM `staff_salary_payouts` WHERE `user_id` = :uid AND `month_year` = :my", [
+    $exists = dbFetchVal("SELECT payout_id FROM `staff_salary_payouts` WHERE `user_id` = :uid AND `month_year` = :my", [
         ':uid' => $sal['user_id'],
         ':my' => $sal['month_year']
     ]);
     if (!$exists) {
-        db_query("
+        dbQuery("
             INSERT INTO `staff_salary_payouts` 
             (`user_id`, `month_year`, `base_amount`, `incentives_amount`, `deductions_amount`, `net_paid`, `payment_mode`, `transaction_reference`, `payout_status`, `paid_at`, `notes`) 
             VALUES (:uid, :my, :base, :inc, :ded, :net, :mode, :ref, :st, :paid_at, :notes)
@@ -311,7 +312,7 @@ foreach ($salarySeedData as $sal) {
 echo "   -> Salary payout records seeded.\n";
 
 echo "7. Backfilling Money Transactions from existing orders & payments...\n";
-$orders = db_fetch_all("
+$orders = dbFetchAll("
     SELECT o.*, p.payment_mode, p.payment_status, p.transaction_reference, p.amount_paid, p.payment_timestamp,
            d.delivery_partner_name
     FROM `orders` o
@@ -329,11 +330,11 @@ foreach ($orders as $ord) {
     $time = $ord['placed_at'];
 
     // Check if txn already exists
-    $existingTxn = db_fetch_val("SELECT txn_id FROM `money_transactions` WHERE `order_id` = :oid AND `txn_category` != 'CUSTOMER_REFUND'", [':oid' => $orderId]);
+    $existingTxn = dbFetchVal("SELECT txn_id FROM `money_transactions` WHERE `order_id` = :oid AND `txn_category` != 'CUSTOMER_REFUND'", [':oid' => $orderId]);
     if (!$existingTxn) {
         $isCod = ($mode === 'COD');
         $txnCategory = $isCod ? 'CUSTOMER_PAYMENT_COD' : 'CUSTOMER_PAYMENT_ONLINE';
-        $payMethod = match($mode) {
+        $payMethod = match ($mode) {
             'UPI' => 'UPI',
             'CREDIT_CARD' => 'CREDIT_CARD',
             'DEBIT_CARD' => 'DEBIT_CARD',
@@ -353,7 +354,7 @@ foreach ($orders as $ord) {
 
         $txnNum = 'TXN-' . date('Ym', strtotime($time)) . '-' . str_pad((string)$orderId, 5, '0', STR_PAD_LEFT);
 
-        db_query("
+        dbQuery("
             INSERT INTO `money_transactions` 
             (`txn_number`, `order_id`, `user_id`, `txn_category`, `flow_direction`, `payment_method`, `amount`, `status`, `reference_id`, `handled_by`, `notes`, `created_at`) 
             VALUES (:tnum, :oid, :uid, :cat, 'INWARD', :method, :amt, :st, :ref, :hby, :notes, :created)

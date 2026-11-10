@@ -1,3 +1,4 @@
+<?php declare(strict_types=1); ?>
   </main>
 
   <!-- =========================================================================
@@ -37,7 +38,7 @@
 
         <div class="p-4">
           <form method="POST" action="<?= DELIVERY_URL ?>/index.php" id="otpForm">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="verify_otp">
             <input type="hidden" name="order_id" id="modalOrderId" value="">
 
@@ -257,6 +258,7 @@
           <p class="small text-white-50 mb-0">Direct 24x7 IMPS Payout to Verified Savings Account</p>
         </div>
         <div class="p-4 bg-light" id="cashOutInitialView">
+          <div id="cashOutErrorBanner" class="alert alert-danger small rounded-3 py-2 px-3 d-none mb-3"></div>
           <div class="card border-0 rounded-3 p-3 bg-white shadow-xs text-center mb-3">
             <div class="small text-muted fw-bold">Transferrable Fleet Balance</div>
             <div class="display-6 fw-bold text-success font-monospace" id="cashOutModalBalance">₹0.00</div>
@@ -286,7 +288,10 @@
             <i class="bi bi-check2-circle fs-1"></i>
           </div>
           <h5 class="fw-bold text-dark mb-1">Payout Transfer Initiated!</h5>
-          <p class="small text-muted mb-3">Your funds are being transferred to HDFC Bank A/C ••••4019.<br><strong>Reference ID: IMPS-7824901</strong></p>
+          <p class="small text-muted mb-3">
+            <span id="cashOutSuccessAmount" class="fw-bold text-success">₹0.00</span> has been transferred to HDFC Bank A/C ••••4019.<br>
+            <strong>Reference ID: <span id="cashOutSuccessRef" class="font-monospace text-dark">-</span></strong>
+          </p>
           <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
@@ -416,9 +421,13 @@
       formData.set('is_ajax', '1');
 
       try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         const res = await fetch('<?= DELIVERY_URL ?>/index.php', {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken
+          },
           body: formData
         });
         const data = await res.json();
@@ -498,30 +507,134 @@
 
     // Instant Cash Out Modal
     function handleCashOut() {
-      const balEl = document.querySelector('#viewEarnings .display-6');
+      const balEl = document.getElementById('riderAvailableBalance') || document.querySelector('#viewEarnings .display-6');
+      const rawAmt = balEl ? parseFloat(balEl.getAttribute('data-amount') || '0') : 0;
       const balText = balEl ? balEl.textContent.trim() : '₹0.00';
+
+      if (rawAmt <= 0) {
+        alert('No transferable earnings available. Complete deliveries to accumulate trip payouts.');
+        return;
+      }
+
       document.getElementById('cashOutModalBalance').textContent = balText;
       document.getElementById('cashOutInitialView').classList.remove('d-none');
       document.getElementById('cashOutSuccessView').classList.add('d-none');
 
-      const modal = new bootstrap.Modal(document.getElementById('cashOutModal'));
+      const errBanner = document.getElementById('cashOutErrorBanner');
+      if (errBanner) {
+        errBanner.classList.add('d-none');
+        errBanner.textContent = '';
+      }
+
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('cashOutModal'));
       modal.show();
     }
 
-    function executeCashOut() {
+    async function executeCashOut() {
       const btn = document.getElementById('btnConfirmCashOut');
+      const errBanner = document.getElementById('cashOutErrorBanner');
+      if (errBanner) {
+        errBanner.classList.add('d-none');
+        errBanner.textContent = '';
+      }
+
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Processing IMPS Transfer...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Processing Real IMPS Transfer...';
       }
-      setTimeout(() => {
+
+      try {
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+        const formData = new FormData();
+        formData.append('csrf_token', csrfToken);
+
+        const response = await fetch('ajax/cashout.php', {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Transfer failed. Please try again.');
+        }
+
+        // Update Success Confirmation View with REAL Reference ID and Amount
+        document.getElementById('cashOutSuccessAmount').textContent = data.amount_formatted || ('₹' + parseFloat(data.amount).toFixed(2));
+        document.getElementById('cashOutSuccessRef').textContent = data.reference_id;
         document.getElementById('cashOutInitialView').classList.add('d-none');
         document.getElementById('cashOutSuccessView').classList.remove('d-none');
+
+        // Synchronize live balances across Tab 3 DOM
+        const balEl = document.getElementById('riderAvailableBalance');
+        if (balEl) {
+          balEl.textContent = data.remaining_balance_formatted || '₹0.00';
+          balEl.setAttribute('data-amount', '0.00');
+        }
+        const netSummaryEl = document.getElementById('riderNetAvailableSummary');
+        if (netSummaryEl) {
+          netSummaryEl.textContent = data.remaining_balance_formatted || '₹0.00';
+        }
+        const cashOutMainBtn = document.getElementById('btnCashOutMain');
+        if (cashOutMainBtn) {
+          cashOutMainBtn.disabled = true;
+          cashOutMainBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> All Earnings Settled';
+        }
+
+        // Update "Less: Settled Instant IMPS Cashouts" line item
+        const totalCashedEl = document.getElementById('riderTotalCashedOut');
+        if (totalCashedEl) {
+          const prevStr = totalCashedEl.textContent.replace(/[^\d.]/g, '');
+          const prevVal = parseFloat(prevStr) || 0;
+          const newTotal = prevVal + parseFloat(data.amount || 0);
+          totalCashedEl.textContent = '-₹' + newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Prepend real record to Recent Instant IMPS Cashouts Table
+        const tbody = document.getElementById('cashoutHistoryBody');
+        if (tbody) {
+          const emptyRow = document.getElementById('emptyCashoutRow');
+          if (emptyRow) emptyRow.remove();
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="font-monospace fw-bold text-dark">${escapeHtml(data.reference_id)}</td>
+            <td class="text-muted">${escapeHtml(data.timestamp)}</td>
+            <td class="text-muted">HDFC Bank ••••4019</td>
+            <td class="text-end font-monospace fw-bold text-success">${escapeHtml(data.amount_formatted)}</td>
+            <td class="text-end">
+              <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2">
+                <i class="bi bi-check-circle-fill me-1"></i>PAID
+              </span>
+            </td>
+          `;
+          tbody.prepend(tr);
+
+          const countBadge = document.getElementById('cashoutCountBadge');
+          if (countBadge) {
+            const count = tbody.querySelectorAll('tr').length;
+            countBadge.textContent = `${count} Transfer${count === 1 ? '' : 's'}`;
+          }
+        }
+      } catch (err) {
+        if (errBanner) {
+          errBanner.textContent = err.message || 'Unable to reach banking gateway.';
+          errBanner.classList.remove('d-none');
+        } else {
+          alert(err.message || 'Transfer failed.');
+        }
+      } finally {
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Transfer to Bank Now';
         }
-      }, 1000);
+      }
     }
 
     // Dual-Tone Audio Chime for Ready Orders
@@ -589,7 +702,7 @@
           riderMap.invalidateSize();
         }
 
-        const res = await fetch(`../api/live-location.php?order_id=${orderId}`);
+        const res = await fetch(`../api/live-location.php?portal=delivery&order_id=${encodeURIComponent(orderId)}`);
         const data = await res.json();
         if (data.success) {
           const hub = [data.locations.restaurant.lat, data.locations.restaurant.lng];
@@ -642,13 +755,17 @@
       if (btn) btn.disabled = true;
 
       try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         const formData = new FormData();
         formData.append('order_id', activeGpsOrderId);
         formData.append('action', 'simulate_step');
         formData.append('delta', '25');
+        formData.append('portal', 'delivery');
+        formData.append('csrf_token', csrfToken);
 
         const res = await fetch('../api/live-location.php', {
           method: 'POST',
+          headers: { 'X-CSRF-TOKEN': csrfToken },
           body: formData
         });
         const data = await res.json();
@@ -1050,13 +1167,13 @@
             </div>
 
             <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
-              <button type="button" class="btn btn-outline-secondary rounded-pill py-2 px-3 fw-bold flex-grow-1" onclick="openGpsModal(${order.order_id}, '${escapeJs(order.customer_name)}', '${escapeJs(order.address_line || 'Indiranagar 100ft Road')}')">
+              <button type="button" class="btn btn-outline-secondary rounded-pill py-2 px-3 fw-bold flex-grow-1" onclick="openGpsModal(${Number(order.order_id)}, ${escapeHtml(JSON.stringify(String(order.customer_name || '')))}, ${escapeHtml(JSON.stringify(String(order.address_line || 'Indiranagar 100ft Road')))})">
                 <i class="fa-solid fa-location-arrow me-1 text-primary"></i> Live Route Simulator
               </button>
               <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent((order.address_line || 'Indiranagar') + ', Bangalore, ' + (order.pincode || '560038'))}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-success rounded-pill py-2 px-3 fw-bold flex-grow-1 text-center d-flex align-items-center justify-content-center gap-1">
                 <i class="bi bi-geo-alt-fill text-danger"></i> Google Maps
               </a>
-              <button type="button" class="btn btn-rider-primary py-2 px-3 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(${order.order_id}, '${escapeJs(order.delivery_otp)}', '${escapeJs(order.customer_name)}', '${escapeJs(order.payment_mode)}', '₹${parseFloat(order.total_amount).toFixed(2)}')">
+              <button type="button" class="btn btn-rider-primary py-2 px-3 fw-bold flex-grow-1 shadow-sm fs-6" onclick="openOtpModal(${Number(order.order_id)}, ${escapeHtml(JSON.stringify(String(order.delivery_otp || '')))}, ${escapeHtml(JSON.stringify(String(order.customer_name || '')))}, ${escapeHtml(JSON.stringify(String(order.payment_mode || 'ONLINE')))}, ${escapeHtml(JSON.stringify('₹' + (parseFloat(order.total_amount) || 0).toFixed(2)))})">
                 <i class="bi bi-shield-check me-1"></i> Verify OTP & Finish
               </button>
             </div>
@@ -1089,15 +1206,19 @@
       }
 
       try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         const formData = new FormData();
         formData.append('action', 'claim_order');
         formData.append('order_id', orderId);
         formData.append('is_ajax', '1');
-        formData.append('csrf_token', '<?= csrf_token() ?>');
+        formData.append('csrf_token', csrfToken);
 
         const res = await fetch('<?= DELIVERY_URL ?>/index.php', {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken
+          },
           body: formData
         });
         const data = await res.json();

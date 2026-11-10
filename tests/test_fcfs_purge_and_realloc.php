@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
@@ -7,21 +8,21 @@ echo "TEST: COMPREHENSIVE FCFS ALLOCATION & KDS STATE LIFECYCLE\n";
 echo "=================================================================\n\n";
 
 // Ensure order 1004 is OUT_FOR_DELIVERY for setup so Shaji starts as BUSY
-db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1004");
-db_query("UPDATE `delivery_dispatches` SET `delivery_status` = 'IN_TRANSIT', `delivered_at` = NULL WHERE `order_id` = 1004");
+dbQuery("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1004");
+dbQuery("UPDATE `delivery_dispatches` SET `delivery_status` = 'IN_TRANSIT', `delivered_at` = NULL WHERE `order_id` = 1004");
 
 echo "1. VERIFY ALL 3 RIDERS ARE CURRENTLY BUSY:\n";
-$allRiders = get_all_delivery_riders();
+$allRiders = getAllDeliveryRiders();
 foreach ($allRiders as $r) {
     echo "  - {$r['full_name']} (ID: {$r['user_id']}): Busy = " . ($r['is_busy'] ? 'YES' : 'NO') . " (Active: {$r['active_order_id']})\n";
     assert($r['is_busy'] === true, "Rider {$r['full_name']} should be busy");
 }
 
 echo "\n2. RUN FCFS ALLOCATION WHILE RIDERS ARE BUSY:\n";
-$allocRes = auto_allocate_ready_orders_fcfs();
+$allocRes = autoAllocateReadyOrdersFcfs();
 echo "  Allocation response: " . json_encode($allocRes) . "\n";
 
-$readyParcels = db_fetch_all("
+$readyParcels = dbFetchAll("
     SELECT o.order_id, o.ready_at, d.rider_id, d.delivery_partner_name, d.delivery_status
     FROM orders o
     LEFT JOIN delivery_dispatches d ON o.order_id = d.order_id
@@ -43,30 +44,30 @@ foreach ($readyParcels as $idx => $p) {
 }
 echo "  [PASS] All ready parcels have rider_id = NULL because all riders are busy!\n";
 
-$kdsHashInitial = get_kds_state_hash();
+$kdsHashInitial = getKdsStateHash();
 echo "\n3. KDS STATE HASH (Initial): {$kdsHashInitial}\n";
 
 echo "\n4. SIMULATE SHAJI DELIVERING ORDER #1004 VIA OTP HANDSHAKE:\n";
-$transRes = transition_order_status(1004, 'DELIVERED', 'Shaji (Rider)', 6);
+$transRes = transitionOrderStatus(1004, 'DELIVERED', 'Shaji (Rider)', 6);
 echo "  Delivered Order #1004 result: " . ($transRes['success'] ? 'SUCCESS' : 'FAILED') . "\n";
 
-$kdsHashAfterDelivery = get_kds_state_hash();
+$kdsHashAfterDelivery = getKdsStateHash();
 echo "  KDS STATE HASH (After Delivery): {$kdsHashAfterDelivery}\n";
 echo "  Did KDS hash change? " . ($kdsHashInitial !== $kdsHashAfterDelivery ? "YES (KDS Auto-Reload Triggered!)" : "NO") . "\n";
 assert($kdsHashInitial !== $kdsHashAfterDelivery, "State hash MUST change when an order is delivered!");
 
 echo "\n5. VERIFY SHAJI IS NOW FREE AND SYSTEM ALLOCATED FIRST PREPARED PARCEL:\n";
-$shajiActive = get_driver_active_delivery(6);
+$shajiActive = getDriverActiveDelivery(6);
 echo "  Shaji Active Delivery: " . ($shajiActive ? "#ZIP-{$shajiActive['order_id']}" : "NONE (FREE)") . "\n";
 assert($shajiActive === null, "Shaji must now be free");
 
-$shajiAllocatedOrder = get_driver_allocated_order(6);
+$shajiAllocatedOrder = getDriverAllocatedOrder(6);
 echo "  Shaji Allocated Parcel: " . ($shajiAllocatedOrder ? "#ZIP-{$shajiAllocatedOrder['order_id']} (Prepared at {$shajiAllocatedOrder['ready_at']})" : "NONE") . "\n";
 assert($shajiAllocatedOrder !== null, "Shaji must be allocated a parcel");
 assert((int)$shajiAllocatedOrder['order_id'] === 1001, "Order #1001 was prepared first, so it must be allocated to Shaji!");
 
 echo "\n6. VERIFY REMAINING READY ORDERS QUEUE:\n";
-$readyParcelsAfter = db_fetch_all("
+$readyParcelsAfter = dbFetchAll("
     SELECT o.order_id, o.ready_at, d.rider_id, d.delivery_partner_name, d.delivery_status
     FROM orders o
     LEFT JOIN delivery_dispatches d ON o.order_id = d.order_id
@@ -93,20 +94,20 @@ for ($i = 1; $i < count($readyParcelsAfter); $i++) {
 
 echo "\n7. SIMULATE SHAJI CLAIMING & PICKING UP ALLOCATED PARCEL #1001:\n";
 // Shaji claims order 1001
-$claimRes = transition_order_status(1001, 'OUT_FOR_DELIVERY', 'Shaji (Rider)', 6);
+$claimRes = transitionOrderStatus(1001, 'OUT_FOR_DELIVERY', 'Shaji (Rider)', 6);
 echo "  Claim Order #1001 result: " . ($claimRes['success'] ? 'SUCCESS' : 'FAILED') . "\n";
 
-$kdsHashAfterClaim = get_kds_state_hash();
+$kdsHashAfterClaim = getKdsStateHash();
 echo "  KDS STATE HASH (After Claim): {$kdsHashAfterClaim}\n";
 echo "  Did KDS hash change? " . ($kdsHashAfterDelivery !== $kdsHashAfterClaim ? "YES (KDS Auto-Reload Triggered!)" : "NO") . "\n";
 assert($kdsHashAfterDelivery !== $kdsHashAfterClaim, "State hash MUST change when an order is claimed!");
 
-$shajiActiveNow = get_driver_active_delivery(6);
+$shajiActiveNow = getDriverActiveDelivery(6);
 echo "  Shaji Active Delivery Now: " . ($shajiActiveNow ? "#ZIP-{$shajiActiveNow['order_id']}" : "NONE") . "\n";
 assert($shajiActiveNow !== null && (int)$shajiActiveNow['order_id'] === 1001, "Shaji must now be actively delivering #1001");
 
 // Shaji is busy again, so allocated ready parcels should be 0
-$shajiNewAlloc = get_driver_allocated_order(6);
+$shajiNewAlloc = getDriverAllocatedOrder(6);
 echo "  Shaji Allocated Ready Parcel (When Busy): " . ($shajiNewAlloc ? "#ZIP-{$shajiNewAlloc['order_id']}" : "NONE (1 Driver 1 Delivery Policy Enforced)") . "\n";
 assert($shajiNewAlloc === null, "Busy driver must NOT have any allocated ready orders!");
 

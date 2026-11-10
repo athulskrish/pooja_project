@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Create Dish Customizations Tables & Seed Exactly 25 Dishes with Customizations
  * Zippy - Online Food Ordering Platform
@@ -8,7 +9,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }
@@ -54,7 +55,7 @@ echo "   -> `dish_customization_options` ready.\n";
 
 // 3. Check `order_items` columns
 echo "3. Checking `order_items` table for customization fields...\n";
-$cols = db_fetch_all("SHOW COLUMNS FROM `order_items` LIKE 'customizations'");
+$cols = dbFetchAll("SHOW COLUMNS FROM `order_items` LIKE 'customizations'");
 if (empty($cols)) {
     $pdo->exec("ALTER TABLE `order_items` ADD COLUMN `customizations` TEXT NULL AFTER `line_total`");
     $pdo->exec("ALTER TABLE `order_items` ADD COLUMN `customization_total` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `customizations`");
@@ -113,7 +114,7 @@ $extraDishes = [
 ];
 
 foreach ($extraDishes as $d) {
-    $exists = db_fetch_one("SELECT item_id FROM `menu_items` WHERE `item_id` = :id", [':id' => $d['item_id']]);
+    $exists = dbFetchOne("SELECT item_id FROM `menu_items` WHERE `item_id` = :id", [':id' => $d['item_id']]);
     if (!$exists) {
         $stmt = $pdo->prepare("
             INSERT INTO `menu_items` (`item_id`, `category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `prep_time_minutes`, `kitchen_station`, `image_url`)
@@ -140,12 +141,12 @@ foreach ($extraDishes as $d) {
 }
 
 // Ensure total count is 25: remove any extra items > 25 if created by tests
-$countDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items`");
+$countDishes = (int)dbFetchVal("SELECT COUNT(*) FROM `menu_items`");
 echo "   -> Active menu items count: {$countDishes}\n";
 if ($countDishes > 25) {
     // Delete test items above 25 that are not referenced by orders
     $pdo->exec("DELETE FROM `menu_items` WHERE `item_id` > 25 AND `item_id` NOT IN (SELECT DISTINCT `item_id` FROM `order_items`)");
-    $countDishes = (int)db_fetch_val("SELECT COUNT(*) FROM `menu_items`");
+    $countDishes = (int)dbFetchVal("SELECT COUNT(*) FROM `menu_items`");
     echo "   -> Reduced to: {$countDishes} dishes.\n";
 }
 

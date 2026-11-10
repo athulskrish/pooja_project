@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Database Connection & PDO Configuration
  * Zippy - Online Food Ordering Platform
@@ -8,7 +9,7 @@
 // Auto-load local .env file if present in project root
 $envFile = dirname(__DIR__) . '/.env';
 if (file_exists($envFile)) {
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
     foreach ($lines as $line) {
         $line = trim($line);
         if ($line === '' || str_starts_with($line, '#')) continue;
@@ -37,7 +38,8 @@ define('DB_CHARSET', 'utf8mb4');
  * 
  * @return PDO|null
  */
-function getDBConnection(): ?PDO {
+function getDbConnection(): ?PDO
+{
     static $pdo = null;
 
     if ($pdo === null) {
@@ -66,9 +68,10 @@ function getDBConnection(): ?PDO {
  * 
  * @return array ['connected' => bool, 'tables_exist' => bool, 'error' => string|null]
  */
-function checkDBStatus(): array {
+function checkDbStatus(): array
+{
     try {
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         if (!$pdo) {
             return [
                 'connected' => false,

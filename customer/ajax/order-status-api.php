@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * AJAX Endpoint: Live Order Status Poller & Synchronizer
  * Returns JSON: {success: bool, order_id: int, status: string, badge_html: string, delivery_otp: string, rider: array, location: array}
@@ -9,6 +10,13 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../includes/auth.php';
+
+if (!isLoggedIn()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized. Please sign in to track orders.']);
+    exit;
+}
 
 $orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
 
@@ -17,8 +25,8 @@ if ($orderId <= 0) {
     exit;
 }
 
-$order = db_fetch_one("
-    SELECT o.order_id, o.order_number, o.order_status, o.placed_at, o.estimated_delivery_time,
+$order = dbFetchOne("
+    SELECT o.order_id, o.user_id, o.order_number, o.order_status, o.placed_at, o.estimated_delivery_time,
            u.full_name AS customer_name,
            d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status,
            d.current_latitude, d.current_longitude, d.delivery_latitude, d.delivery_longitude,
@@ -32,7 +40,14 @@ $order = db_fetch_one("
 ", [':id' => $orderId]);
 
 if (!$order) {
+    http_response_code(404);
     echo json_encode(['success' => false, 'error' => 'Order not found']);
+    exit;
+}
+
+if (!canAccessOrder($order)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Access denied for this order']);
     exit;
 }
 
@@ -63,7 +78,7 @@ echo json_encode([
     'order_number' => $order['order_number'] ?: '#ZIP-' . $order['order_id'],
     'status' => $status,
     'step_index' => $stepIndex,
-    'badge_html' => get_status_badge($status),
+    'badge_html' => getStatusBadge($status),
     'delivery_otp' => $order['delivery_otp'] ?? '',
     'payment_status' => $order['payment_status'] ?? 'PENDING',
     'rider' => [

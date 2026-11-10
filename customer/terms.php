@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Terms of Service Page
  * MCSP-232: E-Commerce Platform for Food Order

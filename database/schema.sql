@@ -56,6 +56,8 @@ CREATE TABLE `users` (
     `email` VARCHAR(150) NOT NULL UNIQUE,
     `phone_number` VARCHAR(20) NOT NULL UNIQUE,
     `password_hash` VARCHAR(255) NOT NULL,
+    `security_question` VARCHAR(255) NULL DEFAULT NULL,
+    `security_answer_hash` VARCHAR(255) NULL DEFAULT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_users_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON UPDATE CASCADE
@@ -72,6 +74,7 @@ CREATE TABLE `user_addresses` (
     `landmark` VARCHAR(150) NULL,
     `pincode` VARCHAR(10) NOT NULL,
     `is_default` TINYINT(1) NOT NULL DEFAULT 0,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     CONSTRAINT `fk_addresses_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -101,6 +104,7 @@ CREATE TABLE `menu_items` (
     `rating` DECIMAL(3,1) NOT NULL DEFAULT 4.5,
     `total_reviews` INT NOT NULL DEFAULT 120,
     `is_available` TINYINT(1) NOT NULL DEFAULT 1,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `is_veg` TINYINT(1) NOT NULL DEFAULT 1,
     `is_healthy` TINYINT(1) NOT NULL DEFAULT 0,
     `mood` VARCHAR(100) NOT NULL DEFAULT 'comfort',
@@ -123,6 +127,7 @@ CREATE TABLE `dish_customization_groups` (
     `min_selection` INT NOT NULL DEFAULT 0,
     `max_selection` INT NOT NULL DEFAULT 0,
     `display_order` INT NOT NULL DEFAULT 1,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_cust_item` (`item_id`),
     CONSTRAINT `fk_cust_groups_dish` FOREIGN KEY (`item_id`) REFERENCES `menu_items` (`item_id`) ON DELETE CASCADE
@@ -138,6 +143,7 @@ CREATE TABLE `dish_customization_options` (
     `price` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `is_default` TINYINT(1) NOT NULL DEFAULT 0,
     `is_available` TINYINT(1) NOT NULL DEFAULT 1,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `display_order` INT NOT NULL DEFAULT 1,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_cust_group` (`group_id`),
@@ -391,18 +397,7 @@ CREATE TABLE `cash_register_closures` (
 
 DELIMITER $$
 
--- Trigger 1: Automatically log status transitions in order_audit_trail
-CREATE TRIGGER `trg_after_order_status_update`
-AFTER UPDATE ON `orders`
-FOR EACH ROW
-BEGIN
-    IF OLD.order_status <> NEW.order_status THEN
-        INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
-        VALUES (NEW.order_id, OLD.order_status, NEW.order_status, NEW.user_id, NOW());
-    END IF;
-END$$
-
--- Trigger 2: Automatically disable availability if stock hits 0
+-- Trigger 1: Automatically disable availability if stock hits 0
 CREATE TRIGGER `trg_after_menu_stock_update`
 BEFORE UPDATE ON `menu_items`
 FOR EACH ROW
@@ -575,17 +570,16 @@ DELIMITER ;
 -- ============================================================================
 
 -- Users: Passwords are encrypted (Default password for all demo accounts: 'password123')
--- Bcrypt hash for 'password123': $2y$10$wT8hO.P2O6u/E4kZ6b6Q.OKl7p8Z2b.qYVp8T8hO.P2O6u/E4kZ6b
--- Note: seed.php will dynamically hash using password_hash('password123', PASSWORD_DEFAULT)
+-- Note: seed.php dynamically re-hashes using password_hash(..., PASSWORD_DEFAULT)
 INSERT INTO `users` (`user_id`, `role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) VALUES
-(1, 1, 'Pooja (Admin)', 'admin@zippy.com', '+91 99001 12233', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(2, 2, 'Athul (Customer)', 'athul@example.com', '+91 98860 12345', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(3, 2, 'Amal (Customer)', 'amal@example.com', '+91 98450 67890', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(4, 2, 'Abhijith (Customer)', 'abhijith@example.com', '+91 98450 99887', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(5, 3, 'Chef Sajeev (Head Cook)', 'chef@zippy.com', '+91 97410 54321', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(6, 4, 'Shaji (Rider)', 'shaji@zippy.com', '+91 96320 98765', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(7, 4, 'Kichu (Rider)', 'kichu@zippy.com', '+91 96320 11223', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1),
-(8, 4, 'Abhi (Rider)', 'abhi@zippy.com', '+91 96320 33445', '$2y$10$K9W4e2H5OcbFv/3iY5rD0evZ8G1J.p9W6zL6d4H8r6X.j4b2sO0te', 1);
+(1, 1, 'Pooja (Admin)', 'admin@zippy.com', '+91 99001 12233', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(2, 2, 'Athul (Customer)', 'athul@example.com', '+91 98860 12345', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(3, 2, 'Amal (Customer)', 'amal@example.com', '+91 98450 67890', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(4, 2, 'Abhijith (Customer)', 'abhijith@example.com', '+91 98450 99887', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(5, 3, 'Chef Sajeev (Head Cook)', 'chef@zippy.com', '+91 97410 54321', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(6, 4, 'Shaji (Rider)', 'shaji@zippy.com', '+91 96320 98765', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(7, 4, 'Kichu (Rider)', 'kichu@zippy.com', '+91 96320 11223', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
+(8, 4, 'Abhi (Rider)', 'abhi@zippy.com', '+91 96320 33445', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1);
 
 -- Customer Addresses
 INSERT INTO `user_addresses` (`address_id`, `user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `is_default`) VALUES

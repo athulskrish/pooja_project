@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Delivery View: Fleet Presence, Vehicle Roster, COD Cash & Rider Salary Management
  * Zippy - Online Food Ordering Platform
@@ -11,184 +12,34 @@ $activePage = 'delivery_view';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle Rider Fleet Actions
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
-        $action = $_POST['action'];
-
-        // 1. Toggle Rider Presence / Duty Status
-        if ($action === 'toggle_duty') {
-            $profileId = (int)$_POST['profile_id'];
-            $newStatus = clean_input($_POST['duty_status']);
-            db_query("UPDATE `staff_profiles` SET `duty_status` = :st WHERE `profile_id` = :id", [
-                ':st' => $newStatus,
-                ':id' => $profileId
-            ]);
-            set_flash('success', "Delivery partner presence status updated to {$newStatus}.");
-            header("Location: " . ADMIN_URL . "/delivery-view.php");
-            exit;
-        }
-
-        // 2. Settle COD Cash in Hand to Store Cashier
-        if ($action === 'settle_cod_cash') {
-            $profileId = (int)$_POST['profile_id'];
-            $riderProfile = db_fetch_one("
-                SELECT sp.*, u.full_name, u.user_id 
-                FROM `staff_profiles` sp 
-                JOIN `users` u ON sp.user_id = u.user_id 
-                WHERE sp.profile_id = :id
-            ", [':id' => $profileId]);
-
-            if ($riderProfile && (float)$riderProfile['cod_balance'] > 0) {
-                $amountToSettle = (float)$riderProfile['cod_balance'];
-                
-                // Reset rider COD balance to 0
-                db_query("UPDATE `staff_profiles` SET `cod_balance` = 0.00 WHERE `profile_id` = :id", [':id' => $profileId]);
-
-                // Record into central money_transactions
-                $ref = 'COD-SETTLE-' . date('Ym') . '-' . str_pad((string)random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
-                record_money_transaction(
-                    null,
-                    $riderProfile['user_id'],
-                    'COD_DEPOSIT_STORE',
-                    'INWARD',
-                    'COD_CASH',
-                    $amountToSettle,
-                    'SETTLED',
-                    $ref,
-                    'Rider: ' . $riderProfile['full_name'],
-                    "Rider {$riderProfile['full_name']} deposited collected COD cash of " . format_inr($amountToSettle) . " to store cashier register"
-                );
-
-                set_flash('success', "COD Cash of " . format_inr($amountToSettle) . " from {$riderProfile['full_name']} successfully deposited to store cash register.");
-            } else {
-                set_flash('info', "No outstanding COD cash to settle for this rider.");
-            }
-            header("Location: " . ADMIN_URL . "/delivery-view.php");
-            exit;
-        }
-
-        // 3. Disburse Rider Payout (Salary + Commission)
-        if ($action === 'disburse_payout') {
-            $userId = (int)$_POST['user_id'];
-            $monthYear = clean_input($_POST['month_year'] ?? date('F Y'));
-            $baseAmount = (float)$_POST['base_amount'];
-            $incentives = (float)($_POST['incentives_amount'] ?? 0);
-            $deductions = (float)($_POST['deductions_amount'] ?? 0);
-            $netPaid = $baseAmount + $incentives - $deductions;
-            $paymentMode = clean_input($_POST['payment_mode'] ?? 'UPI');
-            $notes = clean_input($_POST['notes'] ?? 'Monthly delivery fleet stipend and trip commission payout');
-            $ref = 'PAY-RID-' . date('Ym') . '-' . str_pad((string)random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
-
-            // Record into staff_salary_payouts
-            db_query("
-                INSERT INTO `staff_salary_payouts` 
-                (`user_id`, `month_year`, `base_amount`, `incentives_amount`, `deductions_amount`, `net_paid`, `payment_mode`, `transaction_reference`, `payout_status`, `paid_at`, `notes`) 
-                VALUES (:uid, :my, :base, :inc, :ded, :net, :mode, :ref, 'PAID', NOW(), :notes)
-            ", [
-                ':uid' => $userId,
-                ':my' => $monthYear,
-                ':base' => $baseAmount,
-                ':inc' => $incentives,
-                ':ded' => $deductions,
-                ':net' => $netPaid,
-                ':mode' => $paymentMode,
-                ':ref' => $ref,
-                ':notes' => $notes
-            ]);
-
-            // Record into central money_transactions
-            $staffUser = db_fetch_one("SELECT full_name FROM `users` WHERE `user_id` = :id", [':id' => $userId]);
-            $staffName = $staffUser['full_name'] ?? 'Delivery Rider';
-
-            record_money_transaction(
-                null,
-                $userId,
-                'STAFF_SALARY_PAYOUT',
-                'OUTWARD',
-                $paymentMode === 'UPI' ? 'UPI' : 'BANK_TRANSFER',
-                $netPaid,
-                'COMPLETED',
-                $ref,
-                'Store Finance & Logistics',
-                "Delivery payout disbursed to {$staffName} for {$monthYear}"
-            );
-
-            set_flash('success', "Delivery payout of " . format_inr($netPaid) . " successfully disbursed to {$staffName} (Ref: {$ref}).");
-            header("Location: " . ADMIN_URL . "/delivery-view.php");
-            exit;
-        }
+        $res = FleetService::handleAdminFleetAction($_POST);
+        setFlash($res['type'], $res['message']);
+        header("Location: " . ADMIN_URL . "/delivery-view.php");
+        exit;
     }
 }
 
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch all Delivery Staff Profiles
-$deliveryFleet = db_fetch_all("
-    SELECT sp.*, u.full_name, u.email, u.phone_number, u.created_at AS user_since
-    FROM `staff_profiles` sp
-    JOIN `users` u ON sp.user_id = u.user_id
-    WHERE sp.department = 'DELIVERY'
-    ORDER BY sp.base_salary DESC, sp.joined_date ASC
-");
-
-// Fetch Latest Payouts for Delivery Riders
-$riderIds = array_column($deliveryFleet, 'user_id');
-$latestPayoutsByUser = [];
-$payoutHistory = [];
-
-if (!empty($riderIds)) {
-    $placeholders = implode(',', array_fill(0, count($riderIds), '?'));
-    
-    // History
-    $payoutHistory = db_fetch_all("
-        SELECT p.*, u.full_name, u.phone_number, sp.designation, sp.vehicle_details
-        FROM `staff_salary_payouts` p
-        JOIN `users` u ON p.user_id = u.user_id
-        JOIN `staff_profiles` sp ON p.user_id = sp.user_id
-        WHERE p.user_id IN ($placeholders)
-        ORDER BY p.paid_at DESC
-        LIMIT 25
-    ", $riderIds);
-
-    // Current month payouts map
-    $currentMonthStr = date('F Y');
-    $currentMonthPayouts = db_fetch_all("
-        SELECT * FROM `staff_salary_payouts` 
-        WHERE `user_id` IN ($placeholders) AND `month_year` = ?
-    ", array_merge($riderIds, [$currentMonthStr]));
-
-    foreach ($currentMonthPayouts as $cp) {
-        $latestPayoutsByUser[$cp['user_id']] = $cp;
-    }
-}
-
-// KPI Aggregations & 1 Driver 1 Delivery Capacity Tracking
-$totalRiders = count($deliveryFleet);
-$onlineRiders = count(array_filter($deliveryFleet, fn($r) => in_array($r['duty_status'], ['ON_DUTY', 'ON_BREAK'])));
-$totalCodHeld = array_sum(array_column($deliveryFleet, 'cod_balance'));
-$totalDeliveriesCompleted = (int)db_fetch_val("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `delivery_status` = 'DELIVERED'");
-
-// Map active trip for each rider
-$activeTripsMap = [];
-$busyRidersCount = 0;
-$availableRidersCount = 0;
-foreach ($deliveryFleet as $r) {
-    $trip = get_driver_active_delivery((int)$r['user_id'], $r['full_name']);
-    $activeTripsMap[$r['user_id']] = $trip;
-    if ($r['duty_status'] === 'ON_DUTY') {
-        if ($trip) {
-            $busyRidersCount++;
-        } else {
-            $availableRidersCount++;
-        }
-    }
-}
+$fleetData = FleetService::getAdminDeliveryOverviewData();
+$deliveryFleet = $fleetData['deliveryFleet'];
+$latestPayoutsByUser = $fleetData['latestPayoutsByUser'];
+$payoutHistory = $fleetData['payoutHistory'];
+$totalRiders = $fleetData['totalRiders'];
+$onlineRiders = $fleetData['onlineRiders'];
+$totalCodHeld = $fleetData['totalCodHeld'];
+$totalDeliveriesCompleted = $fleetData['totalDeliveriesCompleted'];
+$activeTripsMap = $fleetData['activeTripsMap'];
+$busyRidersCount = $fleetData['busyRidersCount'];
+$availableRidersCount = $fleetData['availableRidersCount'];
 ?>
 
 <!-- ===========================================================================
@@ -230,7 +81,7 @@ foreach ($deliveryFleet as $r) {
           <i class="bi bi-cash-stack fs-4"></i>
         </div>
       </div>
-      <h3 class="fw-bold font-outfit text-dark mb-1"><?= format_inr($totalCodHeld) ?></h3>
+      <h3 class="fw-bold font-outfit text-dark mb-1"><?= formatInr($totalCodHeld) ?></h3>
       <span class="small text-warning fw-bold"><i class="bi bi-exclamation-circle me-1"></i>Cash in Hand to Settle</span>
     </div>
   </div>
@@ -462,14 +313,14 @@ foreach ($deliveryFleet as $r) {
         $hasCodBalance = (float)$rider['cod_balance'] > 0;
         $availability = $activeTrip && $rider['duty_status'] === 'ON_DUTY'
           ? 'busy'
-          : match($rider['duty_status']) {
+          : match ($rider['duty_status']) {
             'ON_DUTY' => 'available',
             'ON_BREAK' => 'ON_BREAK',
             'ON_LEAVE' => 'ON_LEAVE',
             default => 'OFF_DUTY'
           };
 
-        $dutyBadge = match(true) {
+        $dutyBadge = match (true) {
           !empty($activeTrip) => ['class' => 'bg-primary-subtle text-primary', 'icon' => 'bi-bicycle', 'label' => 'On delivery'],
           $rider['duty_status'] === 'ON_DUTY' => ['class' => 'bg-success-subtle text-success', 'icon' => 'bi-check-circle-fill', 'label' => 'Available'],
           $rider['duty_status'] === 'ON_BREAK' => ['class' => 'bg-warning-subtle text-warning-emphasis', 'icon' => 'bi-pause-circle-fill', 'label' => 'On break'],
@@ -489,7 +340,7 @@ foreach ($deliveryFleet as $r) {
             <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
               <div class="d-flex align-items-center gap-3">
                 <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white fs-5 flex-shrink-0" style="width: 48px; height: 48px; background: #1E40AF;">
-                  <?= strtoupper(substr($rider['full_name'], 0, 1)) ?>
+                  <?= strtoupper(substr((string)($rider['full_name'] ?? 'R'), 0, 1)) ?>
                 </div>
                 <div class="min-w-0">
                   <h6 class="fw-bold font-outfit text-dark mb-0"><?= e($rider['full_name']) ?></h6>
@@ -529,23 +380,23 @@ foreach ($deliveryFleet as $r) {
               </div>
               <div class="rider-summary-item">
                 <span class="rider-summary-label"><i class="bi bi-wallet2 me-1"></i>Base stipend</span>
-                <strong><?= format_inr($rider['base_salary']) ?></strong>
+                <strong><?= formatInr($rider['base_salary']) ?></strong>
               </div>
               <div class="rider-summary-item">
                 <span class="rider-summary-label"><i class="bi bi-cash-stack me-1"></i>COD held</span>
-                <strong class="<?= $hasCodBalance ? 'text-danger' : 'text-success' ?>"><?= format_inr($rider['cod_balance']) ?></strong>
+                <strong class="<?= $hasCodBalance ? 'text-danger' : 'text-success' ?>"><?= formatInr($rider['cod_balance']) ?></strong>
               </div>
               <div class="rider-summary-item">
                 <span class="rider-summary-label"><i class="bi bi-receipt me-1"></i><?= date('M Y') ?> payout</span>
                 <?php if ($isPaidThisMonth): ?>
-                  <span class="badge bg-success-subtle text-success rounded-pill"><?= format_inr($curPayout['net_paid']) ?> paid</span>
+                  <span class="badge bg-success-subtle text-success rounded-pill"><?= formatInr($curPayout['net_paid']) ?> paid</span>
                 <?php else: ?>
                   <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">Payment due</span>
                 <?php endif; ?>
               </div>
             </div>
             <div class="small text-muted mb-3">
-              <span class="me-3"><i class="bi bi-award me-1"></i><?= (int)$rider['total_orders_handled'] ?> deliveries · <?= number_format($rider['rating'], 1) ?> rating</span>
+              <span class="me-3"><i class="bi bi-award me-1"></i><?= (int)$rider['total_orders_handled'] ?> deliveries · <?= number_format((float)($rider['rating'] ?? 4.8), 1) ?> rating</span>
               <span><i class="bi bi-card-checklist me-1"></i>License: <?= e($rider['driving_license'] ?: 'Verified on file') ?></span>
             </div>
           </div>
@@ -558,7 +409,7 @@ foreach ($deliveryFleet as $r) {
               <ul class="dropdown-menu shadow-sm border-0 rounded-3 small">
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$rider['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_DUTY">
@@ -567,7 +418,7 @@ foreach ($deliveryFleet as $r) {
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$rider['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_BREAK">
@@ -576,7 +427,7 @@ foreach ($deliveryFleet as $r) {
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$rider['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_LEAVE">
@@ -585,7 +436,7 @@ foreach ($deliveryFleet as $r) {
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$rider['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="OFF_DUTY">
@@ -597,7 +448,7 @@ foreach ($deliveryFleet as $r) {
 
             <?php if ($hasCodBalance): ?>
               <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
-                <?= csrf_field() ?>
+                <?= csrfField() ?>
                 <input type="hidden" name="action" value="settle_cod_cash">
                 <input type="hidden" name="profile_id" value="<?= (int)$rider['profile_id'] ?>">
                 <button type="submit" class="btn btn-warning btn-sm rounded-3 w-100 fw-bold">
@@ -627,13 +478,13 @@ foreach ($deliveryFleet as $r) {
             <div class="modal-header border-bottom">
               <div>
                 <h5 class="modal-title fw-bold text-dark mb-0">Disburse Payout: <?= e($rider['full_name']) ?></h5>
-                <span class="small text-muted"><?= e($rider['designation']) ?> • Base Stipend: <?= format_inr($rider['base_salary']) ?></span>
+                <span class="small text-muted"><?= e($rider['designation']) ?> • Base Stipend: <?= formatInr($rider['base_salary']) ?></span>
               </div>
               <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
 
             <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php">
-              <?= csrf_field() ?>
+              <?= csrfField() ?>
               <input type="hidden" name="action" value="disburse_payout">
               <input type="hidden" name="user_id" value="<?= (int)$rider['user_id'] ?>">
 
@@ -738,9 +589,9 @@ foreach ($deliveryFleet as $r) {
                 <div class="small text-muted"><?= e($pay['designation']) ?></div>
               </td>
               <td><span class="badge bg-light text-dark border"><?= e($pay['month_year']) ?></span></td>
-              <td><?= format_inr($pay['base_amount']) ?></td>
-              <td class="text-success">+<?= format_inr($pay['incentives_amount']) ?></td>
-              <td class="fw-bold text-primary fs-6"><?= format_inr($pay['net_paid']) ?></td>
+              <td><?= formatInr($pay['base_amount']) ?></td>
+              <td class="text-success">+<?= formatInr($pay['incentives_amount']) ?></td>
+              <td class="fw-bold text-primary fs-6"><?= formatInr($pay['net_paid']) ?></td>
               <td>
                 <span class="badge bg-light text-dark border"><?= e($pay['payment_mode']) ?></span>
               </td>

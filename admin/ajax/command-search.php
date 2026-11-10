@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * AJAX Endpoint: Universal Command Palette Global Search (Ctrl + K)
  * Zippy - Online Food Ordering Platform
@@ -10,7 +11,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!is_admin() && !is_kitchen()) {
+if (!isAdmin() && !isKitchen()) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
@@ -59,7 +60,7 @@ if ($cleanQuery === '') {
         ':sq1' => "%{$cleanQuery}%",
         ':sq2' => "%{$cleanQuery}%"
     ];
-    $orders = db_fetch_all("
+    $orders = dbFetchAll("
         SELECT o.order_id, o.order_status, o.total_amount, o.placed_at, u.full_name, u.phone_number
         FROM `orders` o
         JOIN `users` u ON o.user_id = u.user_id
@@ -71,7 +72,7 @@ if ($cleanQuery === '') {
     foreach ($orders as $ord) {
         $results[] = [
             'title' => "#ZIP-{$ord['order_id']} • {$ord['full_name']}",
-            'subtitle' => format_inr($ord['total_amount']) . " • Status: {$ord['order_status']}",
+            'subtitle' => formatInr($ord['total_amount']) . " • Status: {$ord['order_status']}",
             'url' => ADMIN_URL . "/orders.php?search=" . $ord['order_id'],
             'icon' => 'bi-receipt-cutoff',
             'category' => 'Orders'
@@ -79,11 +80,11 @@ if ($cleanQuery === '') {
     }
 
     // Match Menu Dishes (Limit 4)
-    $dishes = db_fetch_all("
+    $dishes = dbFetchAll("
         SELECT m.item_id, m.item_name, m.price, m.is_available, m.stock_quantity, c.category_name
         FROM `menu_items` m
         LEFT JOIN `categories` c ON m.category_id = c.category_id
-        WHERE m.item_name LIKE :sq1 OR c.category_name LIKE :sq2
+        WHERE m.is_active = 1 AND (m.item_name LIKE :sq1 OR c.category_name LIKE :sq2)
         ORDER BY m.item_name ASC
         LIMIT 4
     ", [
@@ -95,7 +96,7 @@ if ($cleanQuery === '') {
         $stockStatus = $dish['is_available'] ? "{$dish['stock_quantity']} in stock" : "86 / SOLD OUT";
         $results[] = [
             'title' => $dish['item_name'],
-            'subtitle' => format_inr($dish['price']) . " • " . ($dish['category_name'] ?: 'Catalog') . " • {$stockStatus}",
+            'subtitle' => formatInr($dish['price']) . " • " . ($dish['category_name'] ?: 'Catalog') . " • {$stockStatus}",
             'url' => ADMIN_URL . "/dishes.php?search=" . urlencode($dish['item_name']),
             'icon' => 'bi-basket2',
             'category' => 'Dishes'
@@ -103,7 +104,7 @@ if ($cleanQuery === '') {
     }
 
     // Match Riders / Staff (Limit 3)
-    $riders = db_fetch_all("
+    $riders = dbFetchAll("
         SELECT sp.profile_id, sp.designation, sp.duty_status, u.full_name, u.phone_number
         FROM `staff_profiles` sp
         JOIN `users` u ON sp.user_id = u.user_id

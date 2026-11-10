@@ -15,7 +15,7 @@ require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/AprioriEngine.php';
 
-$action = clean_input((string)($_GET['action'] ?? 'recommend'));
+$action = cleanInput((string)($_GET['action'] ?? 'recommend'));
 
 // Support for full association rules BI audit report
 if ($action === 'report') {

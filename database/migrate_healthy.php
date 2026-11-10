@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Migration: Add Healthy Food Category, Dishes, and is_healthy Column
  * Zippy - Online Food Ordering Platform
@@ -7,13 +8,13 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$pdo = getDBConnection();
+$pdo = getDbConnection();
 if (!$pdo) {
     die("Database connection failed.\n");
 }
 
 echo "1. Checking menu_items table schema...\n";
-$cols = db_fetch_all("SHOW COLUMNS FROM `menu_items` LIKE 'is_healthy'");
+$cols = dbFetchAll("SHOW COLUMNS FROM `menu_items` LIKE 'is_healthy'");
 if (empty($cols)) {
     $pdo->exec("ALTER TABLE `menu_items` ADD COLUMN `is_healthy` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_veg`");
     echo "   -> Added `is_healthy` column to `menu_items`.\n";
@@ -22,7 +23,7 @@ if (empty($cols)) {
 }
 
 echo "2. Checking 'Healthy & Fit' category...\n";
-$cat = db_fetch_one("SELECT * FROM `categories` WHERE `category_slug` = 'healthy' OR `category_name` = 'Healthy & Fit'");
+$cat = dbFetchOne("SELECT * FROM `categories` WHERE `category_slug` = 'healthy' OR `category_name` = 'Healthy & Fit'");
 if (!$cat) {
     // Update display orders of existing categories to place Healthy nicely at position 4
     $pdo->exec("UPDATE `categories` SET `display_order` = `display_order` + 1 WHERE `display_order` >= 4");
@@ -111,7 +112,7 @@ $insertStmt = $pdo->prepare("
 ");
 
 foreach ($healthyDishes as $dish) {
-    $existing = db_fetch_one("SELECT `item_id` FROM `menu_items` WHERE `item_name` = :name", [':name' => $dish['name']]);
+    $existing = dbFetchOne("SELECT `item_id` FROM `menu_items` WHERE `item_name` = :name", [':name' => $dish['name']]);
     if ($existing) {
         $pdo->prepare("UPDATE `menu_items` SET `category_id` = :cid, `is_healthy` = 1, `price` = :price, `stock_quantity` = :stock, `image_url` = :img WHERE `item_id` = :id")
             ->execute([

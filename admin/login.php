@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Administrator & Staff Login Console
  * Zippy - Online Food Ordering Platform
@@ -11,49 +12,57 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 // If already logged in as admin/staff, redirect
-if (is_admin()) {
+if (isAdmin()) {
     header("Location: " . ADMIN_URL . "/index.php");
     exit;
 }
 
-// 1-Click Presentation Access Mode (?demo=1)
+$loginError = null;
+
+// 1-Click Presentation Access Mode (?demo=1), gated behind opt-in APP_DEMO_MODE
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $authResult = attempt_login('admin@zippy.com', 'password123');
-    if ($authResult['success']) {
-        set_flash('success', 'Authenticated as Admin (Pooja) in dedicated Admin session.');
-        header("Location: " . ADMIN_URL . "/index.php");
+    if (defined('APP_DEMO_MODE') && APP_DEMO_MODE) {
+        $authResult = loginUser('admin@zippy.com', 'password123', 'ADMIN');
+        if ($authResult['success']) {
+            setFlash('success', 'Authenticated as Admin (Pooja) in dedicated Admin session.');
+            session_write_close();
+            header("Location: " . ADMIN_URL . "/index.php");
+            exit;
+        }
+        $loginError = $authResult['message'] ?? 'Demo login failed.';
+    } else {
+        setFlash('warning', 'Demo quick-login is disabled in this environment. Please sign in with your credentials.');
+        header("Location: " . ADMIN_URL . "/login.php");
         exit;
     }
 }
 
-$loginError = null;
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $loginError = 'Session expired. Please try again.';
     } else {
-        $email = clean_input($_POST['email'] ?? '');
+        $email = cleanInput($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
 
-        $authResult = attempt_login($email, $password);
+        $authResult = loginUser($email, $password);
 
         if ($authResult['success']) {
             $roleName = $authResult['user']['role_name'] ?? '';
             session_write_close();
             if ($roleName === 'ADMIN') {
-                set_flash('success', 'Authenticated as ' . $roleName . '. Welcome to Zippy Operations.');
+                setFlash('success', 'Authenticated as ' . $roleName . '. Welcome to Zippy Operations.');
                 header("Location: " . ADMIN_URL . "/index.php");
                 exit;
             } elseif ($roleName === 'KITCHEN') {
-                set_flash('success', 'Authenticated as Kitchen Chef. Redirected to Kitchen Station.');
+                setFlash('success', 'Authenticated as Kitchen Chef. Redirected to Kitchen Station.');
                 header("Location: " . KITCHEN_URL . "/index.php");
                 exit;
             } elseif ($roleName === 'RIDER') {
-                set_flash('success', 'Authenticated as Delivery Rider. Redirected to Fleet App.');
+                setFlash('success', 'Authenticated as Delivery Rider. Redirected to Fleet App.');
                 header("Location: " . DELIVERY_URL . "/index.php");
                 exit;
             } else {
-                logout_user();
+                logoutUser();
                 $loginError = 'Access denied. You do not possess staff or administrator credentials.';
             }
         } else {
@@ -109,6 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </span>
   </div>
 
+  <?php displayFlash(); ?>
+
   <?php if ($loginError): ?>
     <div class="alert alert-danger d-flex align-items-center gap-2 mb-4 rounded-3 small">
       <i class="bi bi-exclamation-octagon-fill fs-5"></i>
@@ -116,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   <?php endif; ?>
 
+  <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
   <!-- 1-Click Demo Fill Buttons -->
   <div class="p-3 rounded-3 mb-4 text-center bg-light border">
     <div class="small fw-bold text-muted mb-2">Instant Demo Staff Login:</div>
@@ -128,9 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </button>
     </div>
   </div>
+  <?php endif; ?>
 
   <form method="POST" action="<?= ADMIN_URL ?>/login.php">
-    <?= csrf_field() ?>
+    <?= csrfField() ?>
 
     <div class="mb-3">
       <label class="form-label small fw-bold">Administrator / Staff Email</label>

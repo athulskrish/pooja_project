@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer Sign In Portal
  * Zippy - Online Food Ordering Platform
@@ -7,36 +8,45 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
+$redirectTarget = cleanInput($_GET['redirect'] ?? '');
+
 // If already logged in, redirect
-if (is_logged_in()) {
-    header("Location: " . CUSTOMER_URL . "/index.php");
+if (isLoggedIn()) {
+    header("Location: " . CUSTOMER_URL . ($redirectTarget === 'checkout' ? "/checkout.php" : "/index.php"));
     exit;
 }
 
-// 1-Click Presentation Access Mode (?demo=1)
+$loginError = null;
+
+// 1-Click Presentation Access Mode (?demo=1), gated behind opt-in APP_DEMO_MODE
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $authResult = attempt_login('athul@example.com', 'password123');
-    if ($authResult['success']) {
-        set_flash('success', 'Authenticated as Customer (Athul) in dedicated Storefront session.');
-        header("Location: " . CUSTOMER_URL . "/index.php");
+    if (defined('APP_DEMO_MODE') && APP_DEMO_MODE) {
+        $authResult = loginUser('athul@example.com', 'password123', 'CUSTOMER');
+        if ($authResult['success']) {
+            setFlash('success', 'Authenticated as Customer (Athul) in dedicated Storefront session.');
+            session_write_close();
+            header("Location: " . CUSTOMER_URL . ($redirectTarget === 'checkout' ? "/checkout.php" : "/index.php"));
+            exit;
+        }
+        $loginError = $authResult['message'] ?? 'Demo login failed.';
+    } else {
+        setFlash('warning', 'Demo quick-login is disabled in this environment. Please sign in with your account credentials.');
+        header("Location: " . CUSTOMER_URL . "/login.php" . ($redirectTarget === 'checkout' ? '?redirect=checkout' : ''));
         exit;
     }
 }
 
-$redirectTarget = clean_input($_GET['redirect'] ?? '');
-$loginError = null;
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $loginError = 'Session expired. Please try again.';
     } else {
-        $email = clean_input($_POST['email'] ?? '');
+        $email = cleanInput($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
 
-        $authResult = attempt_login($email, $password);
+        $authResult = loginUser($email, $password);
 
         if ($authResult['success']) {
-            set_flash('success', 'Welcome back, ' . $authResult['user']['full_name'] . '!');
+            setFlash('success', 'Welcome back, ' . $authResult['user']['full_name'] . '!');
             session_write_close();
             if ($redirectTarget === 'checkout') {
                 header("Location: " . CUSTOMER_URL . "/checkout.php");
@@ -77,6 +87,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
           <?php endif; ?>
 
+          <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
           <!-- 1-Click Demo Customer Account Buttons (Athul, Amal, Abhijith) -->
           <div class="p-3 rounded-3 mb-4 text-center" style="background: #EDFBF2; border: 1px dashed #2E6F40;">
             <div class="small fw-bold text-forest mb-2">Quick Demo Access (3 Customers):</div>
@@ -92,9 +103,10 @@ require_once __DIR__ . '/includes/header.php';
               </button>
             </div>
           </div>
+          <?php endif; ?>
 
           <form method="POST" action="<?= CUSTOMER_URL ?>/login.php<?= !empty($redirectTarget) ? '?redirect=' . urlencode($redirectTarget) : '' ?>">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
 
             <div class="mb-3">
               <label class="form-label small fw-bold">Email Address</label>
@@ -107,7 +119,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="mb-4">
               <div class="d-flex justify-content-between align-items-center">
                 <label class="form-label small fw-bold mb-0">Password</label>
-                <a href="<?= CUSTOMER_URL ?>/help.php" class="text-success small text-decoration-none">Forgot password?</a>
+                <a href="<?= CUSTOMER_URL ?>/forgot-password.php" class="text-success small text-decoration-none fw-semibold">Forgot password?</a>
               </div>
               <div class="input-group mt-1">
                 <span class="input-group-text bg-white text-muted"><i class="bi bi-lock"></i></span>

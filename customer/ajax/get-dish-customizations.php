@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Customer AJAX API: Fetch Dish Customisations & Options for Interactive Selection Modal
  * Zippy - Online Food Ordering Platform
@@ -15,12 +16,12 @@ if ($itemId <= 0) {
     exit;
 }
 
-$dish = db_fetch_one("
+$dish = dbFetchOne("
     SELECT m.item_id, m.item_name, m.price, m.is_veg, m.is_healthy, m.image_url, m.description, m.stock_quantity, m.is_available,
            c.category_name
     FROM `menu_items` m
     JOIN `categories` c ON m.category_id = c.category_id
-    WHERE m.item_id = :id
+    WHERE m.item_id = :id AND m.is_active = 1 AND c.is_active = 1
 ", [':id' => $itemId]);
 
 if (!$dish) {
@@ -28,11 +29,11 @@ if (!$dish) {
     exit;
 }
 
-$dish['display_image'] = get_dish_image_url($dish['image_url']);
-$dish['price_formatted'] = format_inr($dish['price']);
+$dish['display_image'] = getDishImageUrl($dish['image_url']);
+$dish['price_formatted'] = formatInr($dish['price']);
 
 // Fetch active customisation groups and available options
-$groups = get_dish_customization_groups($itemId, true);
+$groups = getDishCustomizationGroups($itemId, true);
 
 echo json_encode([
     'success' => true,

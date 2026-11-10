@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Order Success & Confirmation Page
  * Zippy - Online Food Ordering Platform
@@ -7,37 +8,29 @@
 $pageTitle = 'Order Placed Successfully!';
 $activePage = 'orders';
 
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+
+requireCustomer();
+$currentUser = getCurrentUser();
+$uid = (int)$currentUser['id'];
+
+$requestedOrderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+
 require_once __DIR__ . '/includes/header.php';
 
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 1004;
-
-// Fetch Order Details
-$order = db_fetch_one("
-    SELECT o.*, u.full_name, u.phone_number, u.email,
-           a.address_line, a.pincode,
-           p.payment_mode, p.transaction_reference, p.payment_status,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
-    LEFT JOIN `payments` p ON o.order_id = p.order_id
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id
-    WHERE o.order_id = :id
-", [':id' => $orderId]);
+$successData = OrderService::getOrderSuccessData($requestedOrderId, $uid);
+$orderId = $successData['order_id'];
+$order = $successData['order'];
 
 if (!$order) {
-    echo "<div class='container py-5 text-center'><h4>Order not found</h4><a href='" . CUSTOMER_URL . "/index.php' class='btn btn-success rounded-pill mt-3'>Return to Home</a></div>";
+    echo "<div class='container py-5 text-center'><h4>Order not found or access denied</h4><a href='" . CUSTOMER_URL . "/order-history.php' class='btn btn-success rounded-pill mt-3'>View Your Orders</a></div>";
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }
 
-// Fetch Items
-$orderItems = db_fetch_all("
-    SELECT oi.*, m.item_name, m.is_veg, m.image_url 
-    FROM `order_items` oi
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id = :id
-", [':id' => $orderId]);
+$orderItems = $successData['order_items'];
 ?>
 
 <main class="py-5">
@@ -58,7 +51,7 @@ $orderItems = db_fetch_all("
         </span>
         <h2 class="fw-bold font-outfit text-dark mb-2">Thank you, <?= e($order['full_name']) ?>!</h2>
         <p class="text-muted small mb-4">
-          Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> is booked for <strong><?= e($order['scheduled_slot'] ?: date('D, d M h:i A', strtotime($order['scheduled_for']))) ?></strong>. It has been queued in the Kitchen Display System (KDS) and will be cooked fresh right on time!
+          Your order <strong>#ZIP-<?= (int)$order['order_id'] ?></strong> is booked for <strong><?= e($order['scheduled_slot'] ?: (!empty($order['scheduled_for']) ? date('D, d M h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'Scheduled')) ?></strong>. It has been queued in the Kitchen Display System (KDS) and will be cooked fresh right on time!
         </p>
       <?php else: ?>
         <span class="badge rounded-pill px-3 py-1 mb-2 fw-semibold" style="background: #2E6F40; color: #CEFFDC;">
@@ -96,7 +89,7 @@ $orderItems = db_fetch_all("
         <div class="col-sm-6">
           <div class="p-3 rounded-3 bg-light border">
             <div class="small text-muted">Total Paid (<?= e($order['payment_mode']) ?>)</div>
-            <div class="fw-bold fs-5 text-dark"><?= format_inr($order['total_amount']) ?></div>
+            <div class="fw-bold fs-5 text-dark"><?= formatInr($order['total_amount']) ?></div>
             <div class="small text-muted text-truncate">Ref: <code class="text-dark"><?= e($order['transaction_reference']) ?></code></div>
             <?php if (str_starts_with($order['transaction_reference'] ?? '', 'pay_')): ?>
               <span class="badge rounded-pill mt-1" style="background:#02042B; color:#528FF0; font-size:0.7rem;">
@@ -110,7 +103,7 @@ $orderItems = db_fetch_all("
             <div class="small text-muted"><?= !empty($order['is_scheduled']) ? 'Scheduled Delivery Slot' : 'Estimated Delivery Time' ?></div>
             <div class="fw-bold fs-5 <?= !empty($order['is_scheduled']) ? 'text-primary' : 'text-success' ?>" style="<?= !empty($order['is_scheduled']) ? 'color:#7C3AED !important;' : '' ?>">
               <i class="bi <?= !empty($order['is_scheduled']) ? 'bi-calendar-check' : 'bi-clock-history' ?> me-1"></i>
-              <?= !empty($order['is_scheduled']) ? e($order['scheduled_slot'] ?: date('d M, h:i A', strtotime($order['scheduled_for']))) : '25-30 Mins' ?>
+              <?= !empty($order['is_scheduled']) ? e($order['scheduled_slot'] ?: (!empty($order['scheduled_for']) ? date('d M, h:i A', (int)strtotime((string)$order['scheduled_for'])) : 'Scheduled')) : '25-30 Mins' ?>
             </div>
             <div class="small text-muted">Arriving at <?= e($order['address_line'] ?: 'Indiranagar') ?></div>
           </div>

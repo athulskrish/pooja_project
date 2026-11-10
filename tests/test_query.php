@@ -1,8 +1,9 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
-$orders = db_fetch_all("
+$orders = dbFetchAll("
     SELECT o.*, 
            COUNT(oi.order_item_id) AS total_items_count,
            d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status, d.delivered_at,
@@ -25,7 +26,7 @@ $orderIds = array_column($orders, 'order_id');
 $itemsGrouped = [];
 if (!empty($orderIds)) {
     $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
-    $itemsRaw = db_fetch_all("
+    $itemsRaw = dbFetchAll("
         SELECT oi.*, m.item_name, m.is_veg, m.price as current_price
         FROM `order_items` oi
         JOIN `menu_items` m ON oi.item_id = m.item_id
@@ -38,9 +39,9 @@ if (!empty($orderIds)) {
 
 // Separate into tabs
 $allOrders = $orders;
-$ongoingOrders = array_filter($orders, fn($o) => in_array($o['order_status'], ['PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY']));
-$completedOrders = array_filter($orders, fn($o) => in_array($o['order_status'], ['DELIVERED']));
-$cancelledOrders = array_filter($orders, fn($o) => in_array($o['order_status'], ['CANCELLED']));
+$ongoingOrders = array_filter($orders, fn(array $o): bool => in_array($o['order_status'], ['PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY'], true));
+$completedOrders = array_filter($orders, fn(array $o): bool => in_array($o['order_status'], ['DELIVERED'], true));
+$cancelledOrders = array_filter($orders, fn(array $o): bool => in_array($o['order_status'], ['CANCELLED'], true));
 
 echo "Total: " . count($allOrders) . PHP_EOL;
 echo "Ongoing: " . count($ongoingOrders) . PHP_EOL;

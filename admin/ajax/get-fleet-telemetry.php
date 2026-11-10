@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * AJAX Endpoint: Live Delivery Fleet GPS Telemetry & Active Routes
  * Zippy - Online Food Ordering Platform
@@ -11,7 +12,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 header('Content-Type: application/json; charset=utf-8');
 
 // Require Admin or Kitchen authorization
-if (!is_admin() && !is_kitchen()) {
+if (!isAdmin() && !isKitchen()) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
@@ -25,7 +26,7 @@ $hub = [
 ];
 
 // Fetch all delivery staff
-$deliveryStaff = db_fetch_all("
+$deliveryStaff = dbFetchAll("
     SELECT sp.profile_id, sp.user_id, sp.designation, sp.duty_status, 
            sp.vehicle_details, sp.driving_license, sp.cod_balance, sp.rating, 
            sp.total_orders_handled, u.full_name, u.phone_number, u.email
@@ -40,7 +41,7 @@ $activeTrips = [];
 
 foreach ($deliveryStaff as $idx => $staff) {
     $uid = (int)$staff['user_id'];
-    $activeTrip = get_driver_active_delivery($uid, $staff['full_name']);
+    $activeTrip = getDriverActiveDelivery($uid, $staff['full_name']);
 
     $riderData = [
         'user_id' => $uid,

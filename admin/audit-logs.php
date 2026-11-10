@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Regulatory & Operations Audit Trail Viewer
  * Zippy - Online Food Ordering Platform
@@ -11,96 +12,14 @@ $activePage = 'audit_logs';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
-
-// -----------------------------------------------------------------------------
-// Filter & Search Parameters
-// -----------------------------------------------------------------------------
-$searchQuery = clean_input($_GET['search'] ?? '');
-$searchOrderId = (int)($_GET['order_id'] ?? 0);
-if ($searchOrderId <= 0 && is_numeric($searchQuery)) {
-    $searchOrderId = (int)$searchQuery;
-}
-
-$filterStatus = clean_input($_GET['status'] ?? 'ALL');
-$filterRole = clean_input($_GET['role'] ?? 'ALL');
-$datePreset = clean_input($_GET['date_preset'] ?? 'ALL');
-$dateFrom = clean_input($_GET['date_from'] ?? '');
-$dateTo = clean_input($_GET['date_to'] ?? '');
-$pageSize = max(10, min(100, (int)($_GET['limit'] ?? 25)));
-
-// -----------------------------------------------------------------------------
-// Construct SQL Filter Conditions
-// -----------------------------------------------------------------------------
-$where = "1=1";
-$params = [];
-
-if ($searchOrderId > 0) {
-    $where .= " AND a.order_id = :oid";
-    $params[':oid'] = $searchOrderId;
-} elseif (!empty($searchQuery)) {
-    $where .= " AND (u.full_name LIKE :sq OR r.role_name LIKE :sq OR a.old_status LIKE :sq OR a.new_status LIKE :sq)";
-    $params[':sq'] = '%' . $searchQuery . '%';
-}
-
-if (!empty($filterStatus) && $filterStatus !== 'ALL') {
-    $where .= " AND a.new_status = :st";
-    $params[':st'] = $filterStatus;
-}
-
-if (!empty($filterRole) && $filterRole !== 'ALL') {
-    if ($filterRole === 'SYSTEM') {
-        $where .= " AND (a.updated_by_user_id IS NULL OR r.role_name IS NULL)";
-    } else {
-        $where .= " AND r.role_name = :role";
-        $params[':role'] = $filterRole;
-    }
-}
-
-// Date Filter handling
-if ($datePreset === 'TODAY') {
-    $where .= " AND DATE(a.change_timestamp) = CURDATE()";
-} elseif ($datePreset === 'YESTERDAY') {
-    $where .= " AND DATE(a.change_timestamp) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
-} elseif ($datePreset === '7D') {
-    $where .= " AND a.change_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-} elseif ($datePreset === '30D') {
-    $where .= " AND a.change_timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-} elseif (!empty($dateFrom) || !empty($dateTo)) {
-    if (!empty($dateFrom)) {
-        $where .= " AND a.change_timestamp >= :dfrom";
-        $params[':dfrom'] = $dateFrom . ' 00:00:00';
-    }
-    if (!empty($dateTo)) {
-        $where .= " AND a.change_timestamp <= :dto";
-        $params[':dto'] = $dateTo . ' 23:59:59';
-    }
-}
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // -----------------------------------------------------------------------------
 // CSV Export Stream Handler (Before sending HTML headers)
 // -----------------------------------------------------------------------------
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    $exportSql = "
-        SELECT a.audit_id,
-               a.order_id,
-               o.order_number,
-               COALESCE(a.old_status, 'PLACED') AS old_status,
-               a.new_status,
-               COALESCE(r.role_name, 'SYSTEM') AS actor_role,
-               COALESCE(u.full_name, 'System Trigger') AS actor_name,
-               o.total_amount,
-               a.change_timestamp
-        FROM `order_audit_trail` a
-        LEFT JOIN `users` u ON a.updated_by_user_id = u.user_id
-        LEFT JOIN `roles` r ON u.role_id = r.role_id
-        LEFT JOIN `orders` o ON a.order_id = o.order_id
-        WHERE $where
-        ORDER BY a.change_timestamp DESC, a.audit_id DESC
-    ";
-
-    $records = db_fetch_all($exportSql, $params);
+    $records = AdminService::getAuditLogsForExport($_GET);
 
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=zippy_order_audit_trail_' . date('Ymd_His') . '.csv');
@@ -128,81 +47,29 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     exit;
 }
 
-// -----------------------------------------------------------------------------
-// Pagination & Record Queries
-// -----------------------------------------------------------------------------
-$totalLogs = (int)db_fetch_val("
-    SELECT COUNT(*)
-    FROM `order_audit_trail` a
-    LEFT JOIN `users` u ON a.updated_by_user_id = u.user_id
-    LEFT JOIN `roles` r ON u.role_id = r.role_id
-    LEFT JOIN `orders` o ON a.order_id = o.order_id
-    WHERE $where
-", $params);
-
-$totalPages = max(1, (int)ceil($totalLogs / $pageSize));
-$currentPage = min(max(1, (int)($_GET['page'] ?? 1)), $totalPages);
-$offset = ($currentPage - 1) * $pageSize;
-$firstResult = $totalLogs > 0 ? $offset + 1 : 0;
-$lastResult = min($offset + $pageSize, $totalLogs);
-
-$auditLogs = [];
-try {
-    $auditLogs = db_fetch_all("
-        SELECT a.*, 
-               u.full_name AS actor_name, 
-               r.role_name AS actor_role,
-               o.total_amount,
-               o.placed_at,
-               o.order_number,
-               o.order_status
-        FROM `order_audit_trail` a
-        LEFT JOIN `users` u ON a.updated_by_user_id = u.user_id
-        LEFT JOIN `roles` r ON u.role_id = r.role_id
-        LEFT JOIN `orders` o ON a.order_id = o.order_id
-        WHERE $where
-        ORDER BY a.change_timestamp DESC, a.audit_id DESC
-        LIMIT $pageSize OFFSET $offset
-    ", $params);
-} catch (Exception $e) {
-    $auditLogs = [];
-}
-
-// -----------------------------------------------------------------------------
-// Overall System Statistics (Context KPIs)
-// -----------------------------------------------------------------------------
-$totalAuditsCount = (int)db_fetch_val("SELECT COUNT(*) FROM `order_audit_trail`") ?: 0;
-$uniqueOrdersAudited = (int)db_fetch_val("SELECT COUNT(DISTINCT order_id) FROM `order_audit_trail`") ?: 0;
-$transitionsToday = (int)db_fetch_val("SELECT COUNT(*) FROM `order_audit_trail` WHERE DATE(change_timestamp) = CURDATE()") ?: 0;
-$activeActorsCount = (int)db_fetch_val("SELECT COUNT(DISTINCT updated_by_user_id) FROM `order_audit_trail` WHERE updated_by_user_id IS NOT NULL") ?: 0;
-
-// If viewing a single order, fetch its full lifecycle journey for on-page stepper
-$singleOrderLifecycle = null;
-$singleOrderDetails = null;
-if ($searchOrderId > 0) {
-    $singleOrderDetails = db_fetch_one("
-        SELECT o.*, u.full_name AS customer_name, p.payment_mode, p.payment_status
-        FROM `orders` o
-        LEFT JOIN `users` u ON o.user_id = u.user_id
-        LEFT JOIN `payments` p ON o.order_id = p.order_id
-        WHERE o.order_id = :oid
-    ", [':oid' => $searchOrderId]);
-
-    if ($singleOrderDetails) {
-        $singleOrderLifecycle = db_fetch_all("
-            SELECT a.*, u.full_name AS actor_name, r.role_name AS actor_role
-            FROM `order_audit_trail` a
-            LEFT JOIN `users` u ON a.updated_by_user_id = u.user_id
-            LEFT JOIN `roles` r ON u.role_id = r.role_id
-            WHERE a.order_id = :oid
-            ORDER BY a.change_timestamp ASC, a.audit_id ASC
-        ", [':oid' => $searchOrderId]);
-    }
-}
-
-// Build URL query helper for pagination & filter pills
-$currentQueryParams = $_GET;
-unset($currentQueryParams['page'], $currentQueryParams['export']);
+$auditData = AdminService::getAuditLogsData($_GET);
+$searchQuery = $auditData['searchQuery'];
+$searchOrderId = $auditData['searchOrderId'];
+$filterStatus = $auditData['filterStatus'];
+$filterRole = $auditData['filterRole'];
+$datePreset = $auditData['datePreset'];
+$dateFrom = $auditData['dateFrom'];
+$dateTo = $auditData['dateTo'];
+$pageSize = $auditData['pageSize'];
+$totalLogs = $auditData['totalLogs'];
+$totalPages = $auditData['totalPages'];
+$currentPage = $auditData['currentPage'];
+$offset = $auditData['offset'];
+$firstResult = $auditData['firstResult'];
+$lastResult = $auditData['lastResult'];
+$auditLogs = $auditData['auditLogs'];
+$totalAuditsCount = $auditData['totalAuditsCount'];
+$uniqueOrdersAudited = $auditData['uniqueOrdersAudited'];
+$transitionsToday = $auditData['transitionsToday'];
+$activeActorsCount = $auditData['activeActorsCount'];
+$singleOrderDetails = $auditData['singleOrderDetails'];
+$singleOrderLifecycle = $auditData['singleOrderLifecycle'];
+$currentQueryParams = $auditData['currentQueryParams'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -333,12 +200,12 @@ require_once __DIR__ . '/includes/header.php';
             <h5 class="fw-bold font-outfit mb-0 text-dark">
               Order #<?= e($singleOrderDetails['order_number'] ?: ('ZIP-' . $singleOrderDetails['order_id'])) ?> Lifecycle Journey
             </h5>
-            <?= get_status_badge($singleOrderDetails['order_status']) ?>
-            <span class="badge bg-light text-dark border font-monospace"><?= format_inr($singleOrderDetails['total_amount']) ?></span>
+            <?= getStatusBadge($singleOrderDetails['order_status']) ?>
+            <span class="badge bg-light text-dark border font-monospace"><?= formatInr($singleOrderDetails['total_amount']) ?></span>
           </div>
           <p class="text-muted small mb-0 mt-1">
             Customer: <strong class="text-dark"><?= e($singleOrderDetails['customer_name'] ?: 'Customer') ?></strong> &bull; 
-            Placed: <?= date('d M Y, h:i A', strtotime($singleOrderDetails['placed_at'])) ?> (<?= format_time_ago($singleOrderDetails['placed_at']) ?>) &bull;
+            Placed: <?= date('d M Y, h:i A', strtotime($singleOrderDetails['placed_at'])) ?> (<?= formatTimeAgo($singleOrderDetails['placed_at']) ?>) &bull;
             Payment: <span class="badge bg-light text-muted border"><?= e($singleOrderDetails['payment_mode'] ?: 'COD') ?> (<?= e($singleOrderDetails['payment_status'] ?: 'PENDING') ?>)</span>
           </p>
         </div>
@@ -385,14 +252,14 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                   <span class="badge bg-secondary bg-opacity-25 text-dark border small"><?= e($step['old_status'] ?: 'PLACED') ?></span>
                   <i class="bi bi-arrow-right text-muted small"></i>
-                  <?= get_status_badge($step['new_status']) ?>
+                  <?= getStatusBadge($step['new_status']) ?>
                 </div>
 
                 <div class="small text-muted mb-1 d-flex align-items-center gap-1">
                   <i class="bi bi-person-circle"></i>
                   <span class="fw-semibold text-dark"><?= e($step['actor_name'] ?: 'System Trigger') ?></span>
                   <span class="badge rounded-pill <?php
-                    switch($step['actor_role']) {
+                    switch ($step['actor_role']) {
                         case 'ADMIN': echo 'bg-danger'; break;
                         case 'KITCHEN': echo 'bg-warning text-dark'; break;
                         case 'RIDER': echo 'bg-info text-dark'; break;
@@ -638,7 +505,7 @@ require_once __DIR__ . '/includes/header.php';
                       <?= e($log['old_status'] ?: 'PLACED') ?>
                     </span>
                     <i class="bi bi-arrow-right text-muted" style="font-size: 0.8rem;"></i>
-                    <?= get_status_badge($log['new_status']) ?>
+                    <?= getStatusBadge($log['new_status']) ?>
                   </div>
                 </td>
 
@@ -646,7 +513,7 @@ require_once __DIR__ . '/includes/header.php';
                 <td>
                   <div class="d-flex align-items-center gap-2">
                     <span class="badge rounded-pill <?php
-                      switch($log['actor_role']) {
+                      switch ($log['actor_role']) {
                           case 'ADMIN': echo 'bg-danger text-white'; break;
                           case 'KITCHEN': echo 'bg-warning text-dark'; break;
                           case 'RIDER': echo 'bg-info text-dark'; break;
@@ -665,14 +532,14 @@ require_once __DIR__ . '/includes/header.php';
                 <!-- Order Total -->
                 <td>
                   <span class="fw-bold font-monospace text-dark">
-                    <?= !empty($log['total_amount']) ? format_inr($log['total_amount']) : '—' ?>
+                    <?= !empty($log['total_amount']) ? formatInr($log['total_amount']) : '—' ?>
                   </span>
                 </td>
 
                 <!-- Logged Timestamp (Relative + Absolute) -->
                 <td>
                   <div class="d-flex align-items-center gap-1">
-                    <span class="fw-semibold text-dark"><?= format_time_ago($logTime) ?></span>
+                    <span class="fw-semibold text-dark"><?= formatTimeAgo($logTime) ?></span>
                   </div>
                   <div class="small text-muted font-monospace" style="font-size: 0.75rem;">
                     <?= date('d M Y, h:i:s A', $logTime) ?>

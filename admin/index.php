@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Operations Dashboard
  * Zippy - Online Food Ordering Platform
@@ -12,82 +13,23 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/FCFSQueue.php';
 
-require_admin();
+requireAdmin();
 
-$triageExceptions = FCFSQueue::getTriageExceptions();
-usort($triageExceptions, function ($a, $b) {
-    $rank = ['CRITICAL' => 3, 'WARNING' => 2, 'INFO' => 1];
-    return ($rank[$b['severity']] ?? 0) <=> ($rank[$a['severity']] ?? 0);
-});
-
-$lowStockCount = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `menu_items` WHERE stock_quantity <= 15 AND is_available = 1"
-) ?: 0);
-
-$liveOrdersCount = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERING')"
-) ?: 0);
-
-$ordersAtRisk = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) > 30"
-) ?: 0);
-
-$codPending = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `money_transactions` WHERE txn_category = 'CUSTOMER_PAYMENT_COD' AND status != 'COMPLETED'"
-) ?: 0);
-
-$deliveryDelays = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('OUT_FOR_DELIVERY', 'DELIVERING') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) > 45"
-) ?: 0);
-
-$scheduledOrdersCount = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE is_scheduled = 1 AND order_status NOT IN ('DELIVERED', 'CANCELLED')"
-) ?: 0);
-$upcomingScheduledList = db_fetch_all("
-    SELECT o.order_id, o.scheduled_for, o.scheduled_slot, o.order_status, u.full_name,
-           TIMESTAMPDIFF(MINUTE, NOW(), o.scheduled_for) AS minutes_until
-    FROM `orders` o
-    JOIN `users` u ON o.user_id = u.user_id
-    WHERE o.is_scheduled = 1 AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')
-    ORDER BY o.scheduled_for ASC
-    LIMIT 4
-");
-
-$triageSeverityCounts = ['CRITICAL' => 0, 'WARNING' => 0, 'INFO' => 0];
-foreach ($triageExceptions as $exception) {
-    $triageSeverityCounts[$exception['severity']] = ($triageSeverityCounts[$exception['severity']] ?? 0) + 1;
-}
-
-$hourlyOrderCounts = db_fetch_all(
-    "SELECT HOUR(placed_at) AS hour_label, COUNT(*) AS order_count FROM `orders` WHERE DATE(placed_at) = CURDATE() AND order_status != 'CANCELLED' GROUP BY HOUR(placed_at) ORDER BY HOUR(placed_at) ASC"
-);
-$hourLabels = [];
-$hourValues = [];
-$hours = [];
-for ($i = 0; $i <= 23; $i++) {
-    $label = sprintf('%02d:00', $i);
-    $hours[$i] = 0;
-    $hourLabels[] = $label;
-}
-foreach ($hourlyOrderCounts as $item) {
-    $hour = (int)($item['hour_label'] ?? 0);
-    $hours[$hour] = (int)($item['order_count'] ?? 0);
-}
-foreach ($hours as $count) {
-    $hourValues[] = $count;
-}
-
-$revenueToday = (float)(db_fetch_val(
-    "SELECT COALESCE(SUM(total_amount), 0) FROM `orders` WHERE DATE(placed_at) = CURDATE() AND order_status != 'CANCELLED'"
-) ?: 0.0);
-
-$stockRiskTrend = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `menu_items` WHERE stock_quantity <= 10 AND is_available = 1"
-) ?: 0);
-
-$slaPerformance = (int)(db_fetch_val(
-    "SELECT COUNT(*) FROM `orders` WHERE order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY') AND TIMESTAMPDIFF(MINUTE, placed_at, NOW()) <= 25"
-) ?: 0);
+$dashboardData = AdminService::getOperationsDashboardData();
+$triageExceptions = $dashboardData['triageExceptions'];
+$lowStockCount = $dashboardData['lowStockCount'];
+$liveOrdersCount = $dashboardData['liveOrdersCount'];
+$ordersAtRisk = $dashboardData['ordersAtRisk'];
+$codPending = $dashboardData['codPending'];
+$deliveryDelays = $dashboardData['deliveryDelays'];
+$scheduledOrdersCount = $dashboardData['scheduledOrdersCount'];
+$upcomingScheduledList = $dashboardData['upcomingScheduledList'];
+$triageSeverityCounts = $dashboardData['triageSeverityCounts'];
+$hourLabels = $dashboardData['hourLabels'];
+$hourValues = $dashboardData['hourValues'];
+$revenueToday = $dashboardData['revenueToday'];
+$stockRiskTrend = $dashboardData['stockRiskTrend'];
+$slaPerformance = $dashboardData['slaPerformance'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>

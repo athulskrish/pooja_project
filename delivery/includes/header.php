@@ -1,8 +1,10 @@
+<?php declare(strict_types=1); ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="csrf-token" content="<?= csrfToken() ?>">
   <title>Delivery Partner Fleet App - Zippy Food Network</title>
   
   <!-- Fonts -->
@@ -401,6 +403,6 @@
        ========================================================================= -->
   <main class="container-xl py-3" style="max-width: 920px;">
 
-    <?php display_flash(); ?>
+    <?php displayFlash(); ?>
 
     <!-- A. ONLINE / OFFLINE DUTY BAR (UC-14) -->

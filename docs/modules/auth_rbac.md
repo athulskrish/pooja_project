@@ -1,33 +1,31 @@
-# 🔐 Module: Authentication & RBAC (auth_rbac.md)
+# Module: Authentication & RBAC System
 
-> **Context Domain:** User Identity, Session Security & Role-Based Access Control  
-> **Relevant Tables:** `users`, `roles`
+## 1. Overview & Security Model
+Zippy enforces role-based access control (**RBAC**) across four independent portals (`/admin/`, `/kitchen/`, `/delivery/`, `/customer/`). Each portal operates on an isolated PHP session cookie resolved dynamically by `getCurrentPortal()` in `config/config.php`, allowing multiple roles to be signed in simultaneously in different browser tabs/sessions without session overwrite.
 
----
+## 2. Core Roles & Schema
+Defined in `roles` (`database/schema.sql`) and enforced on `users.role_id` (`users.is_active = 1` required):
+- `1` -> `ADMIN`
+- `2` -> `CUSTOMER`
+- `3` -> `KITCHEN`
+- `4` -> `RIDER`
 
-## 1. Architecture & Flow
+## 3. Core Code Entrypoints
+- **`config/config.php`**:
+  - Portal session isolation & resolution: `getCurrentPortal()`, `getAllPortalActors()`.
+  - Session state & RBAC guards: `isLoggedIn()`, `getCurrentUser()`, `hasRole()`, `hasPermission()`, `checkPermission()`, `requireLogin()`, `requireRole()`, `requireAdmin()`, `requireKitchen()`, `requireRider()`, `requireCustomer()`, `canAccessOrder()`.
+  - CSRF helpers: `csrfToken()`, `csrfField()`, `verifyCsrfToken()`, `verifyRequestCsrf()`.
+- **`includes/auth.php`**:
+  - Credentials & registration: `loginUser()`, `registerCustomer()`, `logoutUser()`, `getUserRole()`, `updateUserRole()`.
+  - Password recovery (`security_question`, `security_answer_hash`): `getSecurityQuestions()`, `normalizeSecurityAnswer()`, `ensureSecurityQuestionColumns()`, `lookupUserSecurityQuestion()`, `resetPasswordWithSecurityAnswer()`, `updateUserSecurityQuestion()`.
+  - Demo-only email normalization (`APP_DEMO_MODE`): `resolveEmailAlias()`.
+- **Portal Auth Views & Guards:**
+  - Customer: `customer/includes/auth_guard.php` (`requireCustomer()`), `customer/login.php`, `customer/signup.php`, `customer/forgot-password.php`, `customer/logout.php`.
+  - Admin / Kitchen / Delivery: `{admin,kitchen,delivery}/login.php`, `{admin,kitchen,delivery}/logout.php`.
 
-The platform uses native PHP sessions with strict cookie parameters (`httponly`, `samesite=Lax`, secure where HTTPS is present). Authentication is managed centrally via `includes/auth.php`.
-
-### Role Definitions (`roles` table):
-- `1` / `ADMIN`: Unrestricted portal access, catalog management, reports, payroll.
-- `2` / `CUSTOMER`: Storefront browsing, cart, order placement, order tracking.
-- `3` / `KITCHEN`: Kitchen Display System (KDS), cooking status progression, KOT generation.
-- `4` / `RIDER`: Delivery fleet, active order acceptance, GPS updates, OTP delivery confirmation.
-
----
-
-## 2. Key Source Files
-
-- **`includes/auth.php`**: Contains `loginUser()`, `logoutUser()`, `getCurrentUser()`, `hasRole()`, `requireRole()`.
-- **`customer/includes/auth_guard.php`**: Enforces customer-specific login checks and redirects unauthenticated users to `/customer/login.php`.
-- **`customer/login.php` & `customer/signup.php`**: Customer identity intake.
-- **`admin/login.php`**, **`kitchen/login.php`**, **`delivery/login.php`**: Dedicated portal login endpoints.
-
----
-
-## 3. Security Guidelines & Invariants
-
-1. **Password Hashing:** Always use `password_hash($password, PASSWORD_ARGON2ID)` or `PASSWORD_BCRYPT`. Never store plain-text passwords.
-2. **Session Regeneration:** Invoke `session_regenerate_id(true)` immediately after successful login to prevent Session Fixation attacks.
-3. **Role Assertion:** Every protected page must invoke `requireRole(['ROLE_NAME'])` before rendering any HTML or executing queries.
+## 4. Security Constraints
+1. Passwords and security recovery answers are hashed via PHP `password_hash()` and verified strictly via `password_verify()` (with automatic `password_needs_rehash()` upgrades; zero plaintext or master-password fallbacks).
+2. `session_regenerate_id(true)` executes upon successful `loginUser()`.
+3. All state-mutating `POST` and AJAX handlers validate `verifyCsrfToken()` / `verifyRequestCsrf()`.
+4. All unauthenticated requests to private routes redirect cleanly (web views) or fail closed with HTTP `401`/`403` JSON errors (APIs & AJAX endpoints).
+5. `users.is_active = 0` disables suspended accounts during login and active user queries (`AdminService::handleUserRbacAction()`).

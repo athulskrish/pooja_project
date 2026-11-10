@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Real-Time Geolocation & Live Delivery Tracking API
  * Zippy - Online Food Ordering Platform
@@ -17,6 +18,16 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+
+if (!isLoggedIn()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized. Authentication required.']);
+    exit;
+}
+
+$currentUser = getCurrentUser();
+$loggedInUserId = (int)($currentUser['id'] ?? 0);
 
 // Restaurant Origin (Zippy Cloud Kitchen Hub - Indiranagar)
 define('HUB_LAT', 12.97840000);
@@ -34,74 +45,73 @@ $canonicalRoute = [
     ['lat' => 12.96980, 'lng' => 77.64990]  // 100%: Customer Doorstep
 ];
 
-/**
- * Interpolate latitude and longitude along a multi-segment route given a progress fraction [0, 1]
- */
-function interpolateRoute(array $route, float $progress): array {
-    $progress = max(0.0, min(1.0, $progress));
-    $n = count($route);
-    if ($n < 2) {
-        return $route[0] ?? ['lat' => HUB_LAT, 'lng' => HUB_LNG];
+$rawInput = '';
+$jsonBody = [];
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    $rawInput = (string)file_get_contents('php://input');
+    $decoded = json_decode($rawInput, true);
+    if (is_array($decoded)) {
+        $jsonBody = $decoded;
     }
-
-    $totalSegments = $n - 1;
-    $scaled = $progress * $totalSegments;
-    $idx = (int)floor($scaled);
-    if ($idx >= $totalSegments) {
-        return $route[$n - 1];
-    }
-
-    $segFraction = $scaled - $idx;
-    $p1 = $route[$idx];
-    $p2 = $route[$idx + 1];
-
-    $lat = $p1['lat'] + ($p2['lat'] - $p1['lat']) * $segFraction;
-    $lng = $p1['lng'] + ($p2['lng'] - $p1['lng']) * $segFraction;
-
-    // Calculate heading angle
-    $dLat = $p2['lat'] - $p1['lat'];
-    $dLng = $p2['lng'] - $p1['lng'];
-    $heading = (rad2deg(atan2($dLng, $dLat)) + 360) % 360;
-
-    return [
-        'lat' => round($lat, 6),
-        'lng' => round($lng, 6),
-        'heading' => round($heading, 1)
-    ];
 }
 
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : (isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0);
+$orderId = isset($_GET['order_id'])
+    ? (int)$_GET['order_id']
+    : (int)($_POST['order_id'] ?? $jsonBody['order_id'] ?? 0);
 
 if ($orderId <= 0) {
+    http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid or missing order_id']);
     exit;
 }
 
-$pdo = getDBConnection();
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!isAdmin() && !isRider()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. Rider or Administrator role required.']);
+        exit;
+    }
+
+    if (!verifyRequestCsrf($jsonBody)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid or expired CSRF token.']);
+        exit;
+    }
+}
+
+$pdo = getDbConnection();
 if (!$pdo) {
+    http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Database connection failed']);
     exit;
 }
 
 // -----------------------------------------------------------------------------
-// POST Request: Update or Simulate Rider Location
+// POST Request: Update or Simulate Rider Location (ADMIN or assigned RIDER + CSRF)
 // -----------------------------------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? 'update_location';
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (isRider() && !isAdmin() && !isRiderAssignedToOrder($orderId, $loggedInUserId, $currentUser['name'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden. You are not assigned to this order dispatch.']);
+        exit;
+    }
+
+    $action = (string)($_POST['action'] ?? $jsonBody['action'] ?? 'update_location');
 
     if ($action === 'simulate_step') {
         // Fetch current dispatch progress
-        $disp = db_fetch_one("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
+        $disp = dbFetchOne("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id", [':id' => $orderId]);
         if (!$disp) {
+            http_response_code(404);
             echo json_encode(['success' => false, 'error' => 'Dispatch not found']);
             exit;
         }
 
-        $stepDelta = isset($_POST['delta']) ? (int)$_POST['delta'] : 15; // default 15% step
+        $stepDelta = isset($_POST['delta']) ? (int)$_POST['delta'] : (int)($jsonBody['delta'] ?? 15);
         $currentProg = (int)($disp['route_progress'] ?? 0);
         $newProg = min(100, $currentProg + $stepDelta);
 
-        $pos = interpolateRoute($canonicalRoute, $newProg / 100.0);
+        $pos = FleetService::interpolateRoute($canonicalRoute, $newProg / 100.0);
         $remainingKm = max(0.05, round(2.40 * (1.0 - ($newProg / 100.0)), 2));
         $remainingMins = max(1, (int)round($remainingKm * 3.5));
 
@@ -112,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 `route_progress` = :prog,
                 `distance_remaining_km` = :dist,
                 `estimated_minutes_remaining` = :mins,
-                `delivery_status` = IF(:prog >= 100, 'IN_TRANSIT', 'IN_TRANSIT')
+                `delivery_status` = 'IN_TRANSIT'
             WHERE `order_id` = :id
         ");
         $updateStmt->execute([
@@ -138,53 +148,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'update_location') {
-        $lat = isset($_POST['lat']) ? (float)$_POST['lat'] : null;
-        $lng = isset($_POST['lng']) ? (float)$_POST['lng'] : null;
-        $prog = isset($_POST['progress']) ? (int)$_POST['progress'] : null;
+        $rawLat = $_POST['lat'] ?? $jsonBody['lat'] ?? null;
+        $rawLng = $_POST['lng'] ?? $jsonBody['lng'] ?? null;
+        $rawProg = $_POST['progress'] ?? $jsonBody['progress'] ?? null;
 
-        if ($lat !== null && $lng !== null) {
-            $progVal = $prog !== null ? min(100, max(0, $prog)) : 50;
-            $remainingKm = max(0.05, round(2.40 * (1.0 - ($progVal / 100.0)), 2));
-            $remainingMins = max(1, (int)round($remainingKm * 3.5));
-
-            $updateStmt = $pdo->prepare("
-                UPDATE `delivery_dispatches` 
-                SET `current_latitude` = :lat,
-                    `current_longitude` = :lng,
-                    `route_progress` = :prog,
-                    `distance_remaining_km` = :dist,
-                    `estimated_minutes_remaining` = :mins
-                WHERE `order_id` = :id
-            ");
-            $updateStmt->execute([
-                ':lat' => $lat,
-                ':lng' => $lng,
-                ':prog' => $progVal,
-                ':dist' => $remainingKm,
-                ':mins' => $remainingMins,
-                ':id' => $orderId
-            ]);
-
-            echo json_encode([
-                'success' => true,
-                'order_id' => $orderId,
-                'lat' => $lat,
-                'lng' => $lng,
-                'route_progress' => $progVal
-            ]);
+        if ($rawLat === null || $rawLng === null) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Missing lat or lng coordinates']);
             exit;
         }
+
+        $lat = (float)$rawLat;
+        $lng = (float)$rawLng;
+        $progVal = $rawProg !== null ? min(100, max(0, (int)$rawProg)) : 50;
+        $remainingKm = max(0.05, round(2.40 * (1.0 - ($progVal / 100.0)), 2));
+        $remainingMins = max(1, (int)round($remainingKm * 3.5));
+
+        $updateStmt = $pdo->prepare("
+            UPDATE `delivery_dispatches` 
+            SET `current_latitude` = :lat,
+                `current_longitude` = :lng,
+                `route_progress` = :prog,
+                `distance_remaining_km` = :dist,
+                `estimated_minutes_remaining` = :mins
+            WHERE `order_id` = :id
+        ");
+        $updateStmt->execute([
+            ':lat' => $lat,
+            ':lng' => $lng,
+            ':prog' => $progVal,
+            ':dist' => $remainingKm,
+            ':mins' => $remainingMins,
+            ':id' => $orderId
+        ]);
+
+        echo json_encode([
+            'success' => true,
+            'order_id' => $orderId,
+            'lat' => $lat,
+            'lng' => $lng,
+            'route_progress' => $progVal
+        ]);
+        exit;
     }
+
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Unsupported location update action']);
+    exit;
 }
 
 // -----------------------------------------------------------------------------
 // GET Request: Retrieve Full Live Location & Order Tracking Metadata
 // -----------------------------------------------------------------------------
-$order = db_fetch_one("
-    SELECT o.order_id, o.order_number, o.order_status, o.placed_at, o.estimated_delivery_time,
+$order = dbFetchOne("
+    SELECT o.order_id, o.user_id, o.order_number, o.order_status, o.placed_at, o.estimated_delivery_time,
            u.full_name AS customer_name, u.phone_number AS customer_phone,
            a.address_line, a.landmark, a.pincode,
-           d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status,
+           d.rider_id, d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status,
            d.current_latitude, d.current_longitude, d.delivery_latitude, d.delivery_longitude,
            d.route_progress, d.distance_remaining_km, d.estimated_minutes_remaining,
            d.assigned_at, d.dispatched_at, d.delivered_at,
@@ -198,7 +218,18 @@ $order = db_fetch_one("
 ", [':id' => $orderId]);
 
 if (!$order) {
+    http_response_code(404);
     echo json_encode(['success' => false, 'error' => "Order #ZIP-{$orderId} not found"]);
+    exit;
+}
+
+$canViewOrder = isAdmin()
+    || (isRider() && isRiderAssignedToOrder($orderId, $loggedInUserId, $currentUser['name'] ?? null))
+    || (!isRider() && !isKitchen() && canAccessOrder($order, $loggedInUserId));
+
+if (!$canViewOrder) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Forbidden. You do not have permission to view telemetry for this order.']);
     exit;
 }
 
@@ -232,7 +263,7 @@ switch ($status) {
 $routeProgress = (int)($order['route_progress'] ?? 0);
 if ($isOutForDelivery) {
     // If dispatched over 15 seconds ago and progress is 0, initialize realistic movement
-    $dispatchTs = !empty($order['dispatched_at']) ? strtotime($order['dispatched_at']) : time();
+    $dispatchTs = !empty($order['dispatched_at']) ? (int)(strtotime((string)$order['dispatched_at']) ?: time()) : time();
     $elapsedSec = max(0, time() - $dispatchTs);
     if ($routeProgress == 0 && $elapsedSec > 5) {
         $simProg = min(95, (int)($elapsedSec * 4)); // ~4% per second in demo mode
@@ -251,10 +282,10 @@ $adjustedRoute = $canonicalRoute;
 $adjustedRoute[count($adjustedRoute) - 1] = ['lat' => $customerLat, 'lng' => $customerLng];
 
 if ($routeProgress > 0 && $routeProgress <= 100) {
-    $riderPos = interpolateRoute($adjustedRoute, $routeProgress / 100.0);
+    $riderPos = FleetService::interpolateRoute($adjustedRoute, $routeProgress / 100.0);
     $currentLat = $riderPos['lat'];
     $currentLng = $riderPos['lng'];
-    $heading = $riderPos['heading'];
+    $heading = $riderPos['heading'] ?? 135;
 } else {
     $currentLat = (float)($order['current_latitude'] ?: HUB_LAT);
     $currentLng = (float)($order['current_longitude'] ?: HUB_LNG);
@@ -299,7 +330,7 @@ echo json_encode([
     'is_cancelled' => $isCancelled,
     'status_heading' => $statusHeading,
     'status_subtext' => $statusSubtext,
-    'badge_html' => get_status_badge($status),
+    'badge_html' => getStatusBadge($status),
     'delivery_otp' => $order['delivery_otp'] ?: '',
     'route' => [
         'progress_pct' => $routeProgress,

@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Test: FCFS Delivery Allocation & KDS State Synchronization
  */
@@ -10,12 +11,12 @@ echo "TEST: FCFS DELIVERY ALLOCATION & KDS SYNC ENGINE\n";
 echo "=======================================================\n\n";
 
 // 1. Verify ready_at column exists in orders
-$cols = db_fetch_all("SHOW COLUMNS FROM `orders` LIKE 'ready_at'");
+$cols = dbFetchAll("SHOW COLUMNS FROM `orders` LIKE 'ready_at'");
 assert(!empty($cols), "orders table must have ready_at column");
 echo "[PASS] ready_at column verified in orders table.\n";
 
 // 2. Test FCFS Sorting Logic: First prepared item must come first
-$readyOrders = db_fetch_all("
+$readyOrders = dbFetchAll("
     SELECT order_id, order_status, ready_at, placed_at
     FROM `orders`
     WHERE order_status = 'READY'
@@ -30,13 +31,15 @@ if (count($readyOrders) >= 2) {
 }
 
 // 3. Test State Hash in poll-orders.php
-function getPollData() {
+function getPollData(): ?array
+{
     $script = sys_get_temp_dir() . '/poll_runner_' . uniqid() . '.php';
     $targetPath = addslashes(__DIR__ . '/../kitchen/ajax/poll-orders.php');
     file_put_contents($script, '<?php session_start(); $_SESSION["role_name"] = "KITCHEN"; $_SESSION["role_id"] = 3; $_SESSION["user_id"] = 4; require "' . $targetPath . '";');
     $out = shell_exec('php ' . escapeshellarg($script));
     @unlink($script);
-    return json_decode($out, true);
+    $decoded = json_decode((string)$out, true);
+    return is_array($decoded) ? $decoded : null;
 }
 
 $data1 = getPollData();
@@ -48,7 +51,7 @@ echo "[PASS] poll-orders.php returned state_hash: {$data1['state_hash']}\n";
 $hashBefore = $data1['state_hash'];
 
 // Simulate delivering an active order or creating audit trail entry
-db_query("
+dbQuery("
     INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
     VALUES (1011, 'OUT_FOR_DELIVERY', 'DELIVERED', 6, NOW())
 ");
@@ -60,12 +63,12 @@ assert($hashBefore !== $hashAfter, "state_hash MUST change when an order status 
 echo "[PASS] Live state_hash change detected! Before: {$hashBefore} -> After: {$hashAfter}\n";
 
 // Clean up simulated audit row
-$maxAuditId = db_fetch_val("SELECT MAX(audit_id) FROM order_audit_trail");
-db_query("DELETE FROM order_audit_trail WHERE audit_id = :id", [':id' => $maxAuditId]);
+$maxAuditId = dbFetchVal("SELECT MAX(audit_id) FROM order_audit_trail");
+dbQuery("DELETE FROM order_audit_trail WHERE audit_id = :id", [':id' => $maxAuditId]);
 
 // 5. Test FCFS Allocation Function
-$allocResult = auto_allocate_ready_orders_fcfs();
-echo "[PASS] auto_allocate_ready_orders_fcfs executed: " . json_encode($allocResult) . "\n";
+$allocResult = autoAllocateReadyOrdersFcfs();
+echo "[PASS] autoAllocateReadyOrdersFcfs executed: " . json_encode($allocResult) . "\n";
 
 echo "\n=======================================================\n";
 echo "ALL TESTS PASSED: FCFS DELIVERY ALLOCATION & KDS SYNC OK!\n";

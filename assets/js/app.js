@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Order status page specific initializer (only if not handled by dedicated tracker)
   if (document.getElementById('live-eta-countdown') && !window.orderTrackingActive) {
-    initOrderStatusSimulation();
+    initOrderStatusCountdown();
   }
 });
 
@@ -99,6 +99,17 @@ function dismissMobileCartBar() {
   const bar = document.getElementById('mobileCartBar');
   if (bar) bar.style.display = 'none';
   sessionStorage.setItem('dismiss_cart_bar', '1');
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }[m]));
 }
 
 /**
@@ -1615,44 +1626,125 @@ function showToast(message, type = 'success') {
 }
 
 /**
- * Order Tracking Simulated ETA Countdown (for static prototypes or fallback)
+ * Real-Time Order Tracking ETA Countdown Engine
+ * Calculates authentic remaining time from server delivery estimates and placed timestamps.
  */
-function initOrderStatusSimulation() {
+function initOrderStatusCountdown() {
   const countdownEl = document.getElementById('live-eta-countdown');
   if (!countdownEl) return;
 
-  // Don't run simulation if handled by order-status page or if order is completed/delivered/cancelled
+  // If handled by dedicated live SSE/WebSocket tracker on order-status page, avoid duplicate interval
+  if (window.orderTrackingActive) {
+    return;
+  }
+
   const status = (countdownEl.getAttribute('data-status') || '').toUpperCase();
-  if (status === 'DELIVERED' || status === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
+  if (status === 'DELIVERED' || status === 'CANCELLED') {
+    countdownEl.textContent = status;
     return;
   }
 
-  const initialText = countdownEl.textContent.trim().toUpperCase();
-  if (initialText.includes('DELIVERED') || initialText.includes('ARRIVED') || initialText.includes('CANCELLED')) {
-    return;
+  // 1. Resolve authentic remaining seconds from dataset attributes or timestamps
+  let secondsRemaining = null;
+
+  const rawSecondsAttr = countdownEl.getAttribute('data-remaining-seconds');
+  if (rawSecondsAttr !== null && rawSecondsAttr !== '' && !isNaN(parseInt(rawSecondsAttr, 10))) {
+    secondsRemaining = Math.max(0, parseInt(rawSecondsAttr, 10));
   }
 
-  let minutes = 19;
-  let seconds = 45;
-
-  const simTimer = setInterval(() => {
-    const currentStatus = (countdownEl.getAttribute('data-status') || '').toUpperCase();
-    if (currentStatus === 'DELIVERED' || currentStatus === 'CANCELLED' || countdownEl.getAttribute('data-no-simulation') === 'true' || window.orderTrackingActive) {
-      clearInterval(simTimer);
-      return;
-    }
-    if (seconds > 0) {
-      seconds--;
-    } else {
-      if (minutes > 0) {
-        minutes--;
-        seconds = 59;
+  if (secondsRemaining === null) {
+    const estTimeAttr = countdownEl.getAttribute('data-est-time');
+    if (estTimeAttr) {
+      const estTimestamp = new Date(estTimeAttr).getTime();
+      if (!isNaN(estTimestamp)) {
+        secondsRemaining = Math.max(0, Math.floor((estTimestamp - Date.now()) / 1000));
       }
     }
-    const formattedSec = seconds < 10 ? '0' + seconds : seconds;
-    countdownEl.textContent = `${minutes}:${formattedSec} mins`;
+  }
+
+  if (secondsRemaining === null) {
+    const placedAtAttr = countdownEl.getAttribute('data-placed-at');
+    if (placedAtAttr) {
+      const placedTimestamp = new Date(placedAtAttr).getTime();
+      if (!isNaN(placedTimestamp)) {
+        const prepMinutes = parseInt(countdownEl.getAttribute('data-prep-time') || '25', 10);
+        const targetTimestamp = placedTimestamp + (prepMinutes * 60 * 1000);
+        secondsRemaining = Math.max(0, Math.floor((targetTimestamp - Date.now()) / 1000));
+      }
+    }
+  }
+
+  // Fallback: parse text currently in element if in MM:SS or MM mins format
+  if (secondsRemaining === null) {
+    const txt = countdownEl.textContent.trim();
+    const mmssMatch = txt.match(/^(\d{1,2}):(\d{2})/);
+    if (mmssMatch) {
+      secondsRemaining = (parseInt(mmssMatch[1], 10) * 60) + parseInt(mmssMatch[2], 10);
+    } else {
+      const minsOnlyMatch = txt.match(/^(\d{1,2})\s*mins?/i);
+      if (minsOnlyMatch) {
+        secondsRemaining = parseInt(minsOnlyMatch[1], 10) * 60;
+      }
+    }
+  }
+
+  // If order is active and time cannot be determined, default to 15m arrival window
+  if (secondsRemaining === null || isNaN(secondsRemaining)) {
+    secondsRemaining = 15 * 60;
+  }
+
+  // Format and render function
+  const renderCountdown = (secs) => {
+    if (secs <= 0) {
+      countdownEl.textContent = 'Arriving Shortly';
+      return;
+    }
+    const mins = Math.floor(secs / 60);
+    const remainderSecs = secs % 60;
+    const formattedSecs = remainderSecs < 10 ? '0' + remainderSecs : remainderSecs;
+    countdownEl.textContent = `${mins}:${formattedSecs} mins`;
+  };
+
+  renderCountdown(secondsRemaining);
+
+  const countdownTimer = setInterval(() => {
+    const currentStatus = (countdownEl.getAttribute('data-status') || '').toUpperCase();
+    if (currentStatus === 'DELIVERED' || currentStatus === 'CANCELLED' || window.orderTrackingActive) {
+      clearInterval(countdownTimer);
+      if (currentStatus === 'DELIVERED' || currentStatus === 'CANCELLED') {
+        countdownEl.textContent = currentStatus;
+      }
+      return;
+    }
+
+    if (secondsRemaining > 0) {
+      secondsRemaining--;
+      renderCountdown(secondsRemaining);
+    } else {
+      renderCountdown(0);
+      clearInterval(countdownTimer);
+
+      // Trigger automatic background polling to check if driver arrived
+      const orderId = countdownEl.getAttribute('data-order-id');
+      if (orderId) {
+        fetch(`ajax/order-status-api.php?order_id=${encodeURIComponent(orderId)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.order_status) {
+              countdownEl.setAttribute('data-status', data.order_status);
+              if (data.order_status === 'DELIVERED') {
+                countdownEl.textContent = 'DELIVERED';
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }, 1000);
 }
+
+// Maintain backward compatibility alias
+const initOrderStatusSimulation = initOrderStatusCountdown;
 
 /**
  * Mobile Bottom App Navigation Bar (Zippy App Style)
@@ -1859,14 +1951,14 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
             for (let s = 1; s <= 5; s++) {
               stars += s <= rev.rating ? '<i class="bi bi-star-fill text-warning"></i>' : '<i class="bi bi-star text-muted opacity-50"></i>';
             }
-            const tagsHtml = (rev.tags || []).map(t => `<span class="badge bg-light text-forest border px-2 py-0" style="font-size:0.65rem;">${t}</span>`).join(' ');
-            const initial = (rev.customer_name || 'F').charAt(0).toUpperCase();
+            const tagsHtml = (rev.tags || []).map(t => `<span class="badge bg-light text-forest border px-2 py-0" style="font-size:0.65rem;">${escapeHtml(t)}</span>`).join(' ');
+            const initial = escapeHtml((rev.customer_name || 'F').charAt(0).toUpperCase());
 
             // 4-Dimension Feedback Pills
-            const appRate = rev.appearance_rating || rev.rating || 5;
-            const tasteRate = rev.taste_rating || rev.rating || 5;
-            const portRate = rev.portion_rating || rev.rating || 5;
-            const valRate = rev.value_rating || rev.rating || 5;
+            const appRate = Number(rev.appearance_rating || rev.rating || 5);
+            const tasteRate = Number(rev.taste_rating || rev.rating || 5);
+            const portRate = Number(rev.portion_rating || rev.rating || 5);
+            const valRate = Number(rev.value_rating || rev.rating || 5);
 
             const dimsHtml = `
               <div class="d-flex flex-wrap gap-1 my-2">
@@ -1893,8 +1985,8 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
                       ${initial}
                     </div>
                     <div>
-                      <div class="fw-bold small text-dark mb-0">${rev.customer_name} <span class="badge bg-success bg-opacity-10 text-success ms-1" style="font-size:0.6rem;">✓ Verified Foodie</span></div>
-                      <div class="text-muted" style="font-size:0.7rem;">${rev.date || 'Recent review'}</div>
+                      <div class="fw-bold small text-dark mb-0">${escapeHtml(rev.customer_name || 'Food Lover')} <span class="badge bg-success bg-opacity-10 text-success ms-1" style="font-size:0.6rem;">✓ Verified Foodie</span></div>
+                      <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(rev.date || 'Recent review')}</div>
                     </div>
                   </div>
                   <div class="text-warning small d-flex gap-1">
@@ -1903,7 +1995,7 @@ window.openDishReviewsModal = function(itemId, itemName, rating, totalReviews) {
                 </div>
                 ${dimsHtml}
                 ${tagsHtml ? `<div class="d-flex flex-wrap gap-1 mb-2">${tagsHtml}</div>` : ''}
-                <p class="small text-muted mb-0 font-italic">"${rev.review_text || 'Amazing and delicious meal! ⭐⭐⭐⭐⭐'}"</p>
+                <p class="small text-muted mb-0 font-italic">"${escapeHtml(rev.review_text || 'Amazing and delicious meal! ⭐⭐⭐⭐⭐')}"</p>
               </div>
             `;
           });
@@ -2021,7 +2113,9 @@ window.submitInlineDishReview = function(e) {
 
   if (!dishId) return;
 
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   const formData = new FormData();
+  formData.append('csrf_token', csrfToken);
   formData.append('action', 'submit_review');
   formData.append('dish_id', dishId);
   formData.append('rating', rating);
@@ -2035,6 +2129,7 @@ window.submitInlineDishReview = function(e) {
   const apiUrl = (typeof BASE_URL !== 'undefined' ? BASE_URL : '') + '/api/dish-reviews.php';
   fetch(apiUrl, {
     method: 'POST',
+    headers: { 'X-CSRF-TOKEN': csrfToken },
     body: formData
   })
   .then(res => res.json())
@@ -2047,13 +2142,11 @@ window.submitInlineDishReview = function(e) {
       if (formBox) formBox.style.display = 'none';
       window.openDishReviewsModal(dishId, document.getElementById('dishReviewsModalLabel')?.textContent || 'Food', data.rating, data.total_reviews);
     } else {
-      if (typeof showToast === 'function') showToast(data.error || 'Review saved locally.');
+      if (typeof showToast === 'function') showToast((data && data.error) || 'Unable to submit review. Please sign in and try again.');
     }
   })
   .catch(() => {
-    if (typeof showToast === 'function') showToast('Your dish feedback was recorded! ⭐');
-    const formBox = document.getElementById('dishReviewFormBox');
-    if (formBox) formBox.style.display = 'none';
+    if (typeof showToast === 'function') showToast('Unable to submit review right now. Please sign in and try again.');
   });
 };
 
@@ -2111,7 +2204,7 @@ function showCustomerMenuUpdateBanner(msg) {
   banner.className = 'position-fixed bottom-0 start-50 translate-middle-x mb-4 shadow-lg rounded-pill px-4 py-2 bg-dark text-white d-flex align-items-center gap-3';
   banner.style.cssText = 'z-index: 1080; border: 2px solid #2E6F40; animation: bounceIn 0.4s ease; max-width: 90vw;';
   
-  const safeMsg = (typeof msg === 'string') ? msg.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'Menu catalog was updated.';
+  const safeMsg = escapeHtml(typeof msg === 'string' && msg ? msg : 'Menu catalog was updated.');
   banner.innerHTML = `
     <span class="live-pulse-dot green flex-shrink-0"></span>
     <span class="small fw-semibold text-white text-truncate">${safeMsg}</span>

@@ -119,13 +119,13 @@ requireRole(['CUSTOMER']);
 1. **View / Template Layer (`customer/`, `kitchen/`, `delivery/`, `admin/`):**
    - Focuses strictly on layout composition, sanitizing output variables, and UI state.
    - Must **not** define raw SQL queries or business algorithms directly inside HTML templates.
-2. **Business Engine (`includes/`):**
-   - Reusable domain services, calculators, and computational models (`AprioriEngine`, `WSJFQueue`, `SESDemandForecast`, `FCFSQueue`).
+2. **Business Engine & Service Layer (`includes/`, `includes/Services/`):**
+   - Reusable domain services, calculators, and computational models (`AprioriEngine`, `WSJFQueue`, `SESDemandForecast`, `FCFSQueue`, plus `CatalogService`, `OrderService`, `FleetService`, `FinanceService`, and `AdminService`).
    - Must be decoupled, stateless where possible, and unit-testable.
 3. **Database Layer (`config/database.php`):**
-   - Centralized PDO connection instance with `PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION` and `PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC`.
+   - Centralized PDO connection instance via `getDbConnection()` with `PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION` and `PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC`.
 4. **Audit Trail Logging:**
-   - Any state change to an order (e.g. `PENDING` -> `PREPARING` -> `DELIVERED`) must record an entry in `order_audit_trail` with `order_id`, `from_status`, `to_status`, `changed_by_user_id`, and `notes`.
+   - Any state change to an order (e.g. `PLACED` -> `CONFIRMED` -> `COOKING` -> `READY` -> `OUT_FOR_DELIVERY` -> `DELIVERED`) must record an entry in `order_audit_trail` with `order_id`, `old_status`, `new_status`, and `updated_by_user_id` (`change_timestamp` is populated automatically).
 
 ---
 

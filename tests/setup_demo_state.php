@@ -1,10 +1,11 @@
 <?php
+declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 
 // Set #1004 back to OUT_FOR_DELIVERY with Shaji (OTP: 610482)
-db_query("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1004");
-db_query("
+dbQuery("UPDATE `orders` SET `order_status` = 'OUT_FOR_DELIVERY' WHERE `order_id` = 1004");
+dbQuery("
     UPDATE `delivery_dispatches` 
     SET `rider_id` = 6, 
         `delivery_partner_name` = 'Shaji (Rider)', 
@@ -17,8 +18,8 @@ db_query("
 ");
 
 // Set #1001 back to READY
-db_query("UPDATE `orders` SET `order_status` = 'READY' WHERE `order_id` = 1001");
-db_query("
+dbQuery("UPDATE `orders` SET `order_status` = 'READY' WHERE `order_id` = 1001");
+dbQuery("
     UPDATE `delivery_dispatches` 
     SET `rider_id` = NULL, 
         `delivery_partner_name` = 'Zippy Express Rider', 
@@ -29,6 +30,6 @@ db_query("
 ");
 
 // Run FCFS allocation
-auto_allocate_ready_orders_fcfs();
+autoAllocateReadyOrdersFcfs();
 
 echo "Database successfully set up for user presentation and live verification!\n";

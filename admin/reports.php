@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Executive BI Reports & Sales Intelligence
  * Zippy - Online Food Ordering Platform
@@ -21,387 +22,59 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 $pageTitle = 'Executive BI Reports';
 $activePage = 'reports';
 
-// 2. Parse & Validate Date Filter
-$period = clean_input($_GET['period'] ?? '7d');
-$now = new DateTime('now');
-$todayStart = (clone $now)->setTime(0, 0, 0);
-$todayEnd = (clone $now)->setTime(23, 59, 59);
+// 2. Parse & Fetch Executive Report Metrics via FinanceService
+$requestedPeriod = cleanInput($_GET['period'] ?? '7d');
+$rawStart = cleanInput($_GET['start_date'] ?? '');
+$rawEnd = cleanInput($_GET['end_date'] ?? '');
 
-$startDate = '';
-$endDate = '';
-$prevStartDate = '';
-$prevEndDate = '';
-$periodLabel = '';
-$comparisonLabel = '';
-$isSingleDay = false;
-
-$rawStart = clean_input($_GET['start_date'] ?? '');
-$rawEnd = clean_input($_GET['end_date'] ?? '');
-
-switch ($period) {
-    case 'today':
-        $startDate = $todayStart->format('Y-m-d H:i:s');
-        $endDate = $todayEnd->format('Y-m-d H:i:s');
-        $prevStart = (clone $todayStart)->modify('-1 day');
-        $prevEnd = (clone $todayEnd)->modify('-1 day');
-        $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-        $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-        $periodLabel = 'Today (' . $now->format('M j, Y') . ')';
-        $comparisonLabel = 'vs yesterday';
-        $isSingleDay = true;
-        break;
-
-    case 'yesterday':
-        $yStart = (clone $todayStart)->modify('-1 day');
-        $yEnd = (clone $todayEnd)->modify('-1 day');
-        $startDate = $yStart->format('Y-m-d H:i:s');
-        $endDate = $yEnd->format('Y-m-d H:i:s');
-        $prevStart = (clone $yStart)->modify('-1 day');
-        $prevEnd = (clone $yEnd)->modify('-1 day');
-        $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-        $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-        $periodLabel = 'Yesterday (' . $yStart->format('M j, Y') . ')';
-        $comparisonLabel = 'vs day before';
-        $isSingleDay = true;
-        break;
-
-    case '30d':
-        $dStart = (clone $todayStart)->modify('-29 days');
-        $startDate = $dStart->format('Y-m-d H:i:s');
-        $endDate = $todayEnd->format('Y-m-d H:i:s');
-        $prevStart = (clone $dStart)->modify('-30 days');
-        $prevEnd = (clone $dStart)->modify('-1 second');
-        $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-        $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-        $periodLabel = 'Last 30 Days (' . $dStart->format('M j') . ' - ' . $now->format('M j, Y') . ')';
-        $comparisonLabel = 'vs prior 30 days';
-        break;
-
-    case 'this_month':
-        $mStart = (clone $todayStart)->modify('first day of this month');
-        $startDate = $mStart->format('Y-m-d H:i:s');
-        $endDate = $todayEnd->format('Y-m-d H:i:s');
-        $prevStart = (clone $mStart)->modify('first day of previous month');
-        $prevEnd = (clone $mStart)->modify('-1 second');
-        $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-        $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-        $periodLabel = 'This Month (' . $now->format('F Y') . ')';
-        $comparisonLabel = 'vs previous month';
-        break;
-
-    case 'custom':
-        $dStartObj = DateTime::createFromFormat('Y-m-d', $rawStart);
-        $dEndObj = DateTime::createFromFormat('Y-m-d', $rawEnd);
-
-        if ($dStartObj && $dEndObj && $dStartObj <= $dEndObj) {
-            $dStartObj->setTime(0, 0, 0);
-            $dEndObj->setTime(23, 59, 59);
-            $startDate = $dStartObj->format('Y-m-d H:i:s');
-            $endDate = $dEndObj->format('Y-m-d H:i:s');
-            $diffDays = (int)$dStartObj->diff($dEndObj)->format('%a') + 1;
-            $prevStart = (clone $dStartObj)->modify("-{$diffDays} days");
-            $prevEnd = (clone $dStartObj)->modify('-1 second');
-            $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-            $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-            $periodLabel = $dStartObj->format('M j, Y') . ' - ' . $dEndObj->format('M j, Y');
-            $comparisonLabel = "vs prior {$diffDays} days";
-            $isSingleDay = ($diffDays === 1);
-        } else {
-            // Fallback to 7d
-            $period = '7d';
-            $dStart = (clone $todayStart)->modify('-6 days');
-            $startDate = $dStart->format('Y-m-d H:i:s');
-            $endDate = $todayEnd->format('Y-m-d H:i:s');
-            $prevStart = (clone $dStart)->modify('-7 days');
-            $prevEnd = (clone $dStart)->modify('-1 second');
-            $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-            $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-            $periodLabel = 'Last 7 Days (' . $dStart->format('M j') . ' - ' . $now->format('M j, Y') . ')';
-            $comparisonLabel = 'vs prior 7 days';
-        }
-        break;
-
-    case '7d':
-    default:
-        $period = '7d';
-        $dStart = (clone $todayStart)->modify('-6 days');
-        $startDate = $dStart->format('Y-m-d H:i:s');
-        $endDate = $todayEnd->format('Y-m-d H:i:s');
-        $prevStart = (clone $dStart)->modify('-7 days');
-        $prevEnd = (clone $dStart)->modify('-1 second');
-        $prevStartDate = $prevStart->format('Y-m-d H:i:s');
-        $prevEndDate = $prevEnd->format('Y-m-d H:i:s');
-        $periodLabel = 'Last 7 Days (' . $dStart->format('M j') . ' - ' . $now->format('M j, Y') . ')';
-        $comparisonLabel = 'vs prior 7 days';
-        break;
-}
-
-// 3. Query KPI Summary Aggregate
-$kpiSummary = db_fetch_one("
-    SELECT 
-        COUNT(*) AS total_orders,
-        COALESCE(SUM(CASE WHEN order_status = 'DELIVERED' THEN 1 ELSE 0 END), 0) AS delivered_orders,
-        COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelled_orders,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN 1 ELSE 0 END), 0) AS valid_orders,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN total_amount ELSE 0 END), 0) AS gross_revenue,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN subtotal ELSE 0 END), 0) AS net_food_sales,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN tax_amount ELSE 0 END), 0) AS total_gst,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN delivery_fee ELSE 0 END), 0) AS total_delivery_fee,
-        COALESCE(SUM(CASE WHEN order_status NOT IN ('CANCELLED') THEN discount_amount ELSE 0 END), 0) AS total_discounts,
-        COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN total_amount ELSE 0 END), 0) AS cancelled_loss,
-        COALESCE(AVG(CASE WHEN order_status NOT IN ('CANCELLED') THEN total_amount ELSE NULL END), 0) AS avg_order_value
-    FROM `orders`
-    WHERE placed_at >= :start_date AND placed_at <= :end_date
-", [
-    ':start_date' => $startDate,
-    ':end_date'   => $endDate,
-]) ?: [];
-
-$kpiGrossRevenue = (float)($kpiSummary['gross_revenue'] ?? 0);
-$kpiNetFoodSales = (float)($kpiSummary['net_food_sales'] ?? 0);
-$kpiTotalOrders = (int)($kpiSummary['total_orders'] ?? 0);
-$kpiDelivered = (int)($kpiSummary['delivered_orders'] ?? 0);
-$kpiCancelled = (int)($kpiSummary['cancelled_orders'] ?? 0);
-$kpiValidOrders = (int)($kpiSummary['valid_orders'] ?? 0);
-$kpiTotalGst = (float)($kpiSummary['total_gst'] ?? 0);
-$kpiDeliveryFee = (float)($kpiSummary['total_delivery_fee'] ?? 0);
-$kpiDiscounts = (float)($kpiSummary['total_discounts'] ?? 0);
-$kpiCancelledLoss = (float)($kpiSummary['cancelled_loss'] ?? 0);
-$kpiAov = (float)($kpiSummary['avg_order_value'] ?? 0);
-
-$deliveryRate = $kpiValidOrders > 0 ? round(($kpiDelivered / $kpiValidOrders) * 100, 1) : 0;
-$cancellationRate = $kpiTotalOrders > 0 ? round(($kpiCancelled / $kpiTotalOrders) * 100, 1) : 0;
-
-// Query Prior Period Gross Revenue for Growth Badge
-$prevGrossRevenue = (float)(db_fetch_val("
-    SELECT COALESCE(SUM(total_amount), 0)
-    FROM `orders`
-    WHERE order_status != 'CANCELLED'
-      AND placed_at >= :prev_start
-      AND placed_at <= :prev_end
-", [
-    ':prev_start' => $prevStartDate,
-    ':prev_end'   => $prevEndDate,
-]) ?: 0.0);
-
-if ($prevGrossRevenue > 0) {
-    $revenueGrowthPct = (($kpiGrossRevenue - $prevGrossRevenue) / $prevGrossRevenue) * 100;
-} else {
-    $revenueGrowthPct = $kpiGrossRevenue > 0 ? 100.0 : 0.0;
-}
-
-// 4. Time-Series Data (Hourly if single day, Daily if multi-day)
-$trendLabels = [];
-$revenueValues = [];
-$orderValues = [];
-$tableRows = [];
-
-if ($isSingleDay) {
-    $hourlyData = db_fetch_all("
-        SELECT 
-            HOUR(placed_at) AS time_slot,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN total_amount ELSE 0 END), 0) AS revenue,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN subtotal ELSE 0 END), 0) AS food_sales,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN tax_amount ELSE 0 END), 0) AS gst_amount,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN delivery_fee ELSE 0 END), 0) AS delivery_fee,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN discount_amount ELSE 0 END), 0) AS discounts,
-            COUNT(*) AS total_orders,
-            COALESCE(SUM(CASE WHEN order_status = 'DELIVERED' THEN 1 ELSE 0 END), 0) AS delivered_count,
-            COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelled_count,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN 1 ELSE 0 END), 0) AS valid_order_count
-        FROM `orders`
-        WHERE placed_at >= :start_date AND placed_at <= :end_date
-        GROUP BY HOUR(placed_at)
-        ORDER BY time_slot ASC
-    ", [':start_date' => $startDate, ':end_date' => $endDate]);
-
-    $hourlyBySlot = [];
-    foreach ($hourlyData as $row) {
-        $hourlyBySlot[(int)$row['time_slot']] = $row;
-    }
-
-    for ($h = 0; $h < 24; $h++) {
-        $slotLabel = sprintf('%02d:00', $h);
-        $trendLabels[] = $slotLabel;
-        $row = $hourlyBySlot[$h] ?? null;
-        $rev = (float)($row['revenue'] ?? 0);
-        $orders = (int)($row['valid_order_count'] ?? 0);
-        $revenueValues[] = $rev;
-        $orderValues[] = $orders;
-
-        if ($row && $row['total_orders'] > 0) {
-            $tableRows[] = [
-                'label'           => $slotLabel . ' - ' . sprintf('%02d:59', $h),
-                'total_orders'    => (int)$row['total_orders'],
-                'delivered_count' => (int)$row['delivered_count'],
-                'cancelled_count' => (int)$row['cancelled_count'],
-                'food_sales'      => (float)$row['food_sales'],
-                'gst_amount'      => (float)$row['gst_amount'],
-                'delivery_fee'    => (float)$row['delivery_fee'],
-                'discounts'       => (float)$row['discounts'],
-                'revenue'         => $rev,
-                'aov'             => $orders > 0 ? ($rev / $orders) : 0.0,
-            ];
-        }
-    }
-} else {
-    $dailyData = db_fetch_all("
-        SELECT 
-            DATE(placed_at) AS sales_date,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN total_amount ELSE 0 END), 0) AS revenue,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN subtotal ELSE 0 END), 0) AS food_sales,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN tax_amount ELSE 0 END), 0) AS gst_amount,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN delivery_fee ELSE 0 END), 0) AS delivery_fee,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN discount_amount ELSE 0 END), 0) AS discounts,
-            COUNT(*) AS total_orders,
-            COALESCE(SUM(CASE WHEN order_status = 'DELIVERED' THEN 1 ELSE 0 END), 0) AS delivered_count,
-            COALESCE(SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS cancelled_count,
-            COALESCE(SUM(CASE WHEN order_status != 'CANCELLED' THEN 1 ELSE 0 END), 0) AS valid_order_count
-        FROM `orders`
-        WHERE placed_at >= :start_date AND placed_at <= :end_date
-        GROUP BY DATE(placed_at)
-        ORDER BY sales_date ASC
-    ", [':start_date' => $startDate, ':end_date' => $endDate]);
-
-    $dailyByDate = [];
-    foreach ($dailyData as $row) {
-        $dailyByDate[$row['sales_date']] = $row;
-    }
-
-    $curIter = new DateTime($startDate);
-    $endIter = new DateTime($endDate);
-
-    while ($curIter <= $endIter) {
-        $dateKey = $curIter->format('Y-m-d');
-        $trendLabels[] = $curIter->format('M j');
-        $row = $dailyByDate[$dateKey] ?? null;
-        $rev = (float)($row['revenue'] ?? 0);
-        $orders = (int)($row['valid_order_count'] ?? 0);
-        $revenueValues[] = $rev;
-        $orderValues[] = $orders;
-
-        if ($row && $row['total_orders'] > 0) {
-            $tableRows[] = [
-                'label'           => $curIter->format('D, M j, Y'),
-                'total_orders'    => (int)$row['total_orders'],
-                'delivered_count' => (int)$row['delivered_count'],
-                'cancelled_count' => (int)$row['cancelled_count'],
-                'food_sales'      => (float)$row['food_sales'],
-                'gst_amount'      => (float)$row['gst_amount'],
-                'delivery_fee'    => (float)$row['delivery_fee'],
-                'discounts'       => (float)$row['discounts'],
-                'revenue'         => $rev,
-                'aov'             => $orders > 0 ? ($rev / $orders) : 0.0,
-            ];
-        }
-        $curIter->modify('+1 day');
-    }
-}
-
-// Reverse chronological order for ledger display
-$displayTableRows = array_reverse($tableRows);
-
-// 5. Query Category Mix & Contribution
-$categorySales = db_fetch_all("
-    SELECT c.category_id,
-           c.category_name,
-           COALESCE(SUM(oi.line_total), 0) AS category_revenue,
-           COALESCE(SUM(oi.quantity), 0) AS items_sold
-    FROM `categories` c
-    JOIN `menu_items` m ON c.category_id = m.category_id
-    JOIN `order_items` oi ON m.item_id = oi.item_id
-    JOIN `orders` o ON oi.order_id = o.order_id
-    WHERE o.order_status != 'CANCELLED'
-      AND o.placed_at >= :start_date AND o.placed_at <= :end_date
-    GROUP BY c.category_id, c.category_name
-    ORDER BY category_revenue DESC
-", [':start_date' => $startDate, ':end_date' => $endDate]);
-
-$totalCategoryRevenue = 0.0;
-foreach ($categorySales as $cs) {
-    $totalCategoryRevenue += (float)$cs['category_revenue'];
-}
-
-$categoryLabels = [];
-$categoryValues = [];
-$categoryColors = [
-    '#2E6F40', '#3b8a52', '#4ea666', '#68BA7F', '#82ca96', '#9ed9af', '#b9e8c7', '#CEFFDC'
-];
-
-foreach ($categorySales as $idx => $cs) {
-    $categoryLabels[] = $cs['category_name'];
-    $categoryValues[] = (float)$cs['category_revenue'];
-}
-
-// 6. Query Top 5 Selling Dishes (Product Velocity)
-$topDishes = db_fetch_all("
-    SELECT m.item_id,
-           m.item_name,
-           c.category_name,
-           m.is_veg,
-           m.price,
-           m.rating,
-           COALESCE(SUM(oi.quantity), 0) AS total_units_sold,
-           COALESCE(SUM(oi.line_total), 0) AS total_revenue
-    FROM `order_items` oi
-    JOIN `orders` o ON oi.order_id = o.order_id
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    JOIN `categories` c ON m.category_id = c.category_id
-    WHERE o.order_status != 'CANCELLED'
-      AND o.placed_at >= :start_date AND o.placed_at <= :end_date
-    GROUP BY m.item_id, m.item_name, c.category_name, m.is_veg, m.price, m.rating
-    ORDER BY total_revenue DESC
-    LIMIT 5
-", [':start_date' => $startDate, ':end_date' => $endDate]);
-
-// 7. Query Payment Mode & Settlement Mix
-$paymentModes = db_fetch_all("
-    SELECT COALESCE(p.payment_mode, 'COD') AS payment_mode,
-           COUNT(*) AS payment_count,
-           COALESCE(SUM(p.amount_paid), 0) AS total_amount
-    FROM `payments` p
-    JOIN `orders` o ON p.order_id = o.order_id
-    WHERE o.order_status != 'CANCELLED'
-      AND o.placed_at >= :start_date AND o.placed_at <= :end_date
-    GROUP BY p.payment_mode
-    ORDER BY total_amount DESC
-", [':start_date' => $startDate, ':end_date' => $endDate]);
-
-$totalPaymentAmount = 0.0;
-foreach ($paymentModes as $pm) {
-    $totalPaymentAmount += (float)$pm['total_amount'];
-}
-
-$paymentLabels = [];
-$paymentValues = [];
-$paymentModeNames = [
-    'UPI'         => 'UPI / QR Scan',
-    'COD'         => 'Cash on Delivery (COD)',
-    'CREDIT_CARD' => 'Credit Card',
-    'DEBIT_CARD'  => 'Debit Card',
-    'NET_BANKING' => 'Net Banking',
-];
-$paymentColorPalette = [
-    'UPI'         => '#2E6F40', // Lush Forest
-    'COD'         => '#E5A100', // Gold/Amber
-    'CREDIT_CARD' => '#2563EB', // Blue
-    'DEBIT_CARD'  => '#0D9488', // Teal
-    'NET_BANKING' => '#7C3AED', // Purple
-];
-$paymentChartColors = [];
-
-foreach ($paymentModes as $pm) {
-    $mode = $pm['payment_mode'];
-    $paymentLabels[] = $paymentModeNames[$mode] ?? $mode;
-    $paymentValues[] = (float)$pm['total_amount'];
-    $paymentChartColors[] = $paymentColorPalette[$mode] ?? '#68BA7F';
-}
+$reportData = FinanceService::getExecutiveReportData($requestedPeriod, $rawStart, $rawEnd);
+$period = $reportData['period'];
+$periodLabel = $reportData['periodLabel'];
+$comparisonLabel = $reportData['comparisonLabel'];
+$isSingleDay = $reportData['isSingleDay'];
+$startDate = $reportData['startDate'];
+$endDate = $reportData['endDate'];
+$prevStartDate = $reportData['prevStartDate'];
+$prevEndDate = $reportData['prevEndDate'];
+$kpiGrossRevenue = $reportData['kpiGrossRevenue'];
+$kpiNetFoodSales = $reportData['kpiNetFoodSales'];
+$kpiTotalOrders = $reportData['kpiTotalOrders'];
+$kpiDelivered = $reportData['kpiDelivered'];
+$kpiCancelled = $reportData['kpiCancelled'];
+$kpiValidOrders = $reportData['kpiValidOrders'];
+$kpiTotalGst = $reportData['kpiTotalGst'];
+$kpiDeliveryFee = $reportData['kpiDeliveryFee'];
+$kpiDiscounts = $reportData['kpiDiscounts'];
+$kpiCancelledLoss = $reportData['kpiCancelledLoss'];
+$kpiAov = $reportData['kpiAov'];
+$deliveryRate = $reportData['deliveryRate'];
+$cancellationRate = $reportData['cancellationRate'];
+$prevGrossRevenue = $reportData['prevGrossRevenue'];
+$revenueGrowthPct = $reportData['revenueGrowthPct'];
+$trendLabels = $reportData['trendLabels'];
+$revenueValues = $reportData['revenueValues'];
+$orderValues = $reportData['orderValues'];
+$tableRows = $reportData['tableRows'];
+$displayTableRows = $reportData['displayTableRows'];
+$categorySales = $reportData['categorySales'];
+$totalCategoryRevenue = $reportData['totalCategoryRevenue'];
+$categoryLabels = $reportData['categoryLabels'];
+$categoryValues = $reportData['categoryValues'];
+$categoryColors = $reportData['categoryColors'];
+$topDishes = $reportData['topDishes'];
+$paymentModes = $reportData['paymentModes'];
+$totalPaymentAmount = $reportData['totalPaymentAmount'];
+$paymentLabels = $reportData['paymentLabels'];
+$paymentValues = $reportData['paymentValues'];
+$paymentModeNames = $reportData['paymentModeNames'];
+$paymentColorPalette = $reportData['paymentColorPalette'];
+$paymentChartColors = $reportData['paymentChartColors'];
 
 // 8. Handle CSV Export (Before HTML output)
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
@@ -540,7 +213,7 @@ require_once __DIR__ . '/includes/header.php';
       $exportParams['export'] = 'csv';
       $exportUrl = ADMIN_URL . '/reports.php?' . http_build_query($exportParams);
     ?>
-    <a href="<?= $exportUrl ?>" class="btn btn-outline-forest btn-sm rounded-pill px-3 fw-semibold shadow-xs d-inline-flex align-items-center gap-1">
+    <a href="<?= e($exportUrl) ?>" class="btn btn-outline-forest btn-sm rounded-pill px-3 fw-semibold shadow-xs d-inline-flex align-items-center gap-1">
       <i class="bi bi-file-earmark-spreadsheet"></i>
       <span>Export CSV</span>
     </a>
@@ -644,7 +317,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="stat-card dashboard-metric metric-success h-100">
       <div>
         <div class="metric-label">Gross Revenue</div>
-        <div class="metric-value"><?= format_inr($kpiGrossRevenue) ?></div>
+        <div class="metric-value"><?= formatInr($kpiGrossRevenue) ?></div>
         <div class="d-flex align-items-center gap-1 mt-1">
           <?php if ($revenueGrowthPct >= 0): ?>
             <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill py-0 px-2" style="font-size:0.7rem;">
@@ -667,9 +340,9 @@ require_once __DIR__ . '/includes/header.php';
     <div class="stat-card dashboard-metric metric-mint h-100">
       <div>
         <div class="metric-label">Net Food Sales</div>
-        <div class="metric-value"><?= format_inr($kpiNetFoodSales) ?></div>
+        <div class="metric-value"><?= formatInr($kpiNetFoodSales) ?></div>
         <div class="text-muted mt-1" style="font-size:0.72rem;">
-          GST: <?= format_inr($kpiTotalGst) ?> &bull; Deliv: <?= format_inr($kpiDeliveryFee) ?>
+          GST: <?= formatInr($kpiTotalGst) ?> &bull; Deliv: <?= formatInr($kpiDeliveryFee) ?>
         </div>
       </div>
       <span class="metric-icon"><i class="bi bi-receipt-cutoff"></i></span>
@@ -695,9 +368,9 @@ require_once __DIR__ . '/includes/header.php';
     <div class="stat-card dashboard-metric metric-warning h-100">
       <div>
         <div class="metric-label">Avg. Order Value</div>
-        <div class="metric-value"><?= format_inr($kpiAov) ?></div>
+        <div class="metric-value"><?= formatInr($kpiAov) ?></div>
         <div class="text-muted mt-1" style="font-size:0.72rem;">
-          Discounts: <?= format_inr($kpiDiscounts) ?> absorbed
+          Discounts: <?= formatInr($kpiDiscounts) ?> absorbed
         </div>
       </div>
       <span class="metric-icon"><i class="bi bi-cart4"></i></span>
@@ -713,7 +386,7 @@ require_once __DIR__ . '/includes/header.php';
           <?= number_format($kpiCancelled) ?> <span style="font-size:1rem; font-weight:500;">(<?= $cancellationRate ?>%)</span>
         </div>
         <div class="text-muted mt-1" style="font-size:0.72rem;">
-          Lost Revenue: <span class="fw-semibold text-danger"><?= format_inr($kpiCancelledLoss) ?></span>
+          Lost Revenue: <span class="fw-semibold text-danger"><?= formatInr($kpiCancelledLoss) ?></span>
         </div>
       </div>
       <span class="metric-icon"><i class="bi bi-x-circle"></i></span>
@@ -792,7 +465,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?= e($cat['category_name']) ?>
               </span>
               <span class="fw-bold font-monospace text-dark">
-                <?= format_inr($cRev) ?> <span class="text-muted fw-normal" style="font-size:0.75rem;">(<?= $cPct ?>%)</span>
+                <?= formatInr($cRev) ?> <span class="text-muted fw-normal" style="font-size:0.75rem;">(<?= $cPct ?>%)</span>
               </span>
             </div>
           <?php endforeach; ?>
@@ -860,15 +533,15 @@ require_once __DIR__ . '/includes/header.php';
                     </span>
                   </td>
                   <td class="text-center font-monospace small">
-                    <?= format_inr($dish['price']) ?>
+                    <?= formatInr($dish['price']) ?>
                   </td>
                   <td class="text-center">
                     <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 fw-bold">
-                      <?= number_format($dish['total_units_sold']) ?> sold
+                      <?= number_format((int)$dish['total_units_sold']) ?> sold
                     </span>
                   </td>
                   <td class="text-end fw-bold font-monospace text-dark">
-                    <?= format_inr($dish['total_revenue']) ?>
+                    <?= formatInr($dish['total_revenue']) ?>
                   </td>
                   <td class="text-end">
                     <span class="text-warning small fw-semibold">
@@ -915,7 +588,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?= e($mLabel) ?> <span class="text-muted">(<?= (int)$pm['payment_count'] ?> orders)</span>
               </span>
               <span class="fw-bold font-monospace text-dark">
-                <?= format_inr($mAmt) ?> <span class="text-muted fw-normal" style="font-size:0.75rem;">(<?= $mPct ?>%)</span>
+                <?= formatInr($mAmt) ?> <span class="text-muted fw-normal" style="font-size:0.75rem;">(<?= $mPct ?>%)</span>
               </span>
             </div>
           <?php endforeach; ?>
@@ -940,7 +613,7 @@ require_once __DIR__ . '/includes/header.php';
       <span class="badge bg-light text-muted border rounded-pill px-3 py-2 small">
         <?= count($displayTableRows) ?> records
       </span>
-      <a href="<?= $exportUrl ?>" class="btn btn-sm btn-outline-forest rounded-pill px-3">
+      <a href="<?= e($exportUrl) ?>" class="btn btn-sm btn-outline-forest rounded-pill px-3">
         <i class="bi bi-download me-1"></i> CSV
       </a>
     </div>
@@ -995,22 +668,22 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
               </td>
               <td class="text-end font-monospace small">
-                <?= format_inr($tr['food_sales']) ?>
+                <?= formatInr($tr['food_sales']) ?>
               </td>
               <td class="text-end font-monospace small text-muted">
-                <?= format_inr($tr['gst_amount']) ?>
+                <?= formatInr($tr['gst_amount']) ?>
               </td>
               <td class="text-end font-monospace small text-muted">
-                <?= format_inr($tr['delivery_fee']) ?>
+                <?= formatInr($tr['delivery_fee']) ?>
               </td>
               <td class="text-end font-monospace small text-muted">
-                <?= $tr['discounts'] > 0 ? '-' . format_inr($tr['discounts']) : '₹0.00' ?>
+                <?= $tr['discounts'] > 0 ? '-' . formatInr($tr['discounts']) : '₹0.00' ?>
               </td>
               <td class="text-end font-monospace fw-bold text-forest">
-                <?= format_inr($tr['revenue']) ?>
+                <?= formatInr($tr['revenue']) ?>
               </td>
               <td class="text-end font-monospace small text-dark">
-                <?= format_inr($tr['aov']) ?>
+                <?= formatInr($tr['aov']) ?>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -1023,12 +696,12 @@ require_once __DIR__ . '/includes/header.php';
             <td class="text-center"><?= number_format($kpiTotalOrders) ?></td>
             <td class="text-center text-success"><?= number_format($kpiDelivered) ?></td>
             <td class="text-center text-danger"><?= number_format($kpiCancelled) ?></td>
-            <td class="text-end font-monospace"><?= format_inr($kpiNetFoodSales) ?></td>
-            <td class="text-end font-monospace text-muted"><?= format_inr($kpiTotalGst) ?></td>
-            <td class="text-end font-monospace text-muted"><?= format_inr($kpiDeliveryFee) ?></td>
-            <td class="text-end font-monospace text-muted"><?= format_inr($kpiDiscounts) ?></td>
-            <td class="text-end font-monospace text-forest fs-6"><?= format_inr($kpiGrossRevenue) ?></td>
-            <td class="text-end font-monospace text-dark"><?= format_inr($kpiAov) ?></td>
+            <td class="text-end font-monospace"><?= formatInr($kpiNetFoodSales) ?></td>
+            <td class="text-end font-monospace text-muted"><?= formatInr($kpiTotalGst) ?></td>
+            <td class="text-end font-monospace text-muted"><?= formatInr($kpiDeliveryFee) ?></td>
+            <td class="text-end font-monospace text-muted"><?= formatInr($kpiDiscounts) ?></td>
+            <td class="text-end font-monospace text-forest fs-6"><?= formatInr($kpiGrossRevenue) ?></td>
+            <td class="text-end font-monospace text-dark"><?= formatInr($kpiAov) ?></td>
           </tr>
         </tfoot>
       <?php endif; ?>
@@ -1050,12 +723,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (trendCanvas) {
     new Chart(trendCanvas, {
       data: {
-        labels: <?= json_encode($trendLabels) ?>,
+        labels: <?= jsJson($trendLabels) ?>,
         datasets: [
           {
             type: 'bar',
             label: 'Gross Revenue (INR)',
-            data: <?= json_encode($revenueValues) ?>,
+            data: <?= jsJson($revenueValues) ?>,
             backgroundColor: 'rgba(46, 111, 64, 0.75)',
             hoverBackgroundColor: '#2E6F40',
             borderRadius: 6,
@@ -1065,7 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
           {
             type: 'line',
             label: 'Order Volume',
-            data: <?= json_encode($orderValues) ?>,
+            data: <?= jsJson($orderValues) ?>,
             borderColor: '#E5A100',
             backgroundColor: '#E5A100',
             borderWidth: 2.5,
@@ -1160,11 +833,11 @@ document.addEventListener('DOMContentLoaded', () => {
     new Chart(categoryCanvas, {
       type: 'bar',
       data: {
-        labels: <?= json_encode($categoryLabels) ?>,
+        labels: <?= jsJson($categoryLabels) ?>,
         datasets: [{
           label: 'Revenue (INR)',
-          data: <?= json_encode($categoryValues) ?>,
-          backgroundColor: <?= json_encode($categoryColors) ?>,
+          data: <?= jsJson($categoryValues) ?>,
+          backgroundColor: <?= jsJson($categoryColors) ?>,
           borderRadius: 6
         }]
       },
@@ -1210,10 +883,10 @@ document.addEventListener('DOMContentLoaded', () => {
     new Chart(paymentCanvas, {
       type: 'doughnut',
       data: {
-        labels: <?= json_encode($paymentLabels) ?>,
+        labels: <?= jsJson($paymentLabels) ?>,
         datasets: [{
-          data: <?= json_encode($paymentValues) ?>,
-          backgroundColor: <?= json_encode($paymentChartColors) ?>,
+          data: <?= jsJson($paymentValues) ?>,
+          backgroundColor: <?= jsJson($paymentChartColors) ?>,
           borderWidth: 2,
           borderColor: '#FFFFFF'
         }]

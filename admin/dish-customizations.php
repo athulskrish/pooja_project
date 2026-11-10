@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dish Customisation Management (Spice Levels, Toppings, Extra Cheese, Add-ons)
  * Zippy - Online Food Ordering Platform
@@ -10,20 +11,14 @@ $activePage = 'dish_customizations';
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
-// Fetch all dishes for the selector dropdown
-$allDishes = db_fetch_all("
-    SELECT m.item_id, m.item_name, m.price, m.is_veg, m.is_healthy, m.image_url, m.stock_quantity, m.is_available,
-           c.category_name, c.category_slug
-    FROM `menu_items` m
-    JOIN `categories` c ON m.category_id = c.category_id
-    ORDER BY c.display_order ASC, m.item_name ASC
-");
+// Fetch all active dishes for the selector dropdown
+$allDishes = CatalogService::getCustomizationDishList();
 
 // Determine selected dish (default to first dish or GET parameter)
-$selectedItemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : ($allDishes[0]['item_id'] ?? 1);
+$selectedItemId = isset($_GET['item_id']) ? (int)$_GET['item_id'] : (int)($allDishes[0]['item_id'] ?? 1);
 
 // Find selected dish details
 $currentDish = null;
@@ -38,229 +33,28 @@ if (!$currentDish && !empty($allDishes)) {
     $selectedItemId = (int)$currentDish['item_id'];
 }
 
-// Handle Form Actions (Add Group, Edit Group, Delete Group, Add Option, Edit Option, Delete Option, Quick Template)
+// Handle Form Actions (Add Group, Edit Group, Soft Delete Group, Add Option, Edit Option, Soft Delete Option, Quick Template)
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid security token. Please try again.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid security token. Please try again.');
         header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $selectedItemId);
         exit;
     }
 
-    $action = $_POST['action'];
-
-    // Action 1: Add Customization Group
-    if ($action === 'add_group') {
-        $itemId = (int)$_POST['item_id'];
-        $name = clean_input($_POST['group_name'] ?? '');
-        $type = in_array($_POST['selection_type'] ?? '', ['radio', 'checkbox']) ? $_POST['selection_type'] : 'checkbox';
-        $required = !empty($_POST['is_required']) ? 1 : 0;
-        $order = (int)($_POST['display_order'] ?? 1);
-
-        if (!empty($name) && $itemId > 0) {
-            db_query("
-                INSERT INTO `dish_customization_groups` (`item_id`, `group_name`, `selection_type`, `is_required`, `min_selection`, `max_selection`, `display_order`)
-                VALUES (:iid, :name, :stype, :req, :min_sel, :max_sel, :disp)
-            ", [
-                ':iid' => $itemId,
-                ':name' => $name,
-                ':stype' => $type,
-                ':req' => $required,
-                ':min_sel' => $required ? 1 : 0,
-                ':max_sel' => ($type === 'radio') ? 1 : 0,
-                ':disp' => $order
-            ]);
-            set_flash('success', "Customisation group '{$name}' created successfully.");
-        } else {
-            set_flash('danger', 'Group name is required.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 2: Edit Customization Group
-    elseif ($action === 'edit_group') {
-        $groupId = (int)$_POST['group_id'];
-        $itemId = (int)$_POST['item_id'];
-        $name = clean_input($_POST['group_name'] ?? '');
-        $type = in_array($_POST['selection_type'] ?? '', ['radio', 'checkbox']) ? $_POST['selection_type'] : 'checkbox';
-        $required = !empty($_POST['is_required']) ? 1 : 0;
-        $order = (int)($_POST['display_order'] ?? 1);
-
-        if (!empty($name) && $groupId > 0) {
-            db_query("
-                UPDATE `dish_customization_groups`
-                SET `group_name` = :name, `selection_type` = :stype, `is_required` = :req,
-                    `min_selection` = :min_sel, `max_selection` = :max_sel, `display_order` = :disp
-                WHERE `group_id` = :gid
-            ", [
-                ':name' => $name,
-                ':stype' => $type,
-                ':req' => $required,
-                ':min_sel' => $required ? 1 : 0,
-                ':max_sel' => ($type === 'radio') ? 1 : 0,
-                ':disp' => $order,
-                ':gid' => $groupId
-            ]);
-            set_flash('success', "Group '{$name}' updated.");
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 3: Delete Customization Group
-    elseif ($action === 'delete_group') {
-        $groupId = (int)$_POST['group_id'];
-        $itemId = (int)$_POST['item_id'];
-
-        if ($groupId > 0) {
-            db_query("DELETE FROM `dish_customization_groups` WHERE `group_id` = :gid", [':gid' => $groupId]);
-            set_flash('success', 'Customisation group and its options removed.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 4: Add Option to Group
-    elseif ($action === 'add_option') {
-        $groupId = (int)$_POST['group_id'];
-        $itemId = (int)$_POST['item_id'];
-        $name = clean_input($_POST['option_name'] ?? '');
-        $price = max(0.0, (float)($_POST['price'] ?? 0.0));
-        $isDefault = !empty($_POST['is_default']) ? 1 : 0;
-        $isAvailable = !empty($_POST['is_available']) ? 1 : 0;
-        $order = (int)($_POST['display_order'] ?? 1);
-
-        if (!empty($name) && $groupId > 0) {
-            // If setting default and group is radio, unset existing default
-            if ($isDefault) {
-                db_query("UPDATE `dish_customization_options` SET `is_default` = 0 WHERE `group_id` = :gid", [':gid' => $groupId]);
-            }
-
-            db_query("
-                INSERT INTO `dish_customization_options` (`group_id`, `option_name`, `price`, `is_default`, `is_available`, `display_order`)
-                VALUES (:gid, :name, :price, :isdef, :isavail, :disp)
-            ", [
-                ':gid' => $groupId,
-                ':name' => $name,
-                ':price' => $price,
-                ':isdef' => $isDefault,
-                ':isavail' => $isAvailable,
-                ':disp' => $order
-            ]);
-            set_flash('success', "Option '{$name}' added (+₹{$price}).");
-        } else {
-            set_flash('danger', 'Option name is required.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 5: Edit Option
-    elseif ($action === 'edit_option') {
-        $optionId = (int)$_POST['option_id'];
-        $groupId = (int)$_POST['group_id'];
-        $itemId = (int)$_POST['item_id'];
-        $name = clean_input($_POST['option_name'] ?? '');
-        $price = max(0.0, (float)($_POST['price'] ?? 0.0));
-        $isDefault = !empty($_POST['is_default']) ? 1 : 0;
-        $isAvailable = !empty($_POST['is_available']) ? 1 : 0;
-        $order = (int)($_POST['display_order'] ?? 1);
-
-        if (!empty($name) && $optionId > 0) {
-            if ($isDefault) {
-                db_query("UPDATE `dish_customization_options` SET `is_default` = 0 WHERE `group_id` = :gid", [':gid' => $groupId]);
-            }
-
-            db_query("
-                UPDATE `dish_customization_options`
-                SET `option_name` = :name, `price` = :price, `is_default` = :isdef,
-                    `is_available` = :isavail, `display_order` = :disp
-                WHERE `option_id` = :oid
-            ", [
-                ':name' => $name,
-                ':price' => $price,
-                ':isdef' => $isDefault,
-                ':isavail' => $isAvailable,
-                ':disp' => $order,
-                ':oid' => $optionId
-            ]);
-            set_flash('success', "Option '{$name}' updated.");
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 6: Delete Option
-    elseif ($action === 'delete_option') {
-        $optionId = (int)$_POST['option_id'];
-        $itemId = (int)$_POST['item_id'];
-
-        if ($optionId > 0) {
-            db_query("DELETE FROM `dish_customization_options` WHERE `option_id` = :oid", [':oid' => $optionId]);
-            set_flash('success', 'Customisation option removed.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 7: Toggle Option Availability
-    elseif ($action === 'toggle_option_availability') {
-        $optionId = (int)$_POST['option_id'];
-        $itemId = (int)$_POST['item_id'];
-
-        if ($optionId > 0) {
-            db_query("UPDATE `dish_customization_options` SET `is_available` = 1 - `is_available` WHERE `option_id` = :oid", [':oid' => $optionId]);
-            set_flash('success', 'Option availability toggled.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
-
-    // Action 8: Quick Template (Spice Level or Extra Cheese/Toppings)
-    elseif ($action === 'quick_template') {
-        $template = $_POST['template_type'] ?? '';
-        $itemId = (int)$_POST['item_id'];
-
-        if ($template === 'spice') {
-            db_query("
-                INSERT INTO `dish_customization_groups` (`item_id`, `group_name`, `selection_type`, `is_required`, `min_selection`, `max_selection`, `display_order`)
-                VALUES (:iid, 'Spice Level', 'radio', 1, 1, 1, 1)
-            ", [':iid' => $itemId]);
-            $newGid = (int)db_fetch_val("SELECT LAST_INSERT_ID()");
-            db_query("
-                INSERT INTO `dish_customization_options` (`group_id`, `option_name`, `price`, `is_default`, `is_available`, `display_order`) VALUES
-                ({$newGid}, 'Mild Spice', 0.00, 0, 1, 1),
-                ({$newGid}, 'Medium Spicy', 0.00, 1, 1, 2),
-                ({$newGid}, 'Extra Fiery Hot', 0.00, 0, 1, 3)
-            ");
-            set_flash('success', 'Quick Spice Level group added.');
-        } elseif ($template === 'cheese_toppings') {
-            db_query("
-                INSERT INTO `dish_customization_groups` (`item_id`, `group_name`, `selection_type`, `is_required`, `min_selection`, `max_selection`, `display_order`)
-                VALUES (:iid, 'Toppings & Extra Cheese', 'checkbox', 0, 0, 0, 2)
-            ", [':iid' => $itemId]);
-            $newGid = (int)db_fetch_val("SELECT LAST_INSERT_ID()");
-            db_query("
-                INSERT INTO `dish_customization_options` (`group_id`, `option_name`, `price`, `is_default`, `is_available`, `display_order`) VALUES
-                ({$newGid}, 'Extra Cheese', 35.00, 0, 1, 1),
-                ({$newGid}, 'Extra Crispy Fried Onions', 25.00, 0, 1, 2),
-                ({$newGid}, 'Pickled Jalapeno Slices', 20.00, 0, 1, 3),
-                ({$newGid}, 'Garlic Herb Dip', 25.00, 0, 1, 4)
-            ");
-            set_flash('success', 'Quick Toppings & Extra Cheese group added.');
-        }
-        header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $itemId);
-        exit;
-    }
+    $res = CatalogService::handleCustomizationAction($_POST);
+    setFlash($res['type'], $res['message']);
+    $redirectItemId = (int)($_POST['item_id'] ?? $selectedItemId);
+    header("Location: " . ADMIN_URL . "/dish-customizations.php?item_id=" . $redirectItemId);
+    exit;
 }
 
 // Fetch customization groups and options for the selected dish
-$customGroups = get_dish_customization_groups($selectedItemId, false);
+$customGroups = getDishCustomizationGroups($selectedItemId, false);
 
 // Total customisation metrics
 $totalDishesCount = count($allDishes);
-$customSummaryMap = get_all_dishes_customization_counts();
-$totalCustomizableDishes = count(array_filter($customSummaryMap, fn($c) => $c['group_count'] > 0));
+$customSummaryMap = getAllDishesCustomizationCounts();
+$totalCustomizableDishes = count(array_filter($customSummaryMap, fn(array $c): bool => $c['group_count'] > 0));
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -312,7 +106,7 @@ require_once __DIR__ . '/includes/header.php';
                     $isSelected = ($d['item_id'] == $selectedItemId);
                   ?>
                   <option value="<?= (int)$d['item_id'] ?>" <?= $isSelected ? 'selected' : '' ?>>
-                    #<?= $d['item_id'] ?>: <?= e($d['item_name']) ?> (<?= e($d['category_name']) ?> - <?= format_inr($d['price']) ?>) 
+                    #<?= $d['item_id'] ?>: <?= e($d['item_name']) ?> (<?= e($d['category_name']) ?> - <?= formatInr($d['price']) ?>) 
                     [<?= $dSummary['group_count'] ?> Groups, <?= $dSummary['option_count'] ?> Options]
                   </option>
                 <?php endforeach; ?>
@@ -340,7 +134,7 @@ require_once __DIR__ . '/includes/header.php';
           </div>
           <div class="small text-muted d-flex justify-content-between">
             <span>Groups for this Dish: <strong><?= count($customGroups) ?></strong></span>
-            <span>Total Options: <strong><?= array_sum(array_map(fn($g) => count($g['options'] ?? []), $customGroups)) ?></strong></span>
+            <span>Total Options: <strong><?= array_sum(array_map(fn(array $g): int => count($g['options'] ?? []), $customGroups)) ?></strong></span>
           </div>
         </div>
       </div>
@@ -353,7 +147,7 @@ require_once __DIR__ . '/includes/header.php';
           <div class="row align-items-center g-3">
             <div class="col-auto">
               <div class="position-relative" style="width: 76px; height: 76px;">
-                <img src="<?= e(get_dish_image_url($currentDish['image_url'])) ?>" 
+                <img src="<?= e(getDishImageUrl($currentDish['image_url'])) ?>" 
                      alt="<?= e($currentDish['item_name']) ?>" 
                      class="rounded-4 w-100 h-100 object-fit-cover shadow-sm border"
                      onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
@@ -383,7 +177,7 @@ require_once __DIR__ . '/includes/header.php';
               
               <h4 class="fw-bold mb-1 font-outfit" style="color: #1C2B20;"><?= e($currentDish['item_name']) ?></h4>
               <div class="d-flex align-items-center gap-3">
-                <span class="fs-5 fw-bold text-forest"><?= format_inr($currentDish['price']) ?></span>
+                <span class="fs-5 fw-bold text-forest"><?= formatInr($currentDish['price']) ?></span>
                 <span class="text-muted small">Dish ID: #<?= $currentDish['item_id'] ?></span>
               </div>
             </div>
@@ -399,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
                 <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
                   <li>
                     <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="quick_template">
                       <input type="hidden" name="template_type" value="spice">
                       <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -410,7 +204,7 @@ require_once __DIR__ . '/includes/header.php';
                   </li>
                   <li>
                     <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-                      <?= csrf_field() ?>
+                      <?= csrfField() ?>
                       <input type="hidden" name="action" value="quick_template">
                       <input type="hidden" name="template_type" value="cheese_toppings">
                       <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -440,7 +234,7 @@ require_once __DIR__ . '/includes/header.php';
             <i class="bi bi-plus-circle me-1"></i> Add Custom Group
           </button>
           <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" class="d-inline">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="quick_template">
             <input type="hidden" name="template_type" value="spice">
             <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -449,7 +243,7 @@ require_once __DIR__ . '/includes/header.php';
             </button>
           </form>
           <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" class="d-inline">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="quick_template">
             <input type="hidden" name="template_type" value="cheese_toppings">
             <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -511,7 +305,7 @@ require_once __DIR__ . '/includes/header.php';
                   </button>
 
                   <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" onsubmit="return confirm('Delete this group and all its options?');" class="d-inline">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_group">
                     <input type="hidden" name="group_id" value="<?= (int)$group['group_id'] ?>">
                     <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -552,7 +346,7 @@ require_once __DIR__ . '/includes/header.php';
                           <td>
                             <?php if ((float)$opt['price'] > 0): ?>
                               <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 fw-bold">
-                                +<?= format_inr($opt['price']) ?>
+                                +<?= formatInr($opt['price']) ?>
                               </span>
                             <?php else: ?>
                               <span class="badge bg-light text-muted border rounded-pill px-2 py-1">
@@ -571,7 +365,7 @@ require_once __DIR__ . '/includes/header.php';
                           </td>
                           <td>
                             <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" class="d-inline">
-                              <?= csrf_field() ?>
+                              <?= csrfField() ?>
                               <input type="hidden" name="action" value="toggle_option_availability">
                               <input type="hidden" name="option_id" value="<?= (int)$opt['option_id'] ?>">
                               <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -596,8 +390,8 @@ require_once __DIR__ . '/includes/header.php';
                                 <i class="bi bi-pencil me-1"></i> Edit
                               </button>
 
-                              <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" onsubmit="return confirm('Remove option \'<?= addslashes(e($opt['option_name'])) ?>\'?');" class="d-inline">
-                                <?= csrf_field() ?>
+                              <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>" onsubmit="return confirm('Remove option ' + <?= e(jsJson((string)$opt['option_name'])) ?> + '?');" class="d-inline">
+                                <?= csrfField() ?>
                                 <input type="hidden" name="action" value="delete_option">
                                 <input type="hidden" name="option_id" value="<?= (int)$opt['option_id'] ?>">
                                 <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -631,7 +425,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_group">
         <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
 
@@ -695,7 +489,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_group">
         <input type="hidden" name="group_id" id="editGroupId">
         <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -753,7 +547,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="add_option">
         <input type="hidden" name="group_id" id="addOptionGroupId">
         <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
@@ -824,7 +618,7 @@ require_once __DIR__ . '/includes/header.php';
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <form method="POST" action="<?= ADMIN_URL ?>/dish-customizations.php?item_id=<?= $selectedItemId ?>">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="edit_option">
         <input type="hidden" name="option_id" id="editOptionId">
         <input type="hidden" name="group_id" id="editOptionGroupId">

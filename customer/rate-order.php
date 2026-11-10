@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Rate Order & Delivery Rider
  * Zippy - Online Food Ordering Platform
@@ -12,216 +13,100 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-$currentUser = current_user();
+$isAjaxRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && (
+    (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+    || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1')
+);
 
-// Resolve target Order ID
-$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
-if (!$orderId && $currentUser) {
-    $recentOrder = db_fetch_one("SELECT order_id FROM `orders` WHERE user_id = :uid ORDER BY order_id DESC LIMIT 1", [':uid' => $currentUser['id']]);
-    if ($recentOrder) {
-        $orderId = (int)$recentOrder['order_id'];
-    }
-}
-if (!$orderId) {
-    $recentOrder = db_fetch_one("SELECT order_id FROM `orders` ORDER BY order_id DESC LIMIT 1");
-    if ($recentOrder) {
-        $orderId = (int)$recentOrder['order_id'];
-    }
+if ($isAjaxRequest && (!isLoggedIn() || (!isCustomer() && !isAdmin()))) {
+    http_response_code(401);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Authentication required. Please sign in to rate orders.']);
+    exit;
 }
 
-// Fetch Order and Delivery details
-$order = $orderId ? db_fetch_one("
-    SELECT o.*, d.delivery_partner_name, d.delivery_partner_phone 
-    FROM `orders` o 
-    LEFT JOIN `delivery_dispatches` d ON o.order_id = d.order_id 
-    WHERE o.order_id = :id
-", [':id' => $orderId]) : null;
+requireCustomer();
+$currentUser = getCurrentUser();
+$uid = (int)$currentUser['id'];
 
-// Fetch items ordered in this order
-$orderItems = $orderId ? db_fetch_all("
-    SELECT oi.*, m.item_name, m.image_url, m.is_veg, m.price, m.rating 
-    FROM `order_items` oi
-    JOIN `menu_items` m ON oi.item_id = m.item_id
-    WHERE oi.order_id = :oid
-", [':oid' => $orderId]) : [];
+// Resolve target Order ID strictly within caller scope
+$requestedOrderId = isset($_REQUEST['order_id']) ? (int)$_REQUEST['order_id'] : 0;
+$rateData = OrderService::getRateOrderData($requestedOrderId, $uid);
+$orderId = $rateData['order_id'];
+$order = $rateData['order'];
 
-// Check if review already exists
-$existingReview = $orderId ? db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]) : null;
-
-// Fetch any existing dish-level reviews for this order
-$existingDishReviews = [];
-if ($orderId) {
-    $dishRevRows = db_fetch_all("SELECT * FROM `dish_reviews` WHERE `order_id` = :oid", [':oid' => $orderId]);
-    foreach ($dishRevRows as $dr) {
-        $existingDishReviews[$dr['item_id']] = $dr;
+if (!empty($rateData['forbidden'])) {
+    if ($isAjaxRequest) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Access Denied: You can only rate orders placed under your own account.']);
+        exit;
     }
 }
+
+$orderItems = $rateData['order_items'];
+$existingReview = $rateData['existing_review'];
+$existingDishReviews = $rateData['existing_dish_reviews'];
 
 $submitted = false;
 
 // Handle Review Submission
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_rating') {
-    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
-              || (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1');
+    $isAjax = $isAjaxRequest;
 
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         if ($isAjax) {
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'Invalid or expired session token.']);
             exit;
         }
-        set_flash('danger', 'Invalid session token.');
+        setFlash('danger', 'Invalid session token.');
     } elseif (!$order) {
         if ($isAjax) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Order not found.']);
+            echo json_encode(['success' => false, 'message' => 'Order not found or access denied.']);
             exit;
         }
-        set_flash('danger', 'Order not found.');
+        setFlash('danger', 'Order not found or access denied.');
     } else {
-        // RBAC Access Check: Customer can only rate their own orders (unless admin)
-        if ($currentUser && (int)($order['user_id'] ?? 0) !== (int)$currentUser['id'] && !is_admin()) {
+        if ((int)($order['user_id'] ?? 0) !== $uid && !isAdmin()) {
             if ($isAjax) {
+                http_response_code(403);
                 header('Content-Type: application/json');
                 echo json_encode(['success' => false, 'message' => 'Access Denied: You can only submit ratings for your own orders.']);
                 exit;
             }
-            set_flash('danger', 'Access Denied: You can only submit ratings for orders placed under your own account.');
+            setFlash('danger', 'Access Denied: You can only submit ratings for orders placed under your own account.');
             header("Location: " . CUSTOMER_URL . "/order-history.php");
             exit;
         }
 
-        $foodRating = max(1, min(5, (int)($_POST['food_rating'] ?? 5)));
-        $riderRating = max(1, min(5, (int)($_POST['rider_rating'] ?? 5)));
-        $tip = max(0.00, (float)($_POST['tip'] ?? ($existingReview['rider_tip'] ?? 0)));
-        $comments = clean_input($_POST['comments'] ?? '');
-        $userId = $order['user_id'] ?? ($currentUser['id'] ?? 2);
+        $ratingRes = OrderService::submitOrderRating($order, $orderItems, $_POST, $existingReview);
+        if (!empty($ratingRes['ok'])) {
+            $submitted = true;
+            $existingReview = $ratingRes['existing_review'] ?? $existingReview;
+            setFlash('success', $ratingRes['message']);
 
-        $pdo = getDBConnection();
-        if ($pdo) {
-            try {
-                $stmt = $pdo->prepare("
-                    INSERT INTO `order_reviews` (`order_id`, `user_id`, `food_rating`, `rider_rating`, `rider_tip`, `comments`)
-                    VALUES (:oid, :uid, :frating, :rrating, :tip, :comm)
-                    ON DUPLICATE KEY UPDATE
-                        `food_rating` = VALUES(`food_rating`),
-                        `rider_rating` = VALUES(`rider_rating`),
-                        `rider_tip` = VALUES(`rider_tip`),
-                        `comments` = VALUES(`comments`)
-                ");
-                $stmt->execute([
-                    ':oid' => $orderId,
-                    ':uid' => $userId,
-                    ':frating' => $foodRating,
-                    ':rrating' => $riderRating,
-                    ':tip' => $tip,
-                    ':comm' => $comments
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'message' => $ratingRes['message'],
+                    'order_id' => $orderId,
+                    'food_rating' => $ratingRes['food_rating'],
+                    'rider_rating' => $ratingRes['rider_rating'],
                 ]);
-
-                // Cascade and persist dish-level feedback (Appearance, Taste, Portion Size, Value)
-                if (!empty($orderItems)) {
-                    foreach ($orderItems as $item) {
-                        $itemId = (int)$item['item_id'];
-                        $dishApp = isset($_POST['dish_appearance_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_appearance_' . $itemId])) : $foodRating;
-                        $dishTaste = isset($_POST['dish_taste_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_taste_' . $itemId])) : $foodRating;
-                        $dishPortion = isset($_POST['dish_portion_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_portion_' . $itemId])) : $foodRating;
-                        $dishValue = isset($_POST['dish_value_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_value_' . $itemId])) : $foodRating;
-                        
-                        $itemRating = isset($_POST['dish_rating_' . $itemId]) ? max(1, min(5, (int)$_POST['dish_rating_' . $itemId])) : (int)round(($dishApp + $dishTaste + $dishPortion + $dishValue) / 4);
-
-                        // Check if review already exists for this dish in this order
-                        $existingDishRev = db_fetch_one("
-                            SELECT dish_review_id FROM `dish_reviews`
-                            WHERE `item_id` = :iid AND `order_id` = :oid AND `user_id` = :uid
-                        ", [
-                            ':iid' => $itemId,
-                            ':oid' => $orderId,
-                            ':uid' => $userId
-                        ]);
-
-                        if ($existingDishRev) {
-                            db_query("
-                                UPDATE `dish_reviews`
-                                SET `rating` = :r,
-                                    `appearance_rating` = :a,
-                                    `taste_rating` = :t,
-                                    `portion_rating` = :p,
-                                    `value_rating` = :v,
-                                    `review_text` = :txt
-                                WHERE `dish_review_id` = :drid
-                            ", [
-                                ':r' => $itemRating,
-                                ':a' => $dishApp,
-                                ':t' => $dishTaste,
-                                ':p' => $dishPortion,
-                                ':v' => $dishValue,
-                                ':txt' => $comments,
-                                ':drid' => $existingDishRev['dish_review_id']
-                            ]);
-                        } else {
-                            db_query("
-                                INSERT INTO `dish_reviews` (`item_id`, `order_id`, `user_id`, `rating`, `appearance_rating`, `taste_rating`, `portion_rating`, `value_rating`, `review_text`, `tags`)
-                                VALUES (:iid, :oid, :uid, :r, :a, :t, :p, :v, :txt, :tags)
-                            ", [
-                                ':iid' => $itemId,
-                                ':oid' => $orderId,
-                                ':uid' => $userId,
-                                ':r' => $itemRating,
-                                ':a' => $dishApp,
-                                ':t' => $dishTaste,
-                                ':p' => $dishPortion,
-                                ':v' => $dishValue,
-                                ':txt' => $comments,
-                                ':tags' => 'Order Verified'
-                            ]);
-                        }
-
-                        // Recalculate average rating & total reviews
-                        $stats = db_fetch_one("
-                            SELECT AVG(rating) AS avg_rating, COUNT(*) AS count_reviews 
-                            FROM `dish_reviews` 
-                            WHERE `item_id` = :iid
-                        ", [':iid' => $itemId]);
-
-                        if ($stats && $stats['count_reviews']) {
-                            db_query("
-                                UPDATE `menu_items` 
-                                SET `rating` = :r, `total_reviews` = GREATEST(`total_reviews` + 1, :cnt) 
-                                WHERE `item_id` = :iid
-                            ", [
-                                ':r' => round((float)$stats['avg_rating'], 1),
-                                ':cnt' => (int)$stats['count_reviews'],
-                                ':iid' => $itemId
-                            ]);
-                        }
-                    }
-                }
-
-                $submitted = true;
-                set_flash('success', 'Thank you! Your rating has been recorded successfully. ⭐');
-                // Refresh review record
-                $existingReview = db_fetch_one("SELECT * FROM `order_reviews` WHERE `order_id` = :id", [':id' => $orderId]);
-
-                if ($isAjax) {
-                    header('Content-Type: application/json');
-                    echo json_encode([
-                        'success' => true,
-                        'message' => 'Thank you! Your rating has been recorded successfully. ⭐',
-                        'order_id' => $orderId,
-                        'food_rating' => $foodRating,
-                        'rider_rating' => $riderRating
-                    ]);
-                    exit;
-                }
-            } catch (Exception $e) {
-                $submitted = true;
-                if ($isAjax) {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => true, 'message' => 'Thank you for your rating!']);
-                    exit;
-                }
-                set_flash('success', 'Thank you for your rating!');
+                exit;
             }
+        } else {
+            $submitted = false;
+            if ($isAjax) {
+                http_response_code(500);
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $ratingRes['message']]);
+                exit;
+            }
+            setFlash('danger', $ratingRes['message']);
         }
     }
 }
@@ -245,7 +130,7 @@ if (!empty($orderItems)) {
     }
 }
 $itemsSummary = !empty($itemNames) ? implode(', ', $itemNames) : 'Food Order';
-$orderThumbnail = !empty($orderItems[0]['image_url']) ? get_dish_image_url($orderItems[0]['image_url']) : '';
+$orderThumbnail = !empty($orderItems[0]['image_url']) ? getDishImageUrl($orderItems[0]['image_url']) : '';
 
 // Rating Labels
 $foodLabels = [
@@ -341,7 +226,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?= e($itemsSummary) ?>
               </div>
               <div class="small text-muted" style="font-size: 0.78rem;">
-                <?= !empty($order['placed_at']) ? date('d M Y, h:i A', strtotime($order['placed_at'])) : 'Recent Order' ?> &bull; <?= format_inr($order['total_amount'] ?? 0) ?>
+                <?= !empty($order['placed_at']) ? date('d M Y, h:i A', strtotime($order['placed_at'])) : 'Recent Order' ?> &bull; <?= formatInr($order['total_amount'] ?? 0) ?>
               </div>
             </div>
           </div>
@@ -448,7 +333,7 @@ require_once __DIR__ . '/includes/header.php';
           </div>
 
           <form method="POST" action="<?= CUSTOMER_URL ?>/rate-order.php?order_id=<?= $orderId ?>" id="orderRatingForm">
-            <?= csrf_field() ?>
+            <?= csrfField() ?>
             <input type="hidden" name="action" value="submit_rating">
             <input type="hidden" name="food_rating" id="foodRatingInput" value="<?= $curFood ?>">
             <input type="hidden" name="rider_rating" id="riderRatingInput" value="<?= $curRider ?>">
@@ -511,13 +396,13 @@ require_once __DIR__ . '/includes/header.php';
                   ?>
                     <div class="p-3 rounded-3 border bg-light bg-opacity-50">
                       <div class="d-flex align-items-center gap-3 mb-2">
-                        <img src="<?= e(get_dish_image_url($item['image_url'])) ?>" class="rounded-3 object-fit-cover shadow-xs border" style="width: 44px; height: 44px;" alt="<?= e($item['item_name']) ?>">
+                        <img src="<?= e(getDishImageUrl($item['image_url'])) ?>" class="rounded-3 object-fit-cover shadow-xs border" style="width: 44px; height: 44px;" alt="<?= e($item['item_name']) ?>">
                         <div class="flex-grow-1">
                           <div class="fw-bold text-dark small mb-0">
                             <?= e($item['item_name']) ?>
                             <span class="badge <?= $item['is_veg'] ? 'bg-success' : 'bg-danger' ?> px-1 py-0 ms-1" style="font-size:0.58rem;"><?= $item['is_veg'] ? 'VEG' : 'NON-VEG' ?></span>
                           </div>
-                          <div class="small text-muted" style="font-size:0.72rem;">Qty: <?= (int)$item['quantity'] ?> &bull; <?= format_inr($item['unit_price']) ?></div>
+                          <div class="small text-muted" style="font-size:0.72rem;">Qty: <?= (int)$item['quantity'] ?> &bull; <?= formatInr($item['unit_price']) ?></div>
                         </div>
                       </div>
 

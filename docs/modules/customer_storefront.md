@@ -1,31 +1,24 @@
-# 🛒 Module: Customer Storefront & Catalog (customer_storefront.md)
+# Module: Customer Storefront & Discovery Engine
 
-> **Context Domain:** Food Discovery, Search, Categorization & Dish Customizations  
-> **Relevant Tables:** `categories`, `menu_items`, `dish_customization_groups`, `dish_customization_options`, `dish_reviews`
+## 1. Overview
+The customer storefront powers browse-and-order workflows with live category filtering, dynamic food mood matching, dietary toggles (Vegetarian & Healthy/Fit), per-dish customization add-ons, Apriori cross-sell bundles, and FAQ/support self-service.
 
----
+## 2. Database Entities & Soft-Delete Filtering
+- `categories` (`is_active = 1`)
+- `menu_items` (`is_active = 1`, `is_available`, `is_veg`, `is_healthy`, `mood`, `stock_quantity`)
+- `dish_customization_groups` & `dish_customization_options` (`is_active = 1`, `is_available = 1`, unit surcharge in `price`)
+- `food_moods` (`is_active = 1`, `mood_key`, theme tokens & `display_order`)
+- `dish_reviews` (multi-dimension scores: `rating`, `appearance_rating`, `taste_rating`, `portion_rating`, `value_rating`)
+- `faqs` (`is_active = 1`) & `support_tickets` (`ticket_status`)
 
-## 1. Storefront Features
+## 3. Core Services, Helpers & Views
+- **`includes/Services/CatalogService.php`**: `getHeaderCatalogState()`, `getStorefrontHomeData()`, `getRestaurantCatalog()`, `searchDishes()`.
+- **`includes/Services/OrderService.php`**: `getCustomerUnreviewedDeliveredOrder()`, `getActiveFaqs()`, `submitSupportTicket()`.
+- **`includes/functions.php`**: `getFoodMoods()`, `getDishesByMood()`, `getDishCustomizationGroups()`, `getDishReviews()`, `renderStarRatingHtml()`, `getCustomerPreviousMeal()`, `sanitizeFaqContent()`.
+- **Views & Endpoints**: `customer/includes/header.php`, `customer/index.php`, `customer/restaurant.php`, `customer/search.php`, `customer/offers.php`, `customer/help.php`, `customer/profile.php`, `customer/ajax/get-dish-customizations.php`, `customer/ajax/apriori-api.php`, `api/dish-reviews.php`, `api/catalog-sync.php`.
 
-- **Dynamic Catalog:** Dishes displayed by category with Veg/Non-Veg filter, rating badges, prep times, and real-time stock indicators.
-- **Food Moods Filter:** Mood-based quick filters (e.g., Comfort, Party, Focus, Late Night).
-- **Dish Customization Engine:** Dishes with customization options launch an AJAX modal fetching group selections (e.g. Size, Crust, Add-ons) with min/max selection bounds.
-- **Cross-Selling Recommendations:** Powered by the Apriori algorithm (`includes/AprioriEngine.php`), suggesting complementary dishes based on frequent itemset association rules.
-
----
-
-## 2. Key Source Files
-
-- **`customer/index.php`**: Storefront homepage, categories slider, popular items, food moods.
-- **`customer/restaurant.php`**: Menu catalog, sticky cart drawer, veg/non-veg toggle, Apriori recommendations.
-- **`customer/search.php`**: Live multi-field search (dish name, category, mood).
-- **`customer/ajax/get-dish-customizations.php`**: Returns JSON options for customization modal.
-- **`customer/ajax/apriori-api.php`**: Live cross-selling recommendations based on current cart items.
-
----
-
-## 3. Engineering Invariants
-
-1. **Stock Display:** If `stock_quantity <= 0`, disable the "Add to Cart" button and render an "Out of Stock" badge.
-2. **Customization Pricing:** Calculate base price + customization option additional prices accurately before persisting to cart state.
-3. **Escaping:** All user-supplied search queries must be sanitized and matched with PDO `LIKE :query` with appropriate escaping.
+## 4. Technical Rules
+1. Storefront catalog queries filter by `is_active = 1` across categories, dishes, customization groups/options, moods, and FAQs.
+2. Dish search in `CatalogService::searchDishes()` uses parameterized `LIKE` placeholders (`:q1`, `:q2`, `:q3`) alongside active category/mood/diet filters.
+3. User-supplied text, JSON cart/modal attributes (`jsJson()` / `e()`), and rich FAQ HTML (`sanitizeFaqContent()`) are escaped/sanitized to prevent stored or reflected XSS.
+4. `api/catalog-sync.php` exposes only public-safe active catalog fields to unauthenticated/customer requests while restricting admin inventory snapshots to authenticated `ADMIN`/`KITCHEN` sessions.

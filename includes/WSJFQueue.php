@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Weighted Shortest Job First (WSJF) Kitchen Priority Scheduling
  * Dynamic Priority Calculation for Kitchen Display System (KDS)
@@ -7,7 +8,8 @@
 
 require_once __DIR__ . '/functions.php';
 
-class WSJFQueue {
+class WSJFQueue
+{
 
     /**
      * Compute prioritized kitchen queue
@@ -15,10 +17,11 @@ class WSJFQueue {
      * @param string|null $filterStatus Optional filter ('CONFIRMED', 'COOKING', etc.)
      * @return array Orders sorted by descending WSJF priority score
      */
-    public static function getPrioritizedOrders(?string $filterStatus = null): array {
-        $statusClause = $filterStatus 
-            ? "AND o.order_status = :status" 
-            : "AND o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY')";
+    public static function getPrioritizedOrders(?string $filterStatus = null): array
+    {
+        $statusCondition = $filterStatus
+            ? "o.order_status = :status"
+            : "o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY')";
 
         $sql = "
             SELECT 
@@ -33,12 +36,12 @@ class WSJFQueue {
             JOIN `users` u ON o.user_id = u.user_id
             JOIN `order_items` oi ON o.order_id = oi.order_id
             JOIN `menu_items` m ON oi.item_id = m.item_id
-            WHERE 1=1 $statusClause
+            WHERE {$statusCondition}
             GROUP BY o.order_id
         ";
 
         $params = $filterStatus ? [':status' => $filterStatus] : [];
-        $orders = db_fetch_all($sql, $params);
+        $orders = dbFetchAll($sql, $params);
 
         if (empty($orders)) {
             return [];
@@ -55,7 +58,7 @@ class WSJFQueue {
             WHERE oi.order_id IN ($placeholders)
         ";
         
-        $pdo = getDBConnection();
+        $pdo = getDbConnection();
         $itemsByOrder = [];
         if ($pdo) {
             $itemStmt = $pdo->prepare($itemSql);
@@ -68,7 +71,7 @@ class WSJFQueue {
         // Calculate WSJF score for each order
         foreach ($orders as &$order) {
             $isScheduled = !empty($order['is_scheduled']);
-            $scheduledTs = !empty($order['scheduled_for']) ? strtotime($order['scheduled_for']) : null;
+            $scheduledTs = !empty($order['scheduled_for']) ? (strtotime((string)$order['scheduled_for']) ?: null) : null;
             $nowTs = time();
 
             $elapsed = max(1, (int)$order['elapsed_minutes']);
@@ -96,7 +99,7 @@ class WSJFQueue {
                 }
             } else {
                 // Standard Immediate Order
-                $urgencyWeight = match($order['order_status']) {
+                $urgencyWeight = match ($order['order_status']) {
                     'PLACED', 'CONFIRMED' => 1.5,
                     'COOKING' => 1.2,
                     'READY' => 0.5,
@@ -125,7 +128,7 @@ class WSJFQueue {
         unset($order);
 
         // Sort descending by WSJF score
-        usort($orders, function($a, $b) {
+        usort($orders, function (array $a, array $b): int {
             return $b['wsjf_score'] <=> $a['wsjf_score'];
         });
 

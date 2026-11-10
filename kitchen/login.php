@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Dedicated Kitchen Station & Atelier Authentication Portal
  * Zippy - Online Food Ordering Platform
@@ -10,43 +11,51 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 // Redirect if already logged in as a Kitchen Chef or Admin
-if (is_kitchen() || is_admin()) {
+if (isKitchen() || isAdmin()) {
     header("Location: " . KITCHEN_URL . "/index.php");
     exit;
 }
 
-// 1-Click Presentation Access Mode (?demo=1)
+$error = '';
+
+// 1-Click Presentation Access Mode (?demo=1), gated behind opt-in APP_DEMO_MODE
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $result = attempt_login('chef@zippy.com', 'password123');
-    if ($result['success']) {
-        set_flash('success', 'Authenticated as Kitchen Chef (Chef Sajeev) in dedicated Kitchen session.');
-        header("Location: " . KITCHEN_URL . "/index.php");
+    if (defined('APP_DEMO_MODE') && APP_DEMO_MODE) {
+        $result = loginUser('chef@zippy.com', 'password123', 'KITCHEN');
+        if ($result['success']) {
+            setFlash('success', 'Authenticated as Kitchen Chef (Chef Sajeev) in dedicated Kitchen session.');
+            session_write_close();
+            header("Location: " . KITCHEN_URL . "/index.php");
+            exit;
+        }
+        $error = $result['message'] ?? 'Demo login failed.';
+    } else {
+        setFlash('warning', 'Demo quick-login is disabled in this environment. Please sign in with your credentials.');
+        header("Location: " . KITCHEN_URL . "/login.php");
         exit;
     }
 }
 
-$error = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $error = 'Session expired. Please try again.';
     } else {
-        $email = clean_input($_POST['email'] ?? '');
+        $email = cleanInput($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
 
         if (empty($email) || empty($password)) {
             $error = 'Please enter your kitchen staff email and password.';
         } else {
-            $result = attempt_login($email, $password);
+            $result = loginUser($email, $password);
             if ($result['success']) {
                 $role = strtoupper($result['user']['role_name'] ?? '');
                 if ($role === 'KITCHEN' || $role === 'ADMIN') {
-                    set_flash('success', "Welcome back, Chef {$result['user']['full_name']}! Kitchen station ready.");
+                    setFlash('success', "Welcome back, Chef {$result['user']['full_name']}! Kitchen station ready.");
                     session_write_close();
                     header("Location: " . KITCHEN_URL . "/index.php");
                     exit;
                 } else {
-                    logout_user();
+                    logoutUser();
                     $error = "Access denied. The '{$role}' account does not have Kitchen Station permissions.";
                 }
             } else {
@@ -261,7 +270,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Form Body -->
     <div class="p-4 p-md-4">
-      <?php display_flash(); ?>
+      <?php displayFlash(); ?>
 
       <?php if (!empty($error)): ?>
         <div class="alert alert-danger py-2 small rounded-3 mb-3 d-flex align-items-center gap-2">
@@ -271,19 +280,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
 
       <form method="POST" action="<?= KITCHEN_URL ?>/login.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
 
         <div class="mb-3">
           <label class="form-label small fw-bold text-uppercase" style="color: var(--lush-pine); font-size:0.72rem; letter-spacing:0.05em;">Staff Identifier / Email</label>
-          <input type="email" name="email" id="kdsEmail" class="form-control form-control-lush" placeholder="chef@zippy.com" value="<?= e($_POST['email'] ?? 'chef@zippy.com') ?>" required>
+          <input type="email" name="email" id="kdsEmail" class="form-control form-control-lush" placeholder="chef@zippy.com" value="<?= e($_POST['email'] ?? ((defined('APP_DEMO_MODE') && APP_DEMO_MODE) ? 'chef@zippy.com' : '')) ?>" required>
         </div>
 
         <div class="mb-4">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <label class="form-label small fw-bold text-uppercase mb-0" style="color: var(--lush-pine); font-size:0.72rem; letter-spacing:0.05em;">Password</label>
-            <span class="text-muted small" style="font-size: 0.72rem;">Default: <code class="text-success">password123</code></span>
+            <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
+              <span class="text-muted small" style="font-size: 0.72rem;">Default: <code class="text-success">password123</code></span>
+            <?php endif; ?>
           </div>
-          <input type="password" name="password" id="kdsPassword" class="form-control form-control-lush" placeholder="••••••••" value="password123" required>
+          <input type="password" name="password" id="kdsPassword" class="form-control form-control-lush" placeholder="••••••••" value="<?= (defined('APP_DEMO_MODE') && APP_DEMO_MODE) ? 'password123' : '' ?>" required>
         </div>
 
         <button type="submit" class="btn btn-lush-primary w-100 mb-3">
@@ -291,6 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <i class="bi bi-arrow-right"></i>
         </button>
 
+        <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
         <!-- 1-Click Demo Login -->
         <div class="p-3 rounded-4 border text-center mb-3" style="background: var(--lush-bg); border-color: var(--lush-border) !important;">
           <div class="small fw-bold text-uppercase mb-2" style="color: var(--lush-text-muted); font-size:0.68rem; letter-spacing:0.06em;">
@@ -301,6 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <span>Sign In as Chef Sajeev</span>
           </button>
         </div>
+        <?php endif; ?>
 
         <div class="d-flex justify-content-between align-items-center small text-muted pt-2 border-top" style="border-color: var(--lush-border) !important;">
           <a href="<?= BASE_URL ?>/index.php" class="text-decoration-none text-muted">
@@ -314,6 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
   <script>
     function quickLoginChef() {
       document.getElementById('kdsEmail').value = 'chef@zippy.com';
@@ -321,5 +335,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       document.forms[0].submit();
     }
   </script>
+  <?php endif; ?>
 </body>
 </html>

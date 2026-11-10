@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Delivery Partner Fleet App - Rider Authentication
  * Zippy - Online Food Ordering Platform
@@ -13,47 +14,60 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 
 // Redirect if already logged in as a Rider or Admin
-if (is_rider() || is_admin()) {
+if (isRider() || isAdmin()) {
     session_write_close();
     header("Location: " . DELIVERY_URL . "/index.php");
     exit;
 }
 
-// 1-Click Presentation Access Mode (?demo=1)
+$error = '';
+
+// 1-Click Presentation Access Mode (?demo=1), gated behind opt-in APP_DEMO_MODE
 if (isset($_GET['demo']) && $_GET['demo'] == '1') {
-    $result = attempt_login('shaji@zippy.com', 'password123');
-    if ($result['success']) {
-        $_SESSION['rider_on_duty'] = true;
-        set_flash('success', 'Authenticated as Delivery Rider (Shaji) in dedicated Fleet session.');
-        header("Location: " . DELIVERY_URL . "/index.php");
+    if (defined('APP_DEMO_MODE') && APP_DEMO_MODE) {
+        $result = loginUser('shaji@zippy.com', 'password123', 'RIDER');
+        if ($result['success']) {
+            $_SESSION['rider_on_duty'] = true;
+            setFlash('success', 'Authenticated as Delivery Rider (Shaji) in dedicated Fleet session.');
+            session_write_close();
+            header("Location: " . DELIVERY_URL . "/index.php");
+            exit;
+        }
+        $error = $result['message'] ?? 'Demo login failed.';
+    } else {
+        setFlash('warning', 'Demo quick-login is disabled in this environment. Please sign in with your credentials.');
+        header("Location: " . DELIVERY_URL . "/login.php");
         exit;
     }
 }
 
-$error = '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = clean_input($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    if (empty($email) || empty($password)) {
-        $error = 'Please provide both your rider email and password.';
+    if (!verifyRequestCsrf()) {
+        http_response_code(403);
+        $error = 'Invalid or expired CSRF token. Please refresh and try again.';
     } else {
-        $result = attempt_login($email, $password);
-        if ($result['success']) {
-            $role = strtoupper($result['user']['role_name'] ?? '');
-            if ($role === 'RIDER' || $role === 'ADMIN') {
-                $_SESSION['rider_on_duty'] = true;
-                set_flash('success', "Welcome back, {$result['user']['full_name']}! You are on duty.");
-                session_write_close();
-                header("Location: " . DELIVERY_URL . "/index.php");
-                exit;
-            } else {
-                logout_user();
-                $error = "Access denied. The '{$role}' account does not possess Delivery Partner privileges.";
-            }
+        $email = cleanInput($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+
+        if (empty($email) || empty($password)) {
+            $error = 'Please provide both your rider email and password.';
         } else {
-            $error = $result['message'];
+            $result = loginUser($email, $password);
+            if ($result['success']) {
+                $role = strtoupper($result['user']['role_name'] ?? '');
+                if ($role === 'RIDER' || $role === 'ADMIN') {
+                    $_SESSION['rider_on_duty'] = true;
+                    setFlash('success', "Welcome back, {$result['user']['full_name']}! You are on duty.");
+                    session_write_close();
+                    header("Location: " . DELIVERY_URL . "/index.php");
+                    exit;
+                } else {
+                    logoutUser();
+                    $error = "Access denied. The '{$role}' account does not possess Delivery Partner privileges.";
+                }
+            } else {
+                $error = $result['message'];
+            }
         }
     }
 }
@@ -133,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Login Body -->
     <div class="p-4">
-      <?php display_flash(); ?>
+      <?php displayFlash(); ?>
 
       <?php if (!empty($error)): ?>
         <div class="alert alert-danger py-2 small rounded-3 mb-3 d-flex align-items-center gap-2">
@@ -143,24 +157,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
 
       <form method="POST" action="<?= DELIVERY_URL ?>/login.php">
-        <?= csrf_field() ?>
+        <?= csrfField() ?>
 
         <div class="mb-3">
           <label class="form-label small fw-bold text-dark">Rider Email or User ID</label>
           <div class="input-group">
             <span class="input-group-text bg-light text-muted border-end-0"><i class="bi bi-person"></i></span>
-            <input type="email" name="email" id="inputEmail" class="form-control border-start-0" placeholder="rider@zippy.com" value="<?= e($_POST['email'] ?? 'rider@zippy.com') ?>" required>
+            <input type="email" name="email" id="inputEmail" class="form-control border-start-0" placeholder="shaji@zippy.com" value="<?= e($_POST['email'] ?? ((defined('APP_DEMO_MODE') && APP_DEMO_MODE) ? 'rider@zippy.com' : '')) ?>" required>
           </div>
         </div>
 
         <div class="mb-3">
           <div class="d-flex justify-content-between align-items-center">
             <label class="form-label small fw-bold text-dark">Password</label>
-            <span class="small text-muted" style="font-size: 0.75rem;">Default: <code>password123</code></span>
+            <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
+              <span class="small text-muted" style="font-size: 0.75rem;">Default: <code>password123</code></span>
+            <?php endif; ?>
           </div>
           <div class="input-group">
             <span class="input-group-text bg-light text-muted border-end-0"><i class="bi bi-key"></i></span>
-            <input type="password" name="password" id="inputPassword" class="form-control border-start-0" placeholder="••••••••" value="password123" required>
+            <input type="password" name="password" id="inputPassword" class="form-control border-start-0" placeholder="••••••••" value="<?= (defined('APP_DEMO_MODE') && APP_DEMO_MODE) ? 'password123' : '' ?>" required>
           </div>
         </div>
 
@@ -168,6 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <i class="bi bi-box-arrow-in-right me-1"></i> Sign In to Fleet App
         </button>
 
+        <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
         <!-- 1-Click Quick Demo Login -->
         <div class="p-3 bg-light rounded-3 border text-center mb-3">
           <div class="small fw-bold text-dark mb-2">
@@ -187,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
         </div>
+        <?php endif; ?>
 
         <div class="d-flex justify-content-between align-items-center small text-muted pt-2 border-top">
           <a href="<?= BASE_URL ?>/index.php" class="text-decoration-none text-muted">
@@ -200,6 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
   <script>
     function quickFillAndSubmit(email) {
       document.getElementById('inputEmail').value = email || 'shaji@zippy.com';
@@ -207,5 +226,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       document.forms[0].submit();
     }
   </script>
+  <?php endif; ?>
 </body>
 </html>

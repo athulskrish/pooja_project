@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Zippy - Online Food Ordering Platform
  * Main Portals Launchpad & Architecture Overview
@@ -8,10 +9,11 @@
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/functions.php';
 
-$currentUser = current_user();
-$dbStatus = checkDBStatus();
-$dishCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `menu_items`") : 0;
-$orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `orders`") : 0;
+$currentUser = getCurrentUser();
+$dbStatus = checkDbStatus();
+$overviewCounts = OrderService::getPlatformOverviewCounts(!empty($dbStatus['tables_exist']));
+$dishCount = $overviewCounts['dish_count'];
+$orderCount = $overviewCounts['order_count'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -138,7 +140,8 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         <p class="text-muted small">All portals share a centralized MySQL 8.0 database engine with real-time transactional synchronization</p>
       </div>
 
-      <?php $portalActors = get_all_portal_actors(); ?>
+      <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
+      <?php $portalActors = getAllPortalActors(); ?>
       <!-- College Project Viva Mode: Multi-Actor Simultaneous Sessions in Same Browser -->
       <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-5 border-start border-4 border-success">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 border-bottom pb-3 mb-4">
@@ -268,6 +271,7 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
         window.open('<?= ADMIN_URL ?>/login.php?demo=1', '_blank');
       }
       </script>
+      <?php endif; ?>
 
       <div class="row g-4 mb-5">
         
@@ -378,6 +382,7 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
 
       </div>
 
+      <?php if (defined('APP_DEMO_MODE') && APP_DEMO_MODE): ?>
       <!-- Demo Accounts & Credentials Reference Table -->
       <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-5">
         <h5 class="fw-bold font-outfit text-dark mb-3"><i class="bi bi-key-fill text-success me-2"></i>Standard Pre-Seeded Demo Credentials</h5>
@@ -453,6 +458,7 @@ $orderCount = $dbStatus['tables_exist'] ? db_fetch_val("SELECT COUNT(*) FROM `or
           </table>
         </div>
       </div>
+      <?php endif; ?>
 
       <!-- Academic Specifications & Viva Voce Quick Cards -->
       <div class="row g-4">

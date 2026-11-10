@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Admin Kitchen View: Staff Attendance, Station Roster & Salary Management
  * Zippy - Online Food Ordering Platform
@@ -11,153 +12,31 @@ $activePage = 'kitchen_view';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/auth.php';
-require_admin();
-$currentUser = current_user();
+requireAdmin();
+$currentUser = getCurrentUser();
 
 // Handle Staff Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verify_csrf($_POST['csrf_token'] ?? '')) {
-        set_flash('danger', 'Invalid session token.');
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
     } else {
-        $action = $_POST['action'];
-
-        // 1. Toggle Attendance / Duty Status
-        if ($action === 'toggle_duty') {
-            $profileId = (int)$_POST['profile_id'];
-            $newStatus = clean_input($_POST['duty_status']);
-            db_query("UPDATE `staff_profiles` SET `duty_status` = :st WHERE `profile_id` = :id", [
-                ':st' => $newStatus,
-                ':id' => $profileId
-            ]);
-            set_flash('success', "Kitchen staff presence status updated to {$newStatus}.");
-            header("Location: " . ADMIN_URL . "/kitchen-view.php");
-            exit;
-        }
-
-        // 2. Disburse Salary Payout
-        if ($action === 'disburse_salary') {
-            $userId = (int)$_POST['user_id'];
-            $monthYear = clean_input($_POST['month_year'] ?? date('F Y'));
-            $baseAmount = (float)$_POST['base_amount'];
-            $incentives = (float)($_POST['incentives_amount'] ?? 0);
-            $deductions = (float)($_POST['deductions_amount'] ?? 0);
-            $netPaid = $baseAmount + $incentives - $deductions;
-            $paymentMode = clean_input($_POST['payment_mode'] ?? 'BANK_TRANSFER');
-            $notes = clean_input($_POST['notes'] ?? 'Monthly kitchen culinary salary disbursement');
-            $ref = 'SAL-KIT-' . date('Ym') . '-' . str_pad((string)random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
-
-            // Record into staff_salary_payouts
-            db_query("
-                INSERT INTO `staff_salary_payouts` 
-                (`user_id`, `month_year`, `base_amount`, `incentives_amount`, `deductions_amount`, `net_paid`, `payment_mode`, `transaction_reference`, `payout_status`, `paid_at`, `notes`) 
-                VALUES (:uid, :my, :base, :inc, :ded, :net, :mode, :ref, 'PAID', NOW(), :notes)
-            ", [
-                ':uid' => $userId,
-                ':my' => $monthYear,
-                ':base' => $baseAmount,
-                ':inc' => $incentives,
-                ':ded' => $deductions,
-                ':net' => $netPaid,
-                ':mode' => $paymentMode,
-                ':ref' => $ref,
-                ':notes' => $notes
-            ]);
-
-            // Record into central money_transactions
-            $staffUser = db_fetch_one("SELECT full_name FROM `users` WHERE `user_id` = :id", [':id' => $userId]);
-            $staffName = $staffUser['full_name'] ?? 'Kitchen Staff';
-            
-            record_money_transaction(
-                null,
-                $userId,
-                'STAFF_SALARY_PAYOUT',
-                'OUTWARD',
-                $paymentMode === 'UPI' ? 'UPI' : 'BANK_TRANSFER',
-                $netPaid,
-                'COMPLETED',
-                $ref,
-                'Store Finance & HR',
-                "Salary payout disbursed to {$staffName} for {$monthYear}"
-            );
-
-            set_flash('success', "Salary of " . format_inr($netPaid) . " successfully disbursed to {$staffName} (Ref: {$ref}).");
-            header("Location: " . ADMIN_URL . "/kitchen-view.php");
-            exit;
-        }
-
-        // 3. Update Staff Details
-        if ($action === 'update_details') {
-            $profileId = (int)$_POST['profile_id'];
-            $desig = clean_input($_POST['designation']);
-            $spec = clean_input($_POST['specialization']);
-            $shift = clean_input($_POST['shift_timings']);
-            $salary = (float)$_POST['base_salary'];
-
-            db_query("
-                UPDATE `staff_profiles` 
-                SET `designation` = :desig, `specialization` = :spec, `shift_timings` = :shift, `base_salary` = :sal 
-                WHERE `profile_id` = :id
-            ", [
-                ':desig' => $desig,
-                ':spec'  => $spec,
-                ':shift' => $shift,
-                ':sal'   => $salary,
-                ':id'    => $profileId
-            ]);
-            set_flash('success', "Staff details updated successfully.");
-            header("Location: " . ADMIN_URL . "/kitchen-view.php");
-            exit;
-        }
+        $res = FinanceService::handleAdminKitchenAction($_POST);
+        setFlash($res['type'], $res['message']);
+        header("Location: " . ADMIN_URL . "/kitchen-view.php");
+        exit;
     }
 }
 
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch all Kitchen Staff Profiles
-$kitchenStaff = db_fetch_all("
-    SELECT sp.*, u.full_name, u.email, u.phone_number, u.created_at AS user_since
-    FROM `staff_profiles` sp
-    JOIN `users` u ON sp.user_id = u.user_id
-    WHERE sp.department = 'KITCHEN'
-    ORDER BY sp.base_salary DESC, sp.joined_date ASC
-");
-
-// Fetch Latest Salary Payouts for Kitchen Staff
-$staffIds = array_column($kitchenStaff, 'user_id');
-$latestPayoutsByUser = [];
-$payoutHistory = [];
-
-if (!empty($staffIds)) {
-    $placeholders = implode(',', array_fill(0, count($staffIds), '?'));
-    
-    // All history
-    $payoutHistory = db_fetch_all("
-        SELECT p.*, u.full_name, u.phone_number, sp.designation
-        FROM `staff_salary_payouts` p
-        JOIN `users` u ON p.user_id = u.user_id
-        JOIN `staff_profiles` sp ON p.user_id = sp.user_id
-        WHERE p.user_id IN ($placeholders)
-        ORDER BY p.paid_at DESC
-        LIMIT 25
-    ", $staffIds);
-
-    // Current month payouts map
-    $currentMonthStr = date('F Y');
-    $currentMonthPayouts = db_fetch_all("
-        SELECT * FROM `staff_salary_payouts` 
-        WHERE `user_id` IN ($placeholders) AND `month_year` = ?
-    ", array_merge($staffIds, [$currentMonthStr]));
-
-    foreach ($currentMonthPayouts as $cp) {
-        $latestPayoutsByUser[$cp['user_id']] = $cp;
-    }
-}
-
-// KPI Aggregations
-$totalStaff = count($kitchenStaff);
-$presentStaff = count(array_filter($kitchenStaff, fn($s) => $s['duty_status'] === 'ON_DUTY'));
-$totalMonthlyPayroll = array_sum(array_column($kitchenStaff, 'base_salary'));
-$totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `order_items` oi JOIN `orders` o ON oi.order_id = o.order_id WHERE o.order_status IN ('READY', 'OUT_FOR_DELIVERY', 'DELIVERED')");
+$kitchenData = FinanceService::getAdminKitchenViewData();
+$kitchenStaff = $kitchenData['kitchenStaff'];
+$latestPayoutsByUser = $kitchenData['latestPayoutsByUser'];
+$payoutHistory = $kitchenData['payoutHistory'];
+$totalStaff = $kitchenData['totalStaff'];
+$presentStaff = $kitchenData['presentStaff'];
+$totalMonthlyPayroll = $kitchenData['totalMonthlyPayroll'];
+$totalDishesCooked = $kitchenData['totalDishesCooked'];
 ?>
 
 <!-- ===========================================================================
@@ -199,7 +78,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
           <i class="bi bi-wallet2 fs-4"></i>
         </div>
       </div>
-      <h3 class="fw-bold font-outfit text-dark mb-1"><?= format_inr($totalMonthlyPayroll) ?></h3>
+      <h3 class="fw-bold font-outfit text-dark mb-1"><?= formatInr($totalMonthlyPayroll) ?></h3>
       <span class="small text-muted">Base Monthly Kitchen Payroll</span>
     </div>
   </div>
@@ -321,7 +200,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
         $curPayout = $latestPayoutsByUser[$uid] ?? null;
         $isPaidThisMonth = !empty($curPayout) && $curPayout['payout_status'] === 'PAID';
         
-        $dutyBadge = match($staff['duty_status']) {
+        $dutyBadge = match ($staff['duty_status']) {
           'ON_DUTY' => ['class' => 'bg-success-subtle text-success', 'icon' => 'bi-check-circle-fill', 'label' => 'On duty'],
           'ON_BREAK' => ['class' => 'bg-warning-subtle text-warning-emphasis', 'icon' => 'bi-pause-circle-fill', 'label' => 'On break'],
           'ON_LEAVE' => ['class' => 'bg-danger-subtle text-danger', 'icon' => 'bi-x-circle-fill', 'label' => 'On leave'],
@@ -339,7 +218,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
             <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
               <div class="d-flex align-items-center gap-3">
                 <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white fs-5 flex-shrink-0" style="width: 48px; height: 48px; background: #2E6F40;">
-                  <?= strtoupper(substr($staff['full_name'], 0, 1)) ?>
+                  <?= strtoupper(substr((string)($staff['full_name'] ?? 'S'), 0, 1)) ?>
                 </div>
                 <div class="min-w-0">
                   <h6 class="fw-bold font-outfit text-dark mb-0"><?= e($staff['full_name']) ?></h6>
@@ -363,12 +242,12 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
               </div>
               <div class="kitchen-summary-item">
                 <span class="kitchen-summary-label"><i class="bi bi-wallet2 me-1"></i>Monthly pay</span>
-                <strong><?= format_inr($staff['base_salary']) ?></strong>
+                <strong><?= formatInr($staff['base_salary']) ?></strong>
               </div>
               <div class="kitchen-summary-item">
                 <span class="kitchen-summary-label"><i class="bi bi-receipt me-1"></i><?= date('M Y') ?> payout</span>
                 <?php if ($isPaidThisMonth): ?>
-                  <span class="badge bg-success-subtle text-success rounded-pill"><?= format_inr($curPayout['net_paid']) ?> paid</span>
+                  <span class="badge bg-success-subtle text-success rounded-pill"><?= formatInr($curPayout['net_paid']) ?> paid</span>
                 <?php else: ?>
                   <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">Payment due</span>
                 <?php endif; ?>
@@ -376,7 +255,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
             </div>
 
             <div class="small text-muted mb-3">
-              <span class="me-3"><i class="bi bi-award me-1"></i><?= (int)$staff['total_orders_handled'] ?> orders · <?= number_format($staff['rating'], 1) ?> rating</span>
+              <span class="me-3"><i class="bi bi-award me-1"></i><?= (int)$staff['total_orders_handled'] ?> orders · <?= number_format((float)($staff['rating'] ?? 4.8), 1) ?> rating</span>
               <span><i class="bi bi-stars me-1"></i><?= e($staff['specialization'] ?: 'General preparation') ?></span>
             </div>
           </div>
@@ -392,7 +271,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
               <ul class="dropdown-menu shadow-sm border-0 rounded-3 small">
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/kitchen-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$staff['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_DUTY">
@@ -401,7 +280,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/kitchen-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$staff['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_BREAK">
@@ -410,7 +289,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/kitchen-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$staff['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="OFF_DUTY">
@@ -419,7 +298,7 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
                 </li>
                 <li>
                   <form method="POST" action="<?= ADMIN_URL ?>/kitchen-view.php" class="m-0">
-                    <?= csrf_field() ?>
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="toggle_duty">
                     <input type="hidden" name="profile_id" value="<?= (int)$staff['profile_id'] ?>">
                     <input type="hidden" name="duty_status" value="ON_LEAVE">
@@ -447,13 +326,13 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
             <div class="modal-header border-bottom">
               <div>
                 <h5 class="modal-title fw-bold text-dark mb-0">Disburse Salary: <?= e($staff['full_name']) ?></h5>
-                <span class="small text-muted"><?= e($staff['designation']) ?> • Base: <?= format_inr($staff['base_salary']) ?></span>
+                <span class="small text-muted"><?= e($staff['designation']) ?> • Base: <?= formatInr($staff['base_salary']) ?></span>
               </div>
               <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
 
             <form method="POST" action="<?= ADMIN_URL ?>/kitchen-view.php">
-              <?= csrf_field() ?>
+              <?= csrfField() ?>
               <input type="hidden" name="action" value="disburse_salary">
               <input type="hidden" name="user_id" value="<?= (int)$staff['user_id'] ?>">
 
@@ -558,9 +437,9 @@ $totalDishesCooked = (int)db_fetch_val("SELECT COALESCE(SUM(quantity), 0) FROM `
                 <div class="small text-muted"><?= e($pay['designation']) ?></div>
               </td>
               <td><span class="badge bg-light text-dark border"><?= e($pay['month_year']) ?></span></td>
-              <td><?= format_inr($pay['base_amount']) ?></td>
-              <td class="text-success">+<?= format_inr($pay['incentives_amount']) ?></td>
-              <td class="fw-bold text-forest fs-6"><?= format_inr($pay['net_paid']) ?></td>
+              <td><?= formatInr($pay['base_amount']) ?></td>
+              <td class="text-success">+<?= formatInr($pay['incentives_amount']) ?></td>
+              <td class="fw-bold text-forest fs-6"><?= formatInr($pay['net_paid']) ?></td>
               <td>
                 <span class="badge bg-light text-dark border"><?= e($pay['payment_mode']) ?></span>
               </td>
