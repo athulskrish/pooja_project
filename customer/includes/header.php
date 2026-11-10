@@ -63,6 +63,9 @@ $dbStatus = checkDbStatus();
     window.API_URL = <?= jsJson(BASE_URL . '/api') ?>;
     window.CUSTOMER_URL = <?= jsJson(CUSTOMER_URL) ?>;
     window.BASE_URL = <?= jsJson(BASE_URL) ?>;
+    window.ZIPPY_CUSTOMER_LOGGED_IN = <?= isLoggedIn() ? 'true' : 'false' ?>;
+    window.ZIPPY_CSRF_TOKEN = <?= jsJson(csrfToken()) ?>;
+    window.ZIPPY_AVAILABLE_COUPONS = <?= jsJson(function_exists('getAvailableCoupons') ? getAvailableCoupons(false) : []) ?>;
   </script>
 </head>
 <body>

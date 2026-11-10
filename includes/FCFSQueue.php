@@ -57,7 +57,7 @@ class FCFSQueue
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
         
         $itemSql = "
-            SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes
+            SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes, m.kitchen_station
             FROM `order_items` oi
             JOIN `menu_items` m ON oi.item_id = m.item_id
             WHERE oi.order_id IN ($placeholders)
@@ -275,6 +275,53 @@ class FCFSQueue
                 'badge_class' => 'bg-danger text-white',
                 'icon' => 'bi-exclamation-triangle-fill',
                 'action_url' => ADMIN_URL . "/dishes.php"
+            ];
+        }
+
+        // 6. Rider SOS / Failed Delivery Dispatches
+        $failedDispatches = dbFetchAll("
+            SELECT d.order_id, d.delivery_partner_name, d.failure_reason, d.failed_at, u.full_name AS customer_name
+            FROM `delivery_dispatches` d
+            JOIN `orders` o ON d.order_id = o.order_id
+            JOIN `users` u ON o.user_id = u.user_id
+            WHERE d.delivery_status = 'FAILED'
+              AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')
+            ORDER BY d.failed_at DESC
+            LIMIT 5
+        ");
+        foreach ($failedDispatches as $fd) {
+            $reasonText = $fd['failure_reason'] ?: 'Delivery Exception';
+            $exceptions[] = [
+                'severity' => 'CRITICAL',
+                'type' => 'RIDER SOS / FAILED',
+                'title' => "#ZIP-{$fd['order_id']} ({$fd['delivery_partner_name']}): {$reasonText}",
+                'badge_class' => 'bg-danger text-white',
+                'icon' => 'bi-exclamation-diamond-fill',
+                'action_url' => ADMIN_URL . "/orders.php?search=" . urlencode((string)$fd['order_id'])
+            ];
+        }
+
+        // 7. Scheduled Orders Entering Kitchen Pre-Alert Window (FCFS)
+        $dueScheduled = dbFetchAll("
+            SELECT o.order_id, o.scheduled_slot, o.scheduled_for, u.full_name,
+                   TIMESTAMPDIFF(MINUTE, NOW(), o.scheduled_for) AS mins_until
+            FROM `orders` o
+            JOIN `users` u ON o.user_id = u.user_id
+            WHERE o.is_scheduled = 1
+              AND o.order_status IN ('PLACED', 'CONFIRMED')
+              AND o.scheduled_for <= DATE_ADD(NOW(), INTERVAL 45 MINUTE)
+            ORDER BY o.scheduled_for ASC, o.placed_at ASC, o.order_id ASC
+            LIMIT 4
+        ");
+        foreach ($dueScheduled as $ds) {
+            $minsLabel = (int)$ds['mins_until'] <= 0 ? 'DUE NOW' : "in {$ds['mins_until']}m";
+            $exceptions[] = [
+                'severity' => 'WARNING',
+                'type' => 'SCHEDULED PRE-ALERT',
+                'title' => "#ZIP-{$ds['order_id']} ({$ds['full_name']}) due {$minsLabel} • FCFS Queue",
+                'badge_class' => 'bg-warning text-dark',
+                'icon' => 'bi-alarm-fill',
+                'action_url' => ADMIN_URL . "/orders.php?status=SCHEDULED&search=" . urlencode((string)$ds['order_id'])
             ];
         }
 

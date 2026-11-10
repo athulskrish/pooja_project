@@ -52,10 +52,11 @@ class WSJFQueue
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
         
         $itemSql = "
-            SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes
+            SELECT oi.*, m.item_name, m.is_veg, m.prep_time_minutes, m.kitchen_station
             FROM `order_items` oi
             JOIN `menu_items` m ON oi.item_id = m.item_id
             WHERE oi.order_id IN ($placeholders)
+            ORDER BY oi.order_item_id ASC
         ";
         
         $pdo = getDbConnection();
@@ -80,17 +81,19 @@ class WSJFQueue
 
             // Estimated Job Duration in minutes
             $jobDuration = $maxPrep + ($portions * 1.5);
+            $preAlert = false;
 
             if ($isScheduled && $scheduledTs && $scheduledTs > $nowTs) {
                 // Advance Scheduled Order: evaluate priority by proximity to target meal slot
                 $minsUntilDue = (int)round(($scheduledTs - $nowTs) / 60);
                 $order['mins_until_due'] = $minsUntilDue;
 
-                // If scheduled delivery time is within cooking prep buffer, escalate priority
+                // If scheduled delivery time is within cooking prep buffer, escalate priority (FCFS tie-breaker)
                 if ($minsUntilDue <= ($jobDuration + 15)) {
                     $costOfDelay = max(15, (60 - max(0, $minsUntilDue))) * 1.5;
                     $wsjfScore = round($costOfDelay / $jobDuration, 2);
-                    $urgencyBadge = ['label' => 'DUE SOON', 'class' => 'bg-danger text-white'];
+                    $urgencyBadge = ['label' => 'DUE SOON (FCFS)', 'class' => 'bg-danger text-white'];
+                    $preAlert = true;
                 } else {
                     // Farther in the future: orderly advance queue
                     $costOfDelay = 0.5;
@@ -119,19 +122,69 @@ class WSJFQueue
                 }
             }
 
+            $orderItemsList = $itemsByOrder[$order['order_id']] ?? [];
+            $stations = [];
+            $preppedCount = 0;
+            foreach ($orderItemsList as $oit) {
+                $stName = trim((string)($oit['kitchen_station'] ?? 'Main Kitchen'));
+                if ($stName !== '' && !in_array($stName, $stations, true)) {
+                    $stations[] = $stName;
+                }
+                if (!empty($oit['is_prepped'])) {
+                    $preppedCount++;
+                }
+            }
+
             $order['job_duration'] = round($jobDuration);
             $order['cost_of_delay'] = round($costOfDelay, 1);
             $order['wsjf_score'] = $wsjfScore;
-            $order['items'] = $itemsByOrder[$order['order_id']] ?? [];
+            $order['items'] = $orderItemsList;
+            $order['stations'] = $stations;
+            $order['prepped_count'] = $preppedCount;
+            $order['total_items_count'] = count($orderItemsList);
+            $order['pre_alert'] = $preAlert;
             $order['urgency_badge'] = $urgencyBadge;
         }
         unset($order);
 
-        // Sort descending by WSJF score
+        // Sort descending by WSJF score, with FCFS tie-breaker (placed_at ASC, order_id ASC)
         usort($orders, function (array $a, array $b): int {
-            return $b['wsjf_score'] <=> $a['wsjf_score'];
+            $cmp = $b['wsjf_score'] <=> $a['wsjf_score'];
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $timeCmp = strcmp((string)$a['placed_at'], (string)$b['placed_at']);
+            return $timeCmp !== 0 ? $timeCmp : ((int)$a['order_id'] <=> (int)$b['order_id']);
         });
 
         return $orders;
+    }
+
+    /**
+     * Retrieve advance scheduled orders entering their kitchen pre-alert window in strict FCFS order.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function getScheduledPreAlerts(): array
+    {
+        $all = self::getPrioritizedOrders();
+        $alerts = [];
+        foreach ($all as $order) {
+            if (!empty($order['is_scheduled']) && in_array($order['order_status'], ['PLACED', 'CONFIRMED', 'COOKING'], true)) {
+                $minsUntil = isset($order['mins_until_due']) ? (int)$order['mins_until_due'] : 0;
+                if (!empty($order['pre_alert']) || $minsUntil <= 45) {
+                    $alerts[] = $order;
+                }
+            }
+        }
+        usort($alerts, static function (array $a, array $b): int {
+            $schedCmp = strcmp((string)($a['scheduled_for'] ?? ''), (string)($b['scheduled_for'] ?? ''));
+            if ($schedCmp !== 0) {
+                return $schedCmp;
+            }
+            $placedCmp = strcmp((string)$a['placed_at'], (string)$b['placed_at']);
+            return $placedCmp !== 0 ? $placedCmp : ((int)$a['order_id'] <=> (int)$b['order_id']);
+        });
+        return $alerts;
     }
 }

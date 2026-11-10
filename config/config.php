@@ -160,6 +160,13 @@ define('GST_PERCENT', 5.0); // 5% GST on Restaurant Services (2.5% CGST + 2.5% S
 define('DEFAULT_DELIVERY_FEE', 40.00);
 define('FREE_DELIVERY_THRESHOLD', 499.00);
 define('PLATFORM_FEE', 5.00);
+define('ZIPPY_HUB_LAT', 12.97840000);
+define('ZIPPY_HUB_LNG', 77.64080000);
+define('MAX_DELIVERY_RADIUS_KM', 12.0);
+define('DEFAULT_SCHEDULED_SLOT_CAPACITY', 5);
+define('LOYALTY_POINT_RUPEE_VALUE', 1.00);
+define('LOYALTY_EARN_DIVISOR', 20.00);
+define('LOYALTY_MAX_DISCOUNT_RATIO', 0.50);
 
 // Load Database (also loads local .env overrides)
 require_once __DIR__ . '/database.php';

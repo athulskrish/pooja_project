@@ -10,6 +10,13 @@ USE `zippy_db`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop tables in reverse FK dependency order
+DROP TABLE IF EXISTS `loyalty_transactions`;
+DROP TABLE IF EXISTS `user_favorites`;
+DROP TABLE IF EXISTS `cart_items`;
+DROP TABLE IF EXISTS `scheduled_slot_caps`;
+DROP TABLE IF EXISTS `coupon_redemptions`;
+DROP TABLE IF EXISTS `coupons`;
+DROP TABLE IF EXISTS `support_ticket_replies`;
 DROP TABLE IF EXISTS `staff_salary_payouts`;
 DROP TABLE IF EXISTS `staff_profiles`;
 DROP TABLE IF EXISTS `cash_register_closures`;
@@ -58,6 +65,8 @@ CREATE TABLE `users` (
     `password_hash` VARCHAR(255) NOT NULL,
     `security_question` VARCHAR(255) NULL DEFAULT NULL,
     `security_answer_hash` VARCHAR(255) NULL DEFAULT NULL,
+    `loyalty_points` INT NOT NULL DEFAULT 0,
+    `dietary_preferences` VARCHAR(255) NULL DEFAULT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_users_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON UPDATE CASCADE
@@ -73,6 +82,9 @@ CREATE TABLE `user_addresses` (
     `address_line` TEXT NOT NULL,
     `landmark` VARCHAR(150) NULL,
     `pincode` VARCHAR(10) NOT NULL,
+    `latitude` DECIMAL(10, 8) NULL DEFAULT NULL,
+    `longitude` DECIMAL(11, 8) NULL DEFAULT NULL,
+    `distance_km` DECIMAL(5, 2) NULL DEFAULT NULL,
     `is_default` TINYINT(1) NOT NULL DEFAULT 0,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     CONSTRAINT `fk_addresses_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
@@ -110,6 +122,12 @@ CREATE TABLE `menu_items` (
     `mood` VARCHAR(100) NOT NULL DEFAULT 'comfort',
     `prep_time_minutes` INT NOT NULL DEFAULT 20,
     `kitchen_station` VARCHAR(50) NOT NULL DEFAULT 'Main Kitchen',
+    `calories_kcal` INT NULL DEFAULT NULL,
+    `protein_g` DECIMAL(5,1) NULL DEFAULT NULL,
+    `carbs_g` DECIMAL(5,1) NULL DEFAULT NULL,
+    `fat_g` DECIMAL(5,1) NULL DEFAULT NULL,
+    `allergens` VARCHAR(255) NULL DEFAULT NULL,
+    `spice_level` ENUM('MILD', 'MEDIUM', 'SPICY', 'EXTRA_SPICY') NOT NULL DEFAULT 'MEDIUM',
     `image_url` VARCHAR(500) NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_menu_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`category_id`) ON UPDATE CASCADE
@@ -163,6 +181,9 @@ CREATE TABLE `orders` (
     `delivery_fee` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `platform_fee` DECIMAL(10,2) NOT NULL DEFAULT 5.00,
     `discount_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `loyalty_points_used` INT NOT NULL DEFAULT 0,
+    `loyalty_discount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `distance_km` DECIMAL(5,2) NULL DEFAULT NULL,
     `total_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `coupon_code` VARCHAR(50) NULL,
     `order_status` ENUM('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED') NOT NULL DEFAULT 'PLACED',
@@ -190,6 +211,8 @@ CREATE TABLE `order_items` (
     `line_total` DECIMAL(10,2) NOT NULL,
     `customizations` TEXT NULL,
     `customization_total` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `is_prepped` TINYINT(1) NOT NULL DEFAULT 0,
+    `prepped_at` TIMESTAMP NULL DEFAULT NULL,
     CONSTRAINT `fk_order_items_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
     CONSTRAINT `fk_order_items_dish` FOREIGN KEY (`item_id`) REFERENCES `menu_items` (`item_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -229,6 +252,9 @@ CREATE TABLE `delivery_dispatches` (
     `dispatched_at` TIMESTAMP NULL,
     `delivered_at` TIMESTAMP NULL,
     `delivery_status` ENUM('ASSIGNED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED') NOT NULL DEFAULT 'ASSIGNED',
+    `failure_reason` VARCHAR(255) NULL DEFAULT NULL,
+    `issue_notes` TEXT NULL DEFAULT NULL,
+    `failed_at` TIMESTAMP NULL DEFAULT NULL,
     CONSTRAINT `fk_dispatches_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -306,8 +332,26 @@ CREATE TABLE `support_tickets` (
     `subject` VARCHAR(200) NOT NULL,
     `message` TEXT NOT NULL,
     `ticket_status` ENUM('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED') NOT NULL DEFAULT 'OPEN',
+    `assigned_admin_id` INT NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT `fk_tickets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 13b: SUPPORT_TICKET_REPLIES (Threaded Customer Care Replies)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `support_ticket_replies` (
+    `reply_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `ticket_id` INT NOT NULL,
+    `user_id` INT NULL,
+    `sender_role` ENUM('CUSTOMER', 'ADMIN') NOT NULL DEFAULT 'ADMIN',
+    `sender_name` VARCHAR(120) NOT NULL,
+    `reply_message` TEXT NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_ticket_replies_ticket` (`ticket_id`),
+    CONSTRAINT `fk_ticket_replies_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `support_tickets` (`ticket_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_replies_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------------
@@ -389,6 +433,105 @@ CREATE TABLE `cash_register_closures` (
     `discrepancy_reason` TEXT NULL,
     `status` ENUM('SEALED', 'OPEN', 'FLAGGED') NOT NULL DEFAULT 'SEALED',
     `closed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 18: COUPONS (Dynamic Promo Codes & Usage Limits)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `coupons` (
+    `coupon_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `code` VARCHAR(50) NOT NULL UNIQUE,
+    `title` VARCHAR(120) NOT NULL,
+    `description` VARCHAR(255) NOT NULL,
+    `discount_type` ENUM('percentage', 'flat') NOT NULL DEFAULT 'percentage',
+    `discount_value` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `max_discount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `min_order` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `valid_from` DATETIME NULL DEFAULT NULL,
+    `valid_until` DATETIME NULL DEFAULT NULL,
+    `usage_limit` INT NOT NULL DEFAULT 0,
+    `per_user_limit` INT NOT NULL DEFAULT 0,
+    `first_order_only` TINYINT(1) NOT NULL DEFAULT 0,
+    `used_count` INT NOT NULL DEFAULT 0,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 19: COUPON_REDEMPTIONS (Per-User Promo Tracking)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `coupon_redemptions` (
+    `redemption_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `coupon_id` INT NOT NULL,
+    `user_id` INT NOT NULL,
+    `order_id` INT NOT NULL,
+    `discount_applied` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `redeemed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_coupon_user` (`coupon_id`, `user_id`),
+    CONSTRAINT `fk_redemption_coupon` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`coupon_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_redemption_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_redemption_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 20: SCHEDULED_SLOT_CAPS (FCFS Time-Slot Capacity Throttling)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `scheduled_slot_caps` (
+    `slot_key` VARCHAR(120) PRIMARY KEY,
+    `slot_date` DATE NOT NULL,
+    `slot_label` VARCHAR(100) NOT NULL,
+    `max_capacity` INT NOT NULL DEFAULT 5,
+    `booked_count` INT NOT NULL DEFAULT 0,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_slot_date` (`slot_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 21: CART_ITEMS (Server-Side Persistent Customer Cart)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `cart_items` (
+    `cart_item_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL,
+    `item_id` INT NOT NULL,
+    `cart_key` VARCHAR(120) NOT NULL,
+    `quantity` INT NOT NULL DEFAULT 1,
+    `customizations_json` TEXT NULL,
+    `customization_text` VARCHAR(500) NULL,
+    `unit_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_user_cart_key` (`user_id`, `cart_key`),
+    CONSTRAINT `fk_cart_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_cart_item` FOREIGN KEY (`item_id`) REFERENCES `menu_items` (`item_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 22: USER_FAVORITES (Customer Saved / Bookmarked Dishes)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `user_favorites` (
+    `favorite_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL,
+    `item_id` INT NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_user_favorite` (`user_id`, `item_id`),
+    CONSTRAINT `fk_fav_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_fav_item` FOREIGN KEY (`item_id`) REFERENCES `menu_items` (`item_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 23: LOYALTY_TRANSACTIONS (Customer Loyalty Points Audit Ledger)
+-- ----------------------------------------------------------------------------
+CREATE TABLE `loyalty_transactions` (
+    `loyalty_txn_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL,
+    `order_id` INT NULL,
+    `txn_type` ENUM('EARNED', 'REDEEMED', 'REFUND_BONUS', 'ADMIN_ADJUST') NOT NULL,
+    `points` INT NOT NULL,
+    `balance_after` INT NOT NULL,
+    `description` VARCHAR(255) NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_loyalty_user` (`user_id`),
+    CONSTRAINT `fk_loyalty_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_loyalty_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -571,24 +714,24 @@ DELIMITER ;
 
 -- Users: Passwords are encrypted (Default password for all demo accounts: 'password123')
 -- Note: seed.php dynamically re-hashes using password_hash(..., PASSWORD_DEFAULT)
-INSERT INTO `users` (`user_id`, `role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `is_active`) VALUES
-(1, 1, 'Pooja (Admin)', 'admin@zippy.com', '+91 99001 12233', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(2, 2, 'Athul (Customer)', 'athul@example.com', '+91 98860 12345', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(3, 2, 'Amal (Customer)', 'amal@example.com', '+91 98450 67890', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(4, 2, 'Abhijith (Customer)', 'abhijith@example.com', '+91 98450 99887', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(5, 3, 'Chef Sajeev (Head Cook)', 'chef@zippy.com', '+91 97410 54321', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(6, 4, 'Shaji (Rider)', 'shaji@zippy.com', '+91 96320 98765', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(7, 4, 'Kichu (Rider)', 'kichu@zippy.com', '+91 96320 11223', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1),
-(8, 4, 'Abhi (Rider)', 'abhi@zippy.com', '+91 96320 33445', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 1);
+INSERT INTO `users` (`user_id`, `role_id`, `full_name`, `email`, `phone_number`, `password_hash`, `loyalty_points`, `dietary_preferences`, `is_active`) VALUES
+(1, 1, 'Pooja (Admin)', 'admin@zippy.com', '+91 99001 12233', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 0, NULL, 1),
+(2, 2, 'Athul (Customer)', 'athul@example.com', '+91 98860 12345', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 150, 'high_protein', 1),
+(3, 2, 'Amal (Customer)', 'amal@example.com', '+91 98450 67890', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 100, 'veg_only', 1),
+(4, 2, 'Abhijith (Customer)', 'abhijith@example.com', '+91 98450 99887', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 80, NULL, 1),
+(5, 3, 'Chef Sajeev (Head Cook)', 'chef@zippy.com', '+91 97410 54321', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 0, NULL, 1),
+(6, 4, 'Shaji (Rider)', 'shaji@zippy.com', '+91 96320 98765', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 0, NULL, 1),
+(7, 4, 'Kichu (Rider)', 'kichu@zippy.com', '+91 96320 11223', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 0, NULL, 1),
+(8, 4, 'Abhi (Rider)', 'abhi@zippy.com', '+91 96320 33445', '$2y$10$YvdGdnS12tL8YI0FqMNnPec4KrwRhCzcpYprGqqdUTUVsW1xp7//C', 0, NULL, 1);
 
--- Customer Addresses
-INSERT INTO `user_addresses` (`address_id`, `user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `is_default`) VALUES
-(1, 2, 'HOME', 'Flat 402, Green Glen Layout, Bellandur', 'Near Sobha Carnation', '560103', 1),
-(2, 2, 'WORK', 'Prestige Tech Park, Outer Ring Road, Kadubeesanahalli', 'Opp. JP Morgan', '560087', 0),
-(3, 3, 'HOME', 'House No 12, 100 Feet Road, Indiranagar', 'Near Metro Pillar 84', '560038', 1),
-(4, 3, 'WORK', 'Embassy GolfLinks Business Park, Domlur', 'Intermediate Ring Road', '560071', 0),
-(5, 4, 'HOME', 'Villa 45, Palm Meadows, Whitefield', 'Near Forum Mall', '560066', 1),
-(6, 4, 'WORK', 'RMZ Ecoworld, Campus 3, Bellandur', 'Outer Ring Road', '560103', 0);
+-- Customer Addresses (Dummy Indian Coordinates - Bengaluru Neighborhoods)
+INSERT INTO `user_addresses` (`address_id`, `user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `latitude`, `longitude`, `distance_km`, `is_default`) VALUES
+(1, 2, 'HOME', 'Flat 402, Green Glen Layout, Bellandur', 'Near Sobha Carnation', '560103', 12.92790000, 77.67620000, 6.80, 1),
+(2, 2, 'WORK', 'Prestige Tech Park, Outer Ring Road, Kadubeesanahalli', 'Opp. JP Morgan', '560087', 12.93690000, 77.69140000, 7.15, 0),
+(3, 3, 'HOME', 'House No 12, 100 Feet Road, Indiranagar', 'Near Metro Pillar 84', '560038', 12.97180000, 77.64120000, 0.74, 1),
+(4, 3, 'WORK', 'Embassy GolfLinks Business Park, Domlur', 'Intermediate Ring Road', '560071', 12.96100000, 77.63870000, 1.95, 0),
+(5, 4, 'HOME', 'Villa 45, Palm Meadows, Whitefield', 'Near Forum Mall', '560066', 12.96980000, 77.74990000, 11.86, 1),
+(6, 4, 'WORK', 'RMZ Ecoworld, Campus 3, Bellandur', 'Outer Ring Road', '560103', 12.92550000, 77.68100000, 7.31, 0);
 
 -- Categories
 INSERT INTO `categories` (`category_id`, `category_name`, `category_description`, `category_slug`, `image_url`, `display_order`, `is_active`) VALUES
@@ -602,32 +745,32 @@ INSERT INTO `categories` (`category_id`, `category_name`, `category_description`
 (8, 'Beverages & Shakes', 'Refreshing mango lassi, cold brew, fresh lime soda, and thick shakes', 'beverages', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=240&q=80', 8, 1);
 
 -- Menu Items
-INSERT INTO `menu_items` (`item_id`, `category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `image_url`) VALUES
-(1, 1, 'Meghana Special Chicken Biryani', 'Hyderabadi style slow-cooked spicy chicken layered with fragrant basmati rice, served with mirchi ka salan and onion raita.', 319.00, 45, 1, 0, 0, 'party,spicy', 25, 'Main Kitchen', 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=600&q=80'),
-(2, 1, 'Paneer Tikka Dum Biryani', 'Chargrilled marinated cottage cheese cubes cooked in saffron infused dum rice with mint and brown onions.', 279.00, 30, 1, 1, 0, 'party,comfort', 20, 'Main Kitchen', 'https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80'),
-(3, 1, 'Mutton Dum Biryani (Lucknowi)', 'Tender prime mutton pieces marinated overnight in rich spices and sealed in handi.', 419.00, 20, 1, 0, 0, 'party,comfort', 30, 'Main Kitchen', 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=600&q=80'),
-(4, 2, 'Butter Chicken Delhi Style', 'Tandoori boneless chicken simmered in silky tomato gravy infused with fresh cream and kasoori methi.', 299.00, 35, 1, 0, 0, 'comfort', 20, 'Main Kitchen', 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=600&q=80'),
-(5, 2, 'Paneer Butter Masala', 'Fresh malai paneer simmered in a mildly spiced, rich buttery gravy.', 249.00, 40, 1, 1, 0, 'comfort', 15, 'Main Kitchen', 'https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80'),
-(6, 2, 'Dal Makhani Slow Handi', 'Black lentils slow cooked overnight on charcoal with butter and cream.', 199.00, 50, 1, 1, 0, 'comfort', 15, 'Main Kitchen', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80'),
-(7, 2, 'Garlic Butter Naan (2 Pcs)', 'Clay oven tandoor bread garnished with chopped garlic and butter glaze.', 89.00, 80, 1, 1, 0, 'comfort,quick_bite', 10, 'Tandoor Station', 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80'),
-(8, 3, 'Mysore Masala Dosa', 'Golden crisp fermented crepe layered with spicy red chili-garlic chutney and aloo bhaji.', 139.00, 40, 1, 1, 0, 'quick_bite,spicy', 12, 'South Station', 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80'),
-(9, 3, 'Steamed Ghee Podi Idli (4 Pcs)', 'Mini soft rice cakes tossed in aromatic gunpowder spices and pure melted ghee.', 119.00, 35, 1, 1, 0, 'quick_bite,comfort', 10, 'South Station', 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=600&q=80'),
-(10, 5, 'Double Egg Chicken Kathi Roll', 'Flaky paratha loaded with spiced juicy chicken chunks, beaten eggs, onions, and tangy mint mayo.', 179.00, 30, 1, 0, 0, 'quick_bite,spicy', 15, 'Roll Station', 'https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=600&q=80'),
-(11, 5, 'Crispy Paneer Tikka Roll', 'Smoked cottage cheese cubes with bell peppers wrapped in rumali roti.', 159.00, 25, 1, 1, 0, 'quick_bite', 15, 'Roll Station', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80'),
-(12, 6, 'Lush Forest Gourmet Burger', 'Double crispy patty, aged cheddar slice, caramelised onions and mint-herb mayo on brioche.', 229.00, 25, 1, 1, 0, 'party,quick_bite', 15, 'Burger Station', 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80'),
-(13, 6, 'Crispy Fried Chicken Burger', 'Buttermilk spiced chicken breast, pickled cucumber and chipotle mayo.', 249.00, 20, 1, 0, 0, 'party,quick_bite', 18, 'Burger Station', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80'),
-(14, 7, 'Gulab Jamun with Rabri (2 Pcs)', 'Warm khoya dumplings steeped in rose cardamom syrup served with chilled rabri.', 129.00, 50, 1, 1, 0, 'sweet,comfort', 8, 'Dessert Station', 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=600&q=80'),
-(15, 7, 'Royal Kesar Rasmalai (2 Pcs)', 'Delicate cottage cheese discs soaked in saffron milk and pistachio flakes.', 139.00, 40, 1, 1, 0, 'sweet', 8, 'Dessert Station', 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80'),
-(16, 8, 'Fresh Alphonso Mango Lassi', 'Thick creamy yogurt blended with real Alphonso mango pulp and cardamom.', 99.00, 60, 1, 1, 0, 'sweet,comfort', 5, 'Beverage Bar', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80'),
-(17, 8, 'Mint Lime Cooler Soda', 'Crushed fresh garden mint, lime juice, black salt, and sparkling soda.', 69.00, 70, 1, 1, 0, 'quick_bite', 5, 'Beverage Bar', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80'),
-(18, 4, 'Mediterranean Quinoa & Avocado Bowl', 'Wholesome tricolor organic quinoa, hass avocado, cherry tomatoes, cucumbers, roasted chickpeas, feta cheese, and citrus lemon-herb vinaigrette.', 249.00, 35, 1, 1, 1, 'healthy', 15, 'Salad & Cold Bar', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80'),
-(19, 4, 'Grilled Herb Chicken & Broccoli Bowl', 'Lean rosemary chargrilled chicken breast paired with steamed broccoli florets, brown basmati rice, edamame, and cold-pressed olive-herb dressing.', 299.00, 25, 1, 0, 1, 'healthy', 18, 'Grill Station', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'),
-(20, 4, 'Sprouted Moong & Paneer Super-Salad', 'Organic sprouted green moong, lightly roasted malai paneer cubes, pomegranate pearls, baby spinach, roasted pumpkin seeds, and tangy mint-amchur dressing.', 189.00, 40, 1, 1, 1, 'healthy', 12, 'Salad & Cold Bar', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80'),
-(21, 4, 'Cold-Pressed Green Detox Glow Juice', '100% pure raw cold-pressed celery, cucumber, baby spinach, green apple, ginger, and Meyer lemon. Zero added sugar or preservatives.', 129.00, 50, 1, 1, 1, 'healthy', 5, 'Beverage Bar', 'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80'),
-(22, 4, 'Roasted Sweet Potato & Hummus Power Bowl', 'Smoked paprika sweet potato chunks, house-made garlic hummus, baby arugula, kalamata olives, toasted almonds, and tahini drizzle.', 219.00, 30, 1, 1, 1, 'healthy', 15, 'Salad & Cold Bar', 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?auto=format&fit=crop&w=600&q=80'),
-(23, 6, 'Peri Peri Cheesy Fries', 'Golden crispy potato fries tossed in fiery African bird eye chili seasoning, layered with warm melted cheddar cheese sauce.', 149.00, 45, 1, 1, 0, 'quick_bite,spicy', 10, 'Fryer & Snacks', 'https://images.unsplash.com/photo-1576107232684-1279f3908594?auto=format&fit=crop&w=600&q=80'),
-(24, 3, 'Classic Ghee Roast Dosa', 'Crispy wafer-thin golden crepe roasted with pure aromatic desi ghee, served with spiced potato masala, vegetable sambar and fresh coconut chutney.', 159.00, 35, 1, 1, 0, 'comfort,quick_bite', 12, 'South Station', 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80'),
-(25, 8, 'Cold Brew Hazelnut Frappe', 'Slow-steeped 16-hour arabica cold brew blended with hazelnut praline syrup, creamy whole milk, and crushed ice.', 169.00, 50, 1, 1, 0, 'sweet,quick_bite', 6, 'Beverage Bar', 'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=600&q=80');
+INSERT INTO `menu_items` (`item_id`, `category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `calories_kcal`, `protein_g`, `carbs_g`, `fat_g`, `allergens`, `spice_level`, `image_url`) VALUES
+(1, 1, 'Meghana Special Chicken Biryani', 'Hyderabadi style slow-cooked spicy chicken layered with fragrant basmati rice, served with mirchi ka salan and onion raita.', 319.00, 45, 1, 0, 0, 'party,spicy', 25, 'Main Kitchen', 680, 36.0, 74.0, 24.0, 'dairy', 'SPICY', 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=600&q=80'),
+(2, 1, 'Paneer Tikka Dum Biryani', 'Chargrilled marinated cottage cheese cubes cooked in saffron infused dum rice with mint and brown onions.', 279.00, 30, 1, 1, 0, 'party,comfort', 20, 'Main Kitchen', 610, 24.0, 70.0, 23.0, 'dairy,nuts', 'MEDIUM', 'https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80'),
+(3, 1, 'Mutton Dum Biryani (Lucknowi)', 'Tender prime mutton pieces marinated overnight in rich spices and sealed in handi.', 419.00, 20, 1, 0, 0, 'party,comfort', 30, 'Main Kitchen', 740, 38.0, 72.0, 30.0, 'dairy', 'MEDIUM', 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=600&q=80'),
+(4, 2, 'Butter Chicken Delhi Style', 'Tandoori boneless chicken simmered in silky tomato gravy infused with fresh cream and kasoori methi.', 299.00, 35, 1, 0, 0, 'comfort', 20, 'Main Kitchen', 560, 34.0, 18.0, 36.0, 'dairy,nuts', 'MILD', 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=600&q=80'),
+(5, 2, 'Paneer Butter Masala', 'Fresh malai paneer simmered in a mildly spiced, rich buttery gravy.', 249.00, 40, 1, 1, 0, 'comfort', 15, 'Main Kitchen', 520, 20.0, 22.0, 34.0, 'dairy,nuts', 'MILD', 'https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80'),
+(6, 2, 'Dal Makhani Slow Handi', 'Black lentils slow cooked overnight on charcoal with butter and cream.', 199.00, 50, 1, 1, 0, 'comfort', 15, 'Main Kitchen', 440, 18.0, 48.0, 18.0, 'dairy', 'MILD', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80'),
+(7, 2, 'Garlic Butter Naan (2 Pcs)', 'Clay oven tandoor bread garnished with chopped garlic and butter glaze.', 89.00, 80, 1, 1, 0, 'comfort,quick_bite', 10, 'Tandoor Station', 310, 8.0, 52.0, 8.0, 'gluten,dairy', 'MILD', 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=600&q=80'),
+(8, 3, 'Mysore Masala Dosa', 'Golden crisp fermented crepe layered with spicy red chili-garlic chutney and aloo bhaji.', 139.00, 40, 1, 1, 0, 'quick_bite,spicy', 12, 'South Station', 380, 9.0, 62.0, 11.0, NULL, 'SPICY', 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80'),
+(9, 3, 'Steamed Ghee Podi Idli (4 Pcs)', 'Mini soft rice cakes tossed in aromatic gunpowder spices and pure melted ghee.', 119.00, 35, 1, 1, 0, 'quick_bite,comfort', 10, 'South Station', 290, 8.5, 48.0, 7.0, 'dairy', 'MEDIUM', 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=600&q=80'),
+(10, 5, 'Double Egg Chicken Kathi Roll', 'Flaky paratha loaded with spiced juicy chicken chunks, beaten eggs, onions, and tangy mint mayo.', 179.00, 30, 1, 0, 0, 'quick_bite,spicy', 15, 'Roll Station', 540, 29.0, 50.0, 22.0, 'gluten,egg,dairy', 'SPICY', 'https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=600&q=80'),
+(11, 5, 'Crispy Paneer Tikka Roll', 'Smoked cottage cheese cubes with bell peppers wrapped in rumali roti.', 159.00, 25, 1, 1, 0, 'quick_bite', 15, 'Roll Station', 460, 19.0, 48.0, 19.0, 'gluten,dairy', 'MEDIUM', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80'),
+(12, 6, 'Lush Forest Gourmet Burger', 'Double crispy patty, aged cheddar slice, caramelised onions and mint-herb mayo on brioche.', 229.00, 25, 1, 1, 0, 'party,quick_bite', 15, 'Burger Station', 620, 21.0, 64.0, 28.0, 'gluten,dairy,soy', 'MEDIUM', 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=80'),
+(13, 6, 'Crispy Fried Chicken Burger', 'Buttermilk spiced chicken breast, pickled cucumber and chipotle mayo.', 249.00, 20, 1, 0, 0, 'party,quick_bite', 18, 'Burger Station', 670, 32.0, 58.0, 31.0, 'gluten,dairy,egg', 'SPICY', 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=600&q=80'),
+(14, 7, 'Gulab Jamun with Rabri (2 Pcs)', 'Warm khoya dumplings steeped in rose cardamom syrup served with chilled rabri.', 129.00, 50, 1, 1, 0, 'sweet,comfort', 8, 'Dessert Station', 390, 7.0, 54.0, 16.0, 'dairy,gluten,nuts', 'MILD', 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=600&q=80'),
+(15, 7, 'Royal Kesar Rasmalai (2 Pcs)', 'Delicate cottage cheese discs soaked in saffron milk and pistachio flakes.', 139.00, 40, 1, 1, 0, 'sweet', 8, 'Dessert Station', 340, 11.0, 42.0, 14.0, 'dairy,nuts', 'MILD', 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80'),
+(16, 8, 'Fresh Alphonso Mango Lassi', 'Thick creamy yogurt blended with real Alphonso mango pulp and cardamom.', 99.00, 60, 1, 1, 0, 'sweet,comfort', 5, 'Beverage Bar', 240, 6.0, 38.0, 6.5, 'dairy', 'MILD', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80'),
+(17, 8, 'Mint Lime Cooler Soda', 'Crushed fresh garden mint, lime juice, black salt, and sparkling soda.', 69.00, 70, 1, 1, 0, 'quick_bite', 5, 'Beverage Bar', 85, 0.5, 21.0, 0.0, NULL, 'MILD', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80'),
+(18, 4, 'Mediterranean Quinoa & Avocado Bowl', 'Wholesome tricolor organic quinoa, hass avocado, cherry tomatoes, cucumbers, roasted chickpeas, feta cheese, and citrus lemon-herb vinaigrette.', 249.00, 35, 1, 1, 1, 'healthy', 15, 'Salad & Cold Bar', 390, 16.0, 44.0, 17.0, 'dairy', 'MILD', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80'),
+(19, 4, 'Grilled Herb Chicken & Broccoli Bowl', 'Lean rosemary chargrilled chicken breast paired with steamed broccoli florets, brown basmati rice, edamame, and cold-pressed olive-herb dressing.', 299.00, 25, 1, 0, 1, 'healthy', 18, 'Grill Station', 430, 41.0, 36.0, 12.0, 'soy', 'MILD', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'),
+(20, 4, 'Sprouted Moong & Paneer Super-Salad', 'Organic sprouted green moong, lightly roasted malai paneer cubes, pomegranate pearls, baby spinach, roasted pumpkin seeds, and tangy mint-amchur dressing.', 189.00, 40, 1, 1, 1, 'healthy', 12, 'Salad & Cold Bar', 320, 22.0, 28.0, 12.0, 'dairy', 'MILD', 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80'),
+(21, 4, 'Cold-Pressed Green Detox Glow Juice', '100% pure raw cold-pressed celery, cucumber, baby spinach, green apple, ginger, and Meyer lemon. Zero added sugar or preservatives.', 129.00, 50, 1, 1, 1, 'healthy', 5, 'Beverage Bar', 95, 2.0, 22.0, 0.5, NULL, 'MILD', 'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80'),
+(22, 4, 'Roasted Sweet Potato & Hummus Power Bowl', 'Smoked paprika sweet potato chunks, house-made garlic hummus, baby arugula, kalamata olives, toasted almonds, and tahini drizzle.', 219.00, 30, 1, 1, 1, 'healthy', 15, 'Salad & Cold Bar', 410, 14.0, 52.0, 16.0, 'nuts', 'MILD', 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?auto=format&fit=crop&w=600&q=80'),
+(23, 6, 'Peri Peri Cheesy Fries', 'Golden crispy potato fries tossed in fiery African bird eye chili seasoning, layered with warm melted cheddar cheese sauce.', 149.00, 45, 1, 1, 0, 'quick_bite,spicy', 10, 'Fryer & Snacks', 450, 8.0, 54.0, 22.0, 'dairy', 'SPICY', 'https://images.unsplash.com/photo-1576107232684-1279f3908594?auto=format&fit=crop&w=600&q=80'),
+(24, 3, 'Classic Ghee Roast Dosa', 'Crispy wafer-thin golden crepe roasted with pure aromatic desi ghee, served with spiced potato masala, vegetable sambar and fresh coconut chutney.', 159.00, 35, 1, 1, 0, 'comfort,quick_bite', 12, 'South Station', 410, 9.5, 58.0, 15.0, 'dairy', 'MEDIUM', 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=600&q=80'),
+(25, 8, 'Cold Brew Hazelnut Frappe', 'Slow-steeped 16-hour arabica cold brew blended with hazelnut praline syrup, creamy whole milk, and crushed ice.', 169.00, 50, 1, 1, 0, 'sweet,quick_bite', 6, 'Beverage Bar', 260, 5.5, 36.0, 9.5, 'dairy,nuts', 'MILD', 'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=600&q=80');
 
 
 -- Dish Customization Groups (50 Groups across 25 Dishes)
@@ -1033,5 +1176,26 @@ INSERT INTO `faqs` (`faq_id`, `question`, `answer`, `category`, `display_order`,
 (4, 'Are GST charges included in the final bill?', 'Yes, 5% GST is split equally into 2.5% CGST and 2.5% SGST under SAC code 996331. An official printable GST Tax Invoice is generated for every completed transaction.', 'Billing & Payments', 4, 1),
 (5, 'What payment modes are supported and are they secure?', 'We support UPI (GPay, PhonePe, Paytm), Credit/Debit Cards, Net Banking, and Cash on Delivery (COD). Digital transactions are secured via Razorpay sandbox payment tokens and encrypted session verification.', 'Billing & Payments', 5, 1),
 (6, 'How are food hygiene and temperature maintained during transit?', 'All meals are prepared fresh upon order confirmation and packaged in thermal spill-proof food-grade containers. Our riders use insulated carrier bags to ensure meals arrive piping hot.', 'General', 6, 1);
+
+-- Dynamic Coupons
+INSERT INTO `coupons` (`coupon_id`, `code`, `title`, `description`, `discount_type`, `discount_value`, `max_discount`, `min_order`, `valid_from`, `valid_until`, `usage_limit`, `per_user_limit`, `first_order_only`, `used_count`, `is_active`) VALUES
+(1, 'LUSHFOREST', 'Lush Forest Special', '20% OFF up to ₹100 on orders above ₹299 (Figma Lush Special)', 'percentage', 20.00, 100.00, 299.00, NULL, DATE_ADD(NOW(), INTERVAL 365 DAY), 0, 0, 0, 1, 1),
+(2, 'ZIPPY50', 'Zippy Mega Feast', '50% OFF up to ₹120 on your order above ₹399', 'percentage', 50.00, 120.00, 399.00, NULL, DATE_ADD(NOW(), INTERVAL 365 DAY), 0, 0, 0, 2, 1),
+(3, 'WELCOME', 'Welcome Bonus', 'Flat ₹50 OFF for welcome customers on orders above ₹199', 'flat', 50.00, 50.00, 199.00, NULL, DATE_ADD(NOW(), INTERVAL 365 DAY), 0, 0, 0, 1, 1),
+(4, 'FIRSTBITE', 'First Order Treat', 'Flat ₹75 OFF on your very first Zippy order above ₹249', 'flat', 75.00, 75.00, 249.00, NULL, DATE_ADD(NOW(), INTERVAL 365 DAY), 500, 1, 1, 0, 1);
+
+-- Loyalty Transactions Seed
+INSERT INTO `loyalty_transactions` (`loyalty_txn_id`, `user_id`, `order_id`, `txn_type`, `points`, `balance_after`, `description`, `created_at`) VALUES
+(1, 2, 1010, 'EARNED', 25, 150, 'Points earned for delivered order #ZIP-1010 (plus welcome tier bonus)', DATE_SUB(NOW(), INTERVAL 1 DAY)),
+(2, 3, 1008, 'EARNED', 31, 100, 'Points earned for delivered order #ZIP-1008 (plus welcome tier bonus)', DATE_SUB(NOW(), INTERVAL 2 DAY)),
+(3, 4, 1009, 'EARNED', 24, 80, 'Points earned for delivered order #ZIP-1009 (plus welcome tier bonus)', DATE_SUB(NOW(), INTERVAL 1 DAY));
+
+-- Sample Support Tickets & Replies
+INSERT INTO `support_tickets` (`ticket_id`, `user_id`, `customer_name`, `customer_email`, `subject`, `message`, `ticket_status`, `assigned_admin_id`, `created_at`) VALUES
+(1, 2, 'Athul (Customer)', 'athul@example.com', 'invoice — Order #ZIP-1010', 'Could you confirm if my GSTIN appears on the tax invoice PDF?', 'RESOLVED', 1, DATE_SUB(NOW(), INTERVAL 1 DAY)),
+(2, 3, 'Amal (Customer)', 'amal@example.com', 'order_delay — Order #ZIP-1002', 'Please add extra mint raita if possible before kitchen starts cooking.', 'OPEN', 1, DATE_SUB(NOW(), INTERVAL 6 MINUTE));
+
+INSERT INTO `support_ticket_replies` (`reply_id`, `ticket_id`, `user_id`, `sender_role`, `sender_name`, `reply_message`, `created_at`) VALUES
+(1, 1, 1, 'ADMIN', 'Pooja (Admin)', 'Hi Athul, yes — our GST Tax Invoice (SAC 996331) includes Zippy GSTIN 29AABCU9603R1ZM and full CGST/SGST breakdown under My Orders -> Invoice.', DATE_SUB(NOW(), INTERVAL 20 HOUR));
 
 SET FOREIGN_KEY_CHECKS = 1;

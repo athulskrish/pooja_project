@@ -11,11 +11,14 @@ $activePage = 'restaurant';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/../includes/AprioriEngine.php';
 
-$catalogData = CatalogService::getRestaurantCatalog();
+$activeUser = getCurrentUser();
+$catalogData = CatalogService::getRestaurantCatalog(($activeUser && !empty($activeUser['id'])) ? (int)$activeUser['id'] : null);
 $aprioriRecs = $catalogData['aprioriRecs'];
 $categories = $catalogData['categories'];
 $itemsByCategory = $catalogData['itemsByCategory'];
 $customSummaryMap = $catalogData['customSummaryMap'];
+$favoriteIds = $catalogData['favoriteIds'] ?? [];
+$userDietaryPrefs = getUserDietaryPreferences(($activeUser && !empty($activeUser['id'])) ? (int)$activeUser['id'] : null);
 ?>
 
 <main class="py-4">
@@ -97,6 +100,18 @@ $customSummaryMap = $catalogData['customSummaryMap'];
               <input class="form-check-input" type="checkbox" role="switch" id="healthyOnlySwitch" style="cursor: pointer;">
               <label class="form-check-label fw-bold small text-success mb-0" for="healthyOnlySwitch" style="cursor: pointer;">
                 <i class="fa-solid fa-leaf text-success me-1"></i>Healthy Only
+              </label>
+            </div>
+            <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="restaurantFavoritesOnlySwitch" style="cursor: pointer;">
+              <label class="form-check-label fw-bold small text-danger mb-0" for="restaurantFavoritesOnlySwitch" style="cursor: pointer;">
+                <i class="bi bi-heart-fill me-1"></i>Favorites
+              </label>
+            </div>
+            <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="restaurantAllergenFreeSwitch" style="cursor: pointer;">
+              <label class="form-check-label fw-bold small text-dark mb-0" for="restaurantAllergenFreeSwitch" style="cursor: pointer;">
+                <i class="bi bi-shield-check text-success me-1"></i>Allergen-Free
               </label>
             </div>
             <div class="d-flex align-items-center gap-1">
@@ -190,8 +205,10 @@ $customSummaryMap = $catalogData['customSummaryMap'];
                 <?php 
                   $isHealthyDish = (!empty($dish['is_healthy']) || ($cat['category_slug'] ?? '') === 'healthy' || stripos($cat['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
                   $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
+                  $isFav = in_array((int)$dish['item_id'], $favoriteIds, true);
+                  $dietMeta = evaluateDishDietaryConflicts($dish, $userDietaryPrefs);
                 ?>
-                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
+                <div class="d-flex justify-content-between align-items-start gap-3 pb-3 border-bottom dish-item-row" data-item-id="<?= (int)$dish['item_id'] ?>" data-favorite="<?= $isFav ? 'true' : 'false' ?>" data-allergens="<?= e(implode(',', $dietMeta['allergens'])) ?>" data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-is-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
                   
                   <!-- Dish Info -->
                   <div class="flex-grow-1">
@@ -245,14 +262,18 @@ $customSummaryMap = $catalogData['customSummaryMap'];
                         </span>
                       <?php endif; ?>
                     </div>
-                    <p class="text-muted small mb-0" style="max-width: 500px;">
+                    <p class="text-muted small mb-2" style="max-width: 500px;">
                       <?= e($dish['description']) ?>
                     </p>
+                    <?= renderDishDietaryMetadataHtml($dish, $userDietaryPrefs) ?>
                   </div>
 
                   <!-- Dish Image & ADD Control -->
                   <div class="position-relative text-center flex-shrink-0" style="width: 130px;">
                     <img src="<?= e(getDishImageUrl($dish['image_url'])) ?>" alt="<?= e($dish['item_name']) ?>" class="rounded-4 object-fit-cover shadow-sm w-100" style="height: 100px;">
+                    <div class="position-absolute top-0 end-0 m-1">
+                      <?= renderDishFavoriteButtonHtml((int)$dish['item_id'], $isFav) ?>
+                    </div>
                     
                     <div class="position-absolute bottom-0 start-50 translate-middle-x dish-qty-control-slot" data-dish-id="<?= (int)$dish['item_id'] ?>" data-dish-name="<?= e($dish['item_name']) ?>" data-dish-price="<?= (float)$dish['price'] ?>" data-dish-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" data-dish-img="<?= e(getDishImageUrl($dish['image_url'])) ?>" style="margin-bottom: -14px;">
                       <button 

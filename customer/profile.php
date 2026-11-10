@@ -21,6 +21,11 @@ $userRecord = $profileData['userRecord'];
 $orderStats = $profileData['orderStats'];
 $savedAddressesCount = $profileData['savedAddressesCount'];
 $previousMeal = $profileData['previousMeal'];
+$loyaltyPoints = (int)($profileData['loyaltyPoints'] ?? 0);
+$loyaltyHistory = $profileData['loyaltyHistory'] ?? [];
+$dietaryPreferences = $profileData['dietaryPreferences'] ?? [];
+$favoriteCount = (int)($profileData['favoriteCount'] ?? 0);
+$dietaryOptions = getDietaryPreferenceOptions();
 
 // Handle Profile Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_profile') {
@@ -37,6 +42,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             header("Location: " . CUSTOMER_URL . "/profile.php");
             exit;
         }
+    }
+}
+
+// Handle Dietary & Allergen Preferences Update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_dietary') {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
+    } else {
+        $prefList = isset($_POST['dietary_preferences']) && is_array($_POST['dietary_preferences'])
+            ? $_POST['dietary_preferences']
+            : [];
+        $res = AdminService::updateCustomerDietaryPreferences($userId, $prefList);
+        setFlash($res['flash_type'], $res['message']);
+        header("Location: " . CUSTOMER_URL . "/profile.php#dietary-preferences");
+        exit;
     }
 }
 
@@ -221,6 +241,103 @@ require_once __DIR__ . '/includes/header.php';
               </button>
             </div>
           </form>
+        </div>
+
+        <!-- Dietary & Allergen Profile Card -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mt-4" id="dietary-preferences">
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3 flex-wrap gap-2">
+            <div>
+              <h5 class="fw-bold text-dark mb-1"><i class="bi bi-shield-check text-success me-2"></i>Dietary & Allergen Profile</h5>
+              <p class="text-muted small mb-0">Menu cards automatically display tailored warnings if a dish conflicts with your preferences</p>
+            </div>
+            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1"><?= count($dietaryPreferences) ?> Active</span>
+          </div>
+
+          <form method="POST" action="<?= CUSTOMER_URL ?>/profile.php#dietary-preferences">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="update_dietary">
+
+            <div class="row g-2 mb-4">
+              <?php foreach ($dietaryOptions as $optKey => $optInfo): ?>
+                <?php $checked = in_array($optKey, $dietaryPreferences, true); ?>
+                <div class="col-md-6">
+                  <label class="d-flex align-items-center gap-2 p-2 rounded-3 border <?= $checked ? 'border-success bg-success-subtle bg-opacity-25' : 'bg-light' ?>" style="cursor:pointer;">
+                    <input class="form-check-input m-0" type="checkbox" name="dietary_preferences[]" value="<?= e($optKey) ?>" <?= $checked ? 'checked' : '' ?>>
+                    <i class="bi <?= e($optInfo['icon']) ?>"></i>
+                    <span class="small fw-semibold text-dark"><?= e($optInfo['label']) ?></span>
+                  </label>
+                </div>
+              <?php endforeach; ?>
+            </div>
+
+            <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+              <i class="bi bi-heart-pulse me-1"></i> Save Dietary Profile
+            </button>
+          </form>
+        </div>
+
+        <!-- Zippy Loyalty Points Balance & Ledger History -->
+        <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mt-4" id="loyalty-points">
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3 flex-wrap gap-2">
+            <div>
+              <h5 class="fw-bold text-dark mb-1"><i class="bi bi-stars text-warning me-2"></i>Zippy Loyalty Points</h5>
+              <p class="text-muted small mb-0">Earn 1 point per ₹20 spent on Delivered orders &bull; Redeem 1 pt = ₹1 (up to 50% off food at checkout)</p>
+            </div>
+            <div class="text-end">
+              <div class="fs-4 fw-bold text-forest"><?= $loyaltyPoints ?> pts</div>
+              <div class="small text-muted">Value: ₹<?= number_format((float)$loyaltyPoints * LOYALTY_POINT_RUPEE_VALUE, 2) ?> &bull; <?= $favoriteCount ?> Saved Favorites</div>
+            </div>
+          </div>
+
+          <?php if (empty($loyaltyHistory)): ?>
+            <div class="text-center text-muted py-4 small">
+              <i class="bi bi-coin fs-3 d-block mb-2 opacity-50"></i>
+              No loyalty transactions yet. Place and complete an order to earn points!
+            </div>
+          <?php else: ?>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="small text-muted text-uppercase">
+                  <tr>
+                    <th>Type</th>
+                    <th>Activity</th>
+                    <th class="text-end">Points</th>
+                    <th class="text-end">Balance</th>
+                    <th class="text-end">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($loyaltyHistory as $lTxn): ?>
+                    <?php
+                      $tType = strtoupper((string)($lTxn['txn_type'] ?? 'EARNED'));
+                      $pts = (int)($lTxn['points'] ?? 0);
+                      $isPositive = $pts >= 0;
+                      $badgeCls = match ($tType) {
+                        'EARNED' => 'bg-success-subtle text-success border-success-subtle',
+                        'REDEEMED' => 'bg-primary-subtle text-primary border-primary-subtle',
+                        'REFUND_BONUS' => 'bg-info-subtle text-info border-info-subtle',
+                        default => 'bg-secondary-subtle text-secondary border-secondary-subtle',
+                      };
+                    ?>
+                    <tr>
+                      <td><span class="badge border <?= $badgeCls ?>" style="font-size:0.68rem;"><?= e($tType) ?></span></td>
+                      <td class="small">
+                        <?= e($lTxn['description'] ?? '') ?>
+                        <?php if (!empty($lTxn['order_id'])): ?>
+                          <span class="text-muted font-monospace ms-1">#ZIP-<?= (int)$lTxn['order_id'] ?></span>
+                        <?php endif; ?>
+                      </td>
+                      <td class="text-end fw-bold font-monospace <?= $isPositive ? 'text-success' : 'text-danger' ?>">
+                        <?= $isPositive ? ('+' . $pts) : (string)$pts ?>
+                      </td>
+                      <td class="text-end small font-monospace text-dark"><?= (int)($lTxn['balance_after'] ?? 0) ?></td>
+                      <td class="text-end small text-muted"><?= e(date('M j, g:i A', (int)(strtotime((string)$lTxn['created_at']) ?: time()))) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
         </div>
       </div>
 

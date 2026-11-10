@@ -614,6 +614,12 @@ $hasActiveFilters = $dishesData['hasActiveFilters'];
                           data-healthy="<?= (int)($dish['is_healthy'] ?? 0) ?>"
                           data-mood="<?= e($dish['mood'] ?? 'comfort') ?>"
                           data-available="<?= (int)$dish['is_available'] ?>"
+                          data-calories="<?= (int)($dish['calories_kcal'] ?? 0) ?>"
+                          data-protein="<?= (float)($dish['protein_g'] ?? 0) ?>"
+                          data-carbs="<?= (float)($dish['carbs_g'] ?? 0) ?>"
+                          data-fat="<?= (float)($dish['fat_g'] ?? 0) ?>"
+                          data-spice="<?= e($dish['spice_level'] ?? 'MEDIUM') ?>"
+                          data-allergens="<?= e($dish['allergens'] ?? '') ?>"
                           data-image="<?= e($dish['image_url'] ?? '') ?>"
                           data-display-image="<?= e(getDishImageUrl($dish['image_url'])) ?>"
                           data-description="<?= e($dish['description'] ?? '') ?>">
@@ -659,6 +665,59 @@ $hasActiveFilters = $dishesData['hasActiveFilters'];
     </button>
   </div>
 </div>
+
+<?php
+$allergenOptionsList = getDishAllergenOptions();
+$renderNutritionFields = static function (string $prefix) use ($allergenOptionsList): void {
+?>
+  <div class="p-3 bg-light-subtle rounded-3 border mt-3">
+    <div class="small fw-bold text-dark mb-2">
+      <i class="bi bi-heart-pulse text-success me-1"></i>Nutrition Macros, Spice Level &amp; Allergens
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="<?= e($prefix) ?>Calories">Calories (kcal)</label>
+        <input type="number" min="0" name="calories_kcal" id="<?= e($prefix) ?>Calories" class="form-control form-control-sm rounded-3" placeholder="e.g. 420">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="<?= e($prefix) ?>Protein">Protein (g)</label>
+        <input type="number" step="0.1" min="0" name="protein_g" id="<?= e($prefix) ?>Protein" class="form-control form-control-sm rounded-3" placeholder="e.g. 24">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="<?= e($prefix) ?>Carbs">Carbs (g)</label>
+        <input type="number" step="0.1" min="0" name="carbs_g" id="<?= e($prefix) ?>Carbs" class="form-control form-control-sm rounded-3" placeholder="e.g. 48">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="<?= e($prefix) ?>Fat">Fat (g)</label>
+        <input type="number" step="0.1" min="0" name="fat_g" id="<?= e($prefix) ?>Fat" class="form-control form-control-sm rounded-3" placeholder="e.g. 14">
+      </div>
+    </div>
+    <div class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <label class="form-label small mb-1" for="<?= e($prefix) ?>Spice">Spice Level</label>
+        <select name="spice_level" id="<?= e($prefix) ?>Spice" class="form-select form-select-sm rounded-3">
+          <option value="MILD">Mild</option>
+          <option value="MEDIUM" selected>Medium</option>
+          <option value="SPICY">Spicy</option>
+          <option value="EXTRA_SPICY">Extra Spicy</option>
+        </select>
+      </div>
+      <div class="col-md-8">
+        <label class="form-label small mb-1 d-block">Contains Allergens</label>
+        <div class="d-flex flex-wrap gap-2">
+          <?php foreach ($allergenOptionsList as $algKey => $algLabel): ?>
+            <div class="form-check form-check-inline m-0 me-2">
+              <input class="form-check-input <?= e($prefix) ?>AllergenCheck" type="checkbox" name="allergens[]" value="<?= e($algKey) ?>" id="<?= e($prefix . 'Alg_' . $algKey) ?>">
+              <label class="form-check-label small" for="<?= e($prefix . 'Alg_' . $algKey) ?>"><?= e(ucfirst($algKey)) ?></label>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+  </div>
+<?php
+};
+?>
 
 <!-- Parameterized Edit Food / Dish Modal -->
 <div class="modal fade" id="editDishModal" tabindex="-1">
@@ -822,6 +881,8 @@ $hasActiveFilters = $dishesData['hasActiveFilters'];
               </div>
             </div>
           </div>
+
+          <?php $renderNutritionFields('editDish'); ?>
 
           <div class="p-3 bg-light rounded-3 d-flex align-items-center justify-content-between mt-3 border">
             <div>
@@ -1000,6 +1061,8 @@ $hasActiveFilters = $dishesData['hasActiveFilters'];
               </div>
             </div>
           </div>
+
+          <?php $renderNutritionFields('addDish'); ?>
         </div>
 
         <div class="modal-footer border-top">
@@ -1068,6 +1131,15 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editDishVeg').checked = (d.veg === '1');
       document.getElementById('editDishHealthy').checked = (d.healthy === '1');
       document.getElementById('editDishAvail').checked = (d.available === '1');
+      if (document.getElementById('editDishCalories')) document.getElementById('editDishCalories').value = d.calories && d.calories !== '0' ? d.calories : '';
+      if (document.getElementById('editDishProtein')) document.getElementById('editDishProtein').value = d.protein && d.protein !== '0' ? d.protein : '';
+      if (document.getElementById('editDishCarbs')) document.getElementById('editDishCarbs').value = d.carbs && d.carbs !== '0' ? d.carbs : '';
+      if (document.getElementById('editDishFat')) document.getElementById('editDishFat').value = d.fat && d.fat !== '0' ? d.fat : '';
+      if (document.getElementById('editDishSpice')) document.getElementById('editDishSpice').value = (d.spice || 'MEDIUM').toUpperCase();
+      const algList = (d.allergens || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      document.querySelectorAll('.editDishAllergenCheck').forEach(chk => {
+        chk.checked = algList.includes(chk.value.toLowerCase());
+      });
       if (document.getElementById('editDishMood')) {
         document.getElementById('editDishMood').value = d.mood ? d.mood.split(',')[0].trim() : 'comfort';
       }

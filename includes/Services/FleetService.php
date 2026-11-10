@@ -299,9 +299,11 @@ class FleetService
                     ':uid' => $riderId,
                 ]);
 
+                $awardedPoints = awardLoyaltyPointsForOrder($orderId);
+
                 autoAllocateReadyOrdersFcfs();
 
-                return ['ok' => true];
+                return ['ok' => true, 'points_awarded' => $awardedPoints];
             });
         } catch (Throwable $e) {
             error_log("Driver verify_otp failed for order {$orderId}: " . $e->getMessage());
@@ -316,11 +318,12 @@ class FleetService
         if (!empty($verifyResult['ok'])) {
             $earningsInfo = getRiderEarningsSummary($riderId, (string)($currentUser['name'] ?? ''));
             $tripPayoutText = formatInr($earningsInfo['trip_payout_rate']);
+            $ptsNote = !empty($verifyResult['points_awarded']) ? " Customer earned {$verifyResult['points_awarded']} loyalty points." : '';
 
             return [
                 'ok' => true,
                 'flash_type' => 'success',
-                'ajax_message' => "OTP verified! Order #ZIP-{$orderId} delivered successfully. {$tripPayoutText} credited to your fleet wallet.",
+                'ajax_message' => "OTP verified! Order #ZIP-{$orderId} delivered successfully. {$tripPayoutText} credited to your fleet wallet.{$ptsNote}",
                 'flash_message' => "Order #ZIP-{$orderId} successfully DELIVERED! {$tripPayoutText} payout credited.",
             ];
         }
@@ -639,6 +642,18 @@ class FleetService
             }
         }
 
+        $failedDispatches = dbFetchAll("
+            SELECT d.*, o.order_status, o.total_amount, u.full_name AS customer_name, u.phone_number AS customer_phone,
+                   a.address_line, a.pincode
+            FROM `delivery_dispatches` d
+            JOIN `orders` o ON d.order_id = o.order_id
+            JOIN `users` u ON o.user_id = u.user_id
+            LEFT JOIN `user_addresses` a ON o.address_id = a.address_id
+            WHERE d.delivery_status = 'FAILED'
+              AND o.order_status NOT IN ('DELIVERED', 'CANCELLED')
+            ORDER BY d.failed_at DESC
+        ");
+
         return [
             'deliveryFleet' => $deliveryFleet,
             'latestPayoutsByUser' => $latestPayoutsByUser,
@@ -650,6 +665,180 @@ class FleetService
             'activeTripsMap' => $activeTripsMap,
             'busyRidersCount' => $busyRidersCount,
             'availableRidersCount' => $availableRidersCount,
+            'failedDispatches' => $failedDispatches,
         ];
+    }
+
+    /**
+     * Report a Rider SOS / Delivery Failure on an assigned active delivery.
+     * Marks dispatch `FAILED`, releases rider from 1-Driver-1-Delivery lock, logs audit trail,
+     * and optionally returns breakdown orders to READY pool for FCFS re-allocation.
+     *
+     * @param array<string, mixed> $currentUser
+     * @return array{ok: bool, flash_type: string, message: string}
+     */
+    public static function reportDeliveryIssue(
+        int $orderId,
+        string $reasonCode,
+        string $notes,
+        array $currentUser
+    ): array
+    {
+        $riderId = (int)($currentUser['id'] ?? 0);
+        if ($orderId <= 0 || $riderId <= 0) {
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Invalid order or rider session.'];
+        }
+
+        $reasonMap = [
+            'unreachable' => 'Customer not answering phone (Attempt logged)',
+            'wrong_address' => 'Incorrect address / Gate security denied entry',
+            'breakdown' => 'Vehicle breakdown / Flat tire',
+            'spill' => 'Food container damaged / spilled in transit',
+        ];
+        $cleanCode = strtolower(trim($reasonCode));
+        $reasonLabel = $reasonMap[$cleanCode] ?? cleanInput($reasonCode !== '' ? $reasonCode : 'Delivery Exception');
+        $cleanNotes = cleanInput($notes);
+
+        try {
+            $res = dbTransactional(static function () use ($orderId, $riderId, $cleanCode, $reasonLabel, $cleanNotes, $currentUser): array {
+                $order = dbFetchOne("SELECT `order_id`, `order_status` FROM `orders` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                if (!$order) {
+                    return ['ok' => false, 'message' => "Order #ZIP-{$orderId} not found."];
+                }
+                if (in_array($order['order_status'], ['DELIVERED', 'CANCELLED'], true)) {
+                    return ['ok' => false, 'message' => "Order #ZIP-{$orderId} is already {$order['order_status']}."];
+                }
+
+                $dispatch = dbFetchOne("SELECT * FROM `delivery_dispatches` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                if (!$dispatch) {
+                    return ['ok' => false, 'message' => "No dispatch record found for #ZIP-{$orderId}."];
+                }
+
+                if (!isAdmin() && !isRiderAssignedToOrder($orderId, $riderId, (string)($currentUser['name'] ?? ''))) {
+                    return ['ok' => false, 'message' => "Forbidden: You are not assigned to Order #ZIP-{$orderId}."];
+                }
+
+                dbQuery("
+                    UPDATE `delivery_dispatches`
+                    SET `delivery_status` = 'FAILED',
+                        `failure_reason` = :reason,
+                        `issue_notes` = :notes,
+                        `failed_at` = NOW()
+                    WHERE `order_id` = :oid
+                ", [
+                    ':reason' => $reasonLabel,
+                    ':notes' => $cleanNotes,
+                    ':oid' => $orderId,
+                ]);
+
+                // If rider had a vehicle breakdown, pause rider on break, clear rider_id, return order to READY FCFS pool
+                $auditTarget = 'DELIVERY_FAILED (' . strtoupper($cleanCode) . ')';
+                if ($cleanCode === 'breakdown') {
+                    dbQuery("UPDATE `orders` SET `order_status` = 'READY', `ready_at` = COALESCE(`ready_at`, NOW()) WHERE `order_id` = :oid", [':oid' => $orderId]);
+                    dbQuery("
+                        UPDATE `delivery_dispatches`
+                        SET `rider_id` = NULL,
+                            `delivery_partner_name` = 'Zippy Express Rider',
+                            `delivery_partner_phone` = '+91 98765 43210',
+                            `delivery_status` = 'ASSIGNED'
+                        WHERE `order_id` = :oid
+                    ", [':oid' => $orderId]);
+                    dbQuery("UPDATE `staff_profiles` SET `duty_status` = 'ON_BREAK' WHERE `user_id` = :uid", [':uid' => $riderId]);
+                    $_SESSION['rider_on_duty'] = false;
+                    $auditTarget = 'READY (REQUEUED: BREAKDOWN)';
+                }
+
+                dbQuery("
+                    INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
+                    VALUES (:oid, :old, :new, :uid, NOW())
+                ", [
+                    ':oid' => $orderId,
+                    ':old' => $order['order_status'],
+                    ':new' => $auditTarget,
+                    ':uid' => $riderId,
+                ]);
+
+                if ($cleanCode === 'breakdown') {
+                    autoAllocateReadyOrdersFcfs();
+                }
+
+                return ['ok' => true, 'requeued' => ($cleanCode === 'breakdown')];
+            });
+
+            if (empty($res['ok'])) {
+                return ['ok' => false, 'flash_type' => 'danger', 'message' => (string)($res['message'] ?? 'Unable to report SOS.')];
+            }
+
+            $extraMsg = !empty($res['requeued'])
+                ? ' Order returned to READY FCFS dispatch pool for immediate pickup by another free rider.'
+                : ' Hub operations triage has been alerted and your active slot is released.';
+
+            return [
+                'ok' => true,
+                'flash_type' => 'warning',
+                'message' => "SOS recorded for #ZIP-{$orderId}: {$reasonLabel}.{$extraMsg}",
+            ];
+        } catch (Throwable $e) {
+            error_log("reportDeliveryIssue failed for order {$orderId}: " . $e->getMessage());
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Failed to transmit delivery SOS safely. Please try again.'];
+        }
+    }
+
+    /**
+     * Admin action: Re-queue a failed delivery dispatch back into READY FCFS pool.
+     *
+     * @return array{ok: bool, flash_type: string, message: string}
+     */
+    public static function requeueFailedDispatch(int $orderId, int $adminUserId): array
+    {
+        if ($orderId <= 0) {
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Invalid order ID.'];
+        }
+
+        try {
+            $ok = dbTransactional(static function () use ($orderId, $adminUserId): bool {
+                $order = dbFetchOne("SELECT `order_id`, `order_status` FROM `orders` WHERE `order_id` = :oid FOR UPDATE", [':oid' => $orderId]);
+                if (!$order || in_array($order['order_status'], ['DELIVERED', 'CANCELLED'], true)) {
+                    return false;
+                }
+
+                dbFetchOne("SELECT `dispatch_id` FROM `delivery_dispatches` WHERE `order_id` = :oid FOR UPDATE", [':oid' => $orderId]);
+                dbQuery("UPDATE `orders` SET `order_status` = 'READY', `ready_at` = COALESCE(`ready_at`, NOW()) WHERE `order_id` = :oid", [':oid' => $orderId]);
+                dbQuery("
+                    UPDATE `delivery_dispatches`
+                    SET `rider_id` = NULL,
+                        `delivery_partner_name` = 'Zippy Express Rider',
+                        `delivery_partner_phone` = '+91 98765 43210',
+                        `delivery_status` = 'ASSIGNED',
+                        `failure_reason` = NULL,
+                        `issue_notes` = NULL,
+                        `failed_at` = NULL
+                    WHERE `order_id` = :oid
+                ", [':oid' => $orderId]);
+
+                dbQuery("
+                    INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
+                    VALUES (:oid, :old, 'READY', :uid, NOW())
+                ", [
+                    ':oid' => $orderId,
+                    ':old' => $order['order_status'],
+                    ':uid' => $adminUserId > 0 ? $adminUserId : null,
+                ]);
+
+                autoAllocateReadyOrdersFcfs();
+                return true;
+            });
+
+            return [
+                'ok' => $ok,
+                'flash_type' => $ok ? 'success' : 'danger',
+                'message' => $ok
+                    ? "Order #ZIP-{$orderId} reset to READY and re-entered into FCFS dispatch queue."
+                    : "Unable to re-queue order #ZIP-{$orderId}.",
+            ];
+        } catch (Throwable $e) {
+            error_log("requeueFailedDispatch error for #{$orderId}: " . $e->getMessage());
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Failed to re-dispatch order safely.'];
+        }
     }
 }

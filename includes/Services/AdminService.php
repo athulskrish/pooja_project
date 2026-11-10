@@ -93,6 +93,15 @@ class AdminService
             "SELECT COUNT(*) FROM `orders` WHERE `order_status` IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY') AND TIMESTAMPDIFF(MINUTE, `placed_at`, NOW()) <= 25"
         ) ?: 0);
 
+        $openTicketsCount = 0;
+        $abandonedCartUsers = 0;
+        try {
+            $openTicketsCount = (int)(dbFetchVal("SELECT COUNT(*) FROM `support_tickets` WHERE `ticket_status` IN ('OPEN', 'IN_PROGRESS')") ?: 0);
+            $abandonedCartUsers = (int)(dbFetchVal("SELECT COUNT(DISTINCT `user_id`) FROM `cart_items`") ?: 0);
+        } catch (Throwable $e) {
+            // Optional tables on un-migrated instances
+        }
+
         return [
             'triageExceptions' => $triageExceptions,
             'lowStockCount' => $lowStockCount,
@@ -108,6 +117,8 @@ class AdminService
             'revenueToday' => $revenueToday,
             'stockRiskTrend' => $stockRiskTrend,
             'slaPerformance' => $slaPerformance,
+            'openTicketsCount' => $openTicketsCount,
+            'abandonedCartUsers' => $abandonedCartUsers,
         ];
     }
 
@@ -1084,6 +1095,8 @@ class AdminService
             'phone_number' => $currentUser['phone'] ?? '',
             'created_at' => '',
             'security_question' => '',
+            'loyalty_points' => 0,
+            'dietary_preferences' => '',
         ];
 
         $orderStats = dbFetchOne("
@@ -1097,11 +1110,32 @@ class AdminService
             [':id' => $userId]
         );
 
+        $loyaltyHistory = [];
+        $favoriteCount = 0;
+        try {
+            $loyaltyHistory = dbFetchAll("
+                SELECT * FROM `loyalty_transactions`
+                WHERE `user_id` = :uid
+                ORDER BY `created_at` DESC, `loyalty_txn_id` DESC
+                LIMIT 15
+            ", [':uid' => $userId]);
+            $favoriteCount = (int)(dbFetchVal("SELECT COUNT(*) FROM `user_favorites` WHERE `user_id` = :uid", [':uid' => $userId]) ?: 0);
+        } catch (Throwable $e) {
+            $loyaltyHistory = [];
+        }
+
+        $rawDiet = (string)($userRecord['dietary_preferences'] ?? '');
+        $dietaryPreferences = array_values(array_filter(array_map('trim', explode(',', $rawDiet))));
+
         return [
             'userRecord' => $userRecord,
             'orderStats' => $orderStats,
             'savedAddressesCount' => $savedAddressesCount,
             'previousMeal' => getCustomerPreviousMeal($userId),
+            'loyaltyPoints' => (int)($userRecord['loyalty_points'] ?? 0),
+            'loyaltyHistory' => $loyaltyHistory,
+            'dietaryPreferences' => $dietaryPreferences,
+            'favoriteCount' => $favoriteCount,
         ];
     }
 
@@ -1128,5 +1162,308 @@ class AdminService
         $_SESSION['user_phone'] = $phone;
 
         return ['ok' => true, 'flash_type' => 'success', 'message' => 'Profile information updated successfully.'];
+    }
+
+    /**
+     * Update a customer's saved dietary & allergen avoidance preferences.
+     *
+     * @param array<int, string> $preferences
+     * @return array{ok: bool, flash_type: string, message: string}
+     */
+    public static function updateCustomerDietaryPreferences(int $userId, array $preferences): array
+    {
+        $allowed = array_keys(getDietaryPreferenceOptions());
+        $cleaned = array_values(array_intersect($allowed, array_map('trim', array_map('strtolower', $preferences))));
+        $prefString = implode(',', $cleaned);
+
+        dbQuery(
+            "UPDATE `users` SET `dietary_preferences` = :prefs WHERE `user_id` = :uid",
+            [':prefs' => $prefString !== '' ? $prefString : null, ':uid' => $userId]
+        );
+
+        return ['ok' => true, 'flash_type' => 'success', 'message' => 'Dietary & allergen preferences updated. Menu warnings will automatically reflect your profile.'];
+    }
+
+    /**
+     * Fetch Admin Support Ticket Desk dataset (`admin/support-tickets.php`).
+     *
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public static function getAdminSupportTicketsData(array $query): array
+    {
+        $statusFilter = strtoupper(cleanInput((string)($query['status'] ?? 'ALL')));
+        $search = cleanInput((string)($query['search'] ?? ''));
+
+        $conditions = [];
+        $params = [];
+        if (in_array($statusFilter, ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], true)) {
+            $conditions[] = 'st.ticket_status = :st';
+            $params[':st'] = $statusFilter;
+        }
+        if ($search !== '') {
+            $conditions[] = "(st.customer_name LIKE :sq1 OR st.customer_email LIKE :sq2 OR st.subject LIKE :sq3 OR st.message LIKE :sq4 OR st.ticket_id = :sq_id)";
+            $like = '%' . $search . '%';
+            $params[':sq1'] = $like;
+            $params[':sq2'] = $like;
+            $params[':sq3'] = $like;
+            $params[':sq4'] = $like;
+            $params[':sq_id'] = (int)preg_replace('/[^0-9]/', '', $search);
+        }
+        $whereSql = !empty($conditions) ? ('WHERE ' . implode(' AND ', $conditions)) : '';
+
+        $tickets = dbFetchAll("
+            SELECT st.*, u.phone_number, adm.full_name AS assigned_admin_name
+            FROM `support_tickets` st
+            LEFT JOIN `users` u ON st.user_id = u.user_id
+            LEFT JOIN `users` adm ON st.assigned_admin_id = adm.user_id
+            {$whereSql}
+            ORDER BY FIELD(st.ticket_status, 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'), st.created_at DESC
+        ", $params);
+
+        $repliesByTicket = [];
+        if (!empty($tickets)) {
+            $ids = array_column($tickets, 'ticket_id');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            try {
+                $replyRows = dbFetchAll("
+                    SELECT * FROM `support_ticket_replies`
+                    WHERE `ticket_id` IN ({$placeholders})
+                    ORDER BY `created_at` ASC, `reply_id` ASC
+                ", $ids);
+                foreach ($replyRows as $rr) {
+                    $repliesByTicket[(int)$rr['ticket_id']][] = $rr;
+                }
+            } catch (Throwable $e) {
+                $repliesByTicket = [];
+            }
+        }
+
+        $countsRaw = dbFetchAll("SELECT `ticket_status`, COUNT(*) AS cnt FROM `support_tickets` GROUP BY `ticket_status`");
+        $counts = ['OPEN' => 0, 'IN_PROGRESS' => 0, 'RESOLVED' => 0, 'CLOSED' => 0];
+        foreach ($countsRaw as $cr) {
+            $counts[(string)$cr['ticket_status']] = (int)$cr['cnt'];
+        }
+
+        return [
+            'tickets' => $tickets,
+            'repliesByTicket' => $repliesByTicket,
+            'counts' => $counts,
+            'totalCount' => array_sum($counts),
+            'statusFilter' => $statusFilter,
+            'search' => $search,
+        ];
+    }
+
+    /**
+     * Handle Admin Support Ticket status transitions & replies (`admin/support-tickets.php`).
+     *
+     * @param array<string, mixed> $post
+     * @param array<string, mixed> $currentUser
+     * @return array{type: string, message: string}
+     */
+    public static function handleSupportTicketAction(array $post, array $currentUser): array
+    {
+        $action = (string)($post['action'] ?? '');
+        $ticketId = (int)($post['ticket_id'] ?? 0);
+        $adminId = (int)($currentUser['id'] ?? 0);
+        $adminName = (string)($currentUser['name'] ?? 'Support Admin');
+
+        if ($ticketId <= 0) {
+            return ['type' => 'danger', 'message' => 'Invalid ticket ID.'];
+        }
+
+        if ($action === 'reply_ticket') {
+            $replyMsg = cleanInput((string)($post['reply_message'] ?? ''));
+            $newStatus = strtoupper(cleanInput((string)($post['ticket_status'] ?? 'IN_PROGRESS')));
+            if (!in_array($newStatus, ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], true)) {
+                $newStatus = 'IN_PROGRESS';
+            }
+            if ($replyMsg === '') {
+                return ['type' => 'danger', 'message' => 'Please enter a response message for the customer.'];
+            }
+
+            try {
+                dbTransactional(static function () use ($ticketId, $adminId, $adminName, $replyMsg, $newStatus): void {
+                    $ticket = dbFetchOne("SELECT `ticket_id` FROM `support_tickets` WHERE `ticket_id` = :tid FOR UPDATE", [':tid' => $ticketId]);
+                    if (!$ticket) {
+                        throw new RuntimeException('Ticket not found.');
+                    }
+
+                    dbQuery("
+                        INSERT INTO `support_ticket_replies` (`ticket_id`, `user_id`, `sender_role`, `sender_name`, `reply_message`)
+                        VALUES (:tid, :uid, 'ADMIN', :sname, :msg)
+                    ", [
+                        ':tid' => $ticketId,
+                        ':uid' => $adminId > 0 ? $adminId : null,
+                        ':sname' => $adminName,
+                        ':msg' => $replyMsg,
+                    ]);
+
+                    dbQuery("
+                        UPDATE `support_tickets`
+                        SET `ticket_status` = :st, `assigned_admin_id` = :aid
+                        WHERE `ticket_id` = :tid
+                    ", [
+                        ':st' => $newStatus,
+                        ':aid' => $adminId > 0 ? $adminId : null,
+                        ':tid' => $ticketId,
+                    ]);
+                });
+
+                return ['type' => 'success', 'message' => "Reply posted to #TKT-{$ticketId} and status updated to {$newStatus}."];
+            } catch (Throwable $e) {
+                error_log("Support reply error for #{$ticketId}: " . $e->getMessage());
+                return ['type' => 'danger', 'message' => 'Failed to save ticket reply: ' . $e->getMessage()];
+            }
+        }
+
+        if ($action === 'update_status') {
+            $newStatus = strtoupper(cleanInput((string)($post['ticket_status'] ?? 'RESOLVED')));
+            if (!in_array($newStatus, ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], true)) {
+                return ['type' => 'danger', 'message' => 'Invalid ticket status.'];
+            }
+
+            dbQuery("
+                UPDATE `support_tickets`
+                SET `ticket_status` = :st, `assigned_admin_id` = COALESCE(`assigned_admin_id`, :aid)
+                WHERE `ticket_id` = :tid
+            ", [
+                ':st' => $newStatus,
+                ':aid' => $adminId > 0 ? $adminId : null,
+                ':tid' => $ticketId,
+            ]);
+
+            return ['type' => 'success', 'message' => "Ticket #TKT-{$ticketId} marked as {$newStatus}."];
+        }
+
+        return ['type' => 'danger', 'message' => 'Unknown ticket action.'];
+    }
+
+    /**
+     * Fetch Admin Dynamic Coupons Management dataset (`admin/coupons.php`).
+     *
+     * @return array<string, mixed>
+     */
+    public static function getAdminCouponsData(): array
+    {
+        $coupons = dbFetchAll("
+            SELECT c.*, COALESCE(SUM(cr.discount_applied), 0) AS total_discount_given
+            FROM `coupons` c
+            LEFT JOIN `coupon_redemptions` cr ON c.coupon_id = cr.coupon_id
+            GROUP BY c.coupon_id
+            ORDER BY c.is_active DESC, c.coupon_id DESC
+        ");
+
+        $activeCount = count(array_filter($coupons, static fn(array $c): bool => !empty($c['is_active'])));
+        $totalRedemptions = array_sum(array_map(static fn(array $c): int => (int)$c['used_count'], $coupons));
+        $totalSavings = array_sum(array_map(static fn(array $c): float => (float)$c['total_discount_given'], $coupons));
+
+        return [
+            'coupons' => $coupons,
+            'activeCount' => $activeCount,
+            'totalRedemptions' => $totalRedemptions,
+            'totalSavings' => $totalSavings,
+        ];
+    }
+
+    /**
+     * Handle Admin Coupon CRUD (`create_coupon`, `update_coupon`, `toggle_coupon`, `delete_coupon`).
+     *
+     * @param array<string, mixed> $post
+     * @return array{type: string, message: string}
+     */
+    public static function handleCouponAction(array $post): array
+    {
+        $action = (string)($post['action'] ?? '');
+
+        if ($action === 'create_coupon' || $action === 'update_coupon') {
+            $couponId = (int)($post['coupon_id'] ?? 0);
+            $code = strtoupper(preg_replace('/[^A-Z0-9_-]/', '', strtoupper(trim((string)($post['code'] ?? '')))) ?? '');
+            $title = cleanInput((string)($post['title'] ?? ''));
+            $desc = cleanInput((string)($post['description'] ?? ''));
+            $type = ($post['discount_type'] ?? 'percentage') === 'flat' ? 'flat' : 'percentage';
+            $val = max(1.0, (float)($post['discount_value'] ?? 10));
+            $maxDisc = max(0.0, (float)($post['max_discount'] ?? ($type === 'flat' ? $val : 100)));
+            $minOrder = max(0.0, (float)($post['min_order'] ?? 0));
+            $usageLimit = max(0, (int)($post['usage_limit'] ?? 0));
+            $perUserLimit = max(0, (int)($post['per_user_limit'] ?? 0));
+            $firstOrderOnly = !empty($post['first_order_only']) ? 1 : 0;
+            $isActive = !empty($post['is_active']) ? 1 : 0;
+            $validUntilRaw = trim((string)($post['valid_until'] ?? ''));
+            $validUntil = $validUntilRaw !== '' ? date('Y-m-d 23:59:59', (int)(strtotime($validUntilRaw) ?: strtotime('+90 days'))) : null;
+
+            if ($code === '' || $title === '') {
+                return ['type' => 'danger', 'message' => 'Coupon code and title are required.'];
+            }
+
+            try {
+                if ($action === 'create_coupon') {
+                    $dup = (int)dbFetchVal("SELECT COUNT(*) FROM `coupons` WHERE `code` = :code", [':code' => $code]);
+                    if ($dup > 0) {
+                        return ['type' => 'danger', 'message' => "Coupon code '{$code}' already exists."];
+                    }
+                    dbQuery("
+                        INSERT INTO `coupons` (`code`, `title`, `description`, `discount_type`, `discount_value`, `max_discount`, `min_order`, `valid_until`, `usage_limit`, `per_user_limit`, `first_order_only`, `is_active`)
+                        VALUES (:code, :title, :desc, :dtype, :dval, :mcap, :mino, :vuntil, :ulim, :pulim, :fo, :act)
+                    ", [
+                        ':code' => $code,
+                        ':title' => $title,
+                        ':desc' => $desc !== '' ? $desc : "{$title} ({$code})",
+                        ':dtype' => $type,
+                        ':dval' => $val,
+                        ':mcap' => $maxDisc,
+                        ':mino' => $minOrder,
+                        ':vuntil' => $validUntil,
+                        ':ulim' => $usageLimit,
+                        ':pulim' => $perUserLimit,
+                        ':fo' => $firstOrderOnly,
+                        ':act' => $isActive,
+                    ]);
+                    return ['type' => 'success', 'message' => "Promo coupon '{$code}' created successfully."];
+                }
+
+                dbQuery("
+                    UPDATE `coupons`
+                    SET `code` = :code, `title` = :title, `description` = :desc,
+                        `discount_type` = :dtype, `discount_value` = :dval, `max_discount` = :mcap,
+                        `min_order` = :mino, `valid_until` = :vuntil, `usage_limit` = :ulim,
+                        `per_user_limit` = :pulim, `first_order_only` = :fo, `is_active` = :act
+                    WHERE `coupon_id` = :cid
+                ", [
+                    ':code' => $code,
+                    ':title' => $title,
+                    ':desc' => $desc,
+                    ':dtype' => $type,
+                    ':dval' => $val,
+                    ':mcap' => $maxDisc,
+                    ':mino' => $minOrder,
+                    ':vuntil' => $validUntil,
+                    ':ulim' => $usageLimit,
+                    ':pulim' => $perUserLimit,
+                    ':fo' => $firstOrderOnly,
+                    ':act' => $isActive,
+                    ':cid' => $couponId,
+                ]);
+                return ['type' => 'success', 'message' => "Promo coupon '{$code}' updated successfully."];
+            } catch (Throwable $e) {
+                error_log("Coupon action error: " . $e->getMessage());
+                return ['type' => 'danger', 'message' => 'Failed to save coupon: ' . $e->getMessage()];
+            }
+        }
+
+        if ($action === 'toggle_coupon') {
+            $couponId = (int)($post['coupon_id'] ?? 0);
+            dbQuery("UPDATE `coupons` SET `is_active` = IF(`is_active` = 1, 0, 1) WHERE `coupon_id` = :cid", [':cid' => $couponId]);
+            return ['type' => 'info', 'message' => 'Coupon active status toggled.'];
+        }
+
+        if ($action === 'delete_coupon') {
+            $couponId = (int)($post['coupon_id'] ?? 0);
+            dbQuery("UPDATE `coupons` SET `is_active` = 0 WHERE `coupon_id` = :cid", [':cid' => $couponId]);
+            return ['type' => 'warning', 'message' => 'Coupon archived and deactivated (`is_active = 0`).'];
+        }
+
+        return ['type' => 'danger', 'message' => 'Unknown coupon operation.'];
     }
 }

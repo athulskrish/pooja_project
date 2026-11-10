@@ -97,6 +97,8 @@ $chefProfile = $kdsData['chefProfile'];
 $chefPayouts = $kdsData['chefPayouts'];
 $recentHandedOver = $kdsData['recentHandedOver'];
 $allMenuItems = $kdsData['allMenuItems'];
+$kitchenStations = $kdsData['kitchenStations'] ?? [];
+$scheduledPreAlerts = $kdsData['scheduledPreAlerts'] ?? [];
 $scheduledOrders = $kdsData['scheduledOrders'];
 $countScheduled = $kdsData['countScheduled'];
 $countNew = $kdsData['countNew'];
@@ -108,6 +110,51 @@ $kdsInitialStateHash = $kdsData['kdsInitialStateHash'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
+
+    <?php if (!empty($scheduledPreAlerts)): ?>
+      <!-- Automated Scheduled Meal Pre-Alert Banner (FCFS Ordered) -->
+      <div class="alert border-0 shadow-sm rounded-4 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2"
+           id="scheduledPreAlertBanner"
+           style="background: linear-gradient(135deg, #F3E8FF 0%, #EDE9FE 100%); border-left: 5px solid #7C3AED !important;">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0" style="width:40px; height:40px; background:#7C3AED;">
+            <i class="bi bi-alarm-fill fs-5"></i>
+          </div>
+          <div>
+            <div class="fw-bold font-outfit" style="color:#4C1D95;">
+              <i class="bi bi-bell-fill me-1"></i> Scheduled Meal Pre-Alert (<?= count($scheduledPreAlerts) ?> due soon &bull; FCFS Order)
+            </div>
+            <div class="small" style="color:#5B21B6;">
+              <?php foreach (array_slice($scheduledPreAlerts, 0, 3) as $paIdx => $pa): ?>
+                <?= $paIdx > 0 ? ' &bull; ' : '' ?>
+                <strong>#ZIP-<?= (int)$pa['order_id'] ?></strong>
+                (<?= e(trim(str_ireplace('(Customer)', '', (string)$pa['customer_name']))) ?> &middot;
+                <?= e($pa['scheduled_slot'] ?: date('h:i A', (int)strtotime((string)$pa['scheduled_for']))) ?>)
+              <?php endforeach; ?>
+            </div>
+          </div>
+        </div>
+        <span class="badge rounded-pill text-white px-3 py-1" style="background:#7C3AED;">Start Stove Prep</span>
+      </div>
+    <?php endif; ?>
+
+    <!-- Kitchen Station Routing Filter Pills -->
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-3" id="kitchenStationFilterBar">
+      <span class="small fw-bold text-muted text-uppercase me-1" style="font-size:0.72rem; letter-spacing:0.05em;">
+        <i class="bi bi-diagram-3-fill text-success me-1"></i>Stations:
+      </span>
+      <button type="button" class="btn btn-sm rounded-pill px-3 fw-bold station-pill-btn active"
+              style="background:var(--lush-forest); color:#fff; border:1px solid var(--lush-forest);"
+              onclick="filterKitchenStation('all', this)">
+        All Stations
+      </button>
+      <?php foreach ($kitchenStations as $stName): ?>
+        <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold station-pill-btn"
+                onclick="filterKitchenStation(<?= e(jsJson(strtolower($stName))) ?>, this)">
+          <?= e($stName) ?>
+        </button>
+      <?php endforeach; ?>
+    </div>
 
     <!-- Tab Contents (Kanban & Focused Station Views) -->
     <div class="tab-content" id="kdsStationTabContent">
@@ -142,7 +189,8 @@ require_once __DIR__ . '/includes/header.php';
                   </div>
                 <?php else: ?>
                   <?php foreach ($laneNew as $t): ?>
-                    <div class="ticket-card card-lane-new ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
+                    <?php $tStationsAttr = strtolower(implode('|', $t['stations'] ?? [])); ?>
+                    <div class="ticket-card card-lane-new ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-stations="<?= e($tStationsAttr) ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
                       
                       <!-- Ticket Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">
@@ -263,7 +311,8 @@ require_once __DIR__ . '/includes/header.php';
                   </div>
                 <?php else: ?>
                   <?php foreach ($laneCooking as $t): ?>
-                    <div class="ticket-card card-lane-cooking ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
+                    <?php $tStationsAttr = strtolower(implode('|', $t['stations'] ?? [])); ?>
+                    <div class="ticket-card card-lane-cooking ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-stations="<?= e($tStationsAttr) ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
                       
                       <!-- Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">
@@ -304,24 +353,34 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                       <?php endif; ?>
 
-                      <!-- Interactive Prep Checklist -->
+                      <!-- Interactive Prep Checklist (DB-Backed Per-Dish Prep Toggle & Station Routing) -->
                       <div class="ticket-items-box mb-2">
                         <div class="d-flex justify-content-between align-items-center mb-1 text-muted" style="font-size:0.68rem; text-transform:uppercase; font-weight:700; letter-spacing:0.04em;">
                           <span>Prep Checklist (<?= count($t['items']) ?> items)</span>
-                          <span class="badge" style="background:#FEF3C7; color:#B45309; font-size:0.65rem;">Tap when plated</span>
+                          <span class="badge" id="prepCountBadge_<?= (int)$t['order_id'] ?>" style="background:#FEF3C7; color:#B45309; font-size:0.65rem;">
+                            <?= (int)($t['prepped_count'] ?? 0) ?>/<?= (int)($t['total_items_count'] ?? count($t['items'])) ?> prepped
+                          </span>
                         </div>
                         <?php foreach ($t['items'] as $idx => $it): ?>
+                          <?php $isItemPrepped = !empty($it['is_prepped']); ?>
                           <div class="py-1 border-bottom border-light-subtle small">
-                            <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex justify-content-between align-items-center gap-1">
                               <div class="form-check d-flex align-items-center gap-2 m-0">
-                                <input class="form-check-input dish-checkbox" type="checkbox" id="chk_<?= $t['order_id'] ?>_<?= $idx ?>">
-                                <label class="form-check-label fw-semibold" for="chk_<?= $t['order_id'] ?>_<?= $idx ?>" style="cursor:pointer; font-size:0.83rem;">
+                                <input class="form-check-input dish-checkbox" type="checkbox"
+                                       id="chk_<?= $t['order_id'] ?>_<?= $idx ?>"
+                                       <?= $isItemPrepped ? 'checked' : '' ?>
+                                       onchange="toggleDishPrepped(<?= (int)($it['order_item_id'] ?? 0) ?>, <?= (int)$t['order_id'] ?>, this)">
+                                <label class="form-check-label fw-semibold" for="chk_<?= $t['order_id'] ?>_<?= $idx ?>"
+                                       style="cursor:pointer; font-size:0.83rem; <?= $isItemPrepped ? 'text-decoration:line-through;' : '' ?>">
                                   <span class="<?= $it['is_veg'] ? 'badge-veg-icon' : 'badge-nonveg-icon' ?>"></span>
                                   <span class="item-qty-pill"><?= (int)$it['quantity'] ?>×</span>
                                   <span><?= e($it['item_name']) ?></span>
                                 </label>
                               </div>
-                              <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
+                              <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                                <span class="badge bg-light text-secondary border" style="font-size:0.62rem;"><?= e($it['kitchen_station'] ?? 'Main') ?></span>
+                                <span class="text-muted font-mono" style="font-size:0.72rem;"><?= (int)$it['prep_time_minutes'] ?>m</span>
+                              </div>
                             </div>
                             <?php if (!empty($it['customizations'])): ?>
                               <div class="ps-4 mt-1">
@@ -389,8 +448,9 @@ require_once __DIR__ . '/includes/header.php';
                       $riderPhone = $disp['delivery_partner_phone'] ?? '';
                       $otp = $disp['delivery_otp'] ?? '';
                       $fcfsRank = $readyIdx + 1;
+                      $tStationsAttr = strtolower(implode('|', $t['stations'] ?? []));
                     ?>
-                    <div class="ticket-card card-lane-ready ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
+                    <div class="ticket-card card-lane-ready ticket-item" data-ticket-id="<?= $t['order_id'] ?>" data-stations="<?= e($tStationsAttr) ?>" data-search="<?= strtolower(e($t['customer_name'] . ' ' . $t['order_id'])) ?>">
                       
                       <!-- Header -->
                       <div class="d-flex justify-content-between align-items-start mb-2">

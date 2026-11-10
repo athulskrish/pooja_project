@@ -214,7 +214,8 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="p-4 bg-light">
-          <p class="small text-muted mb-3">Report delivery difficulty for active order <strong id="supportOrderDisplay">#ZIP-XXXX</strong>. Our hub dispatcher will assist immediately.</p>
+          <input type="hidden" id="supportOrderIdInput" value="0">
+          <p class="small text-muted mb-3">Report delivery difficulty for active order <strong id="supportOrderDisplay">#ZIP-XXXX</strong>. Breakdown auto-requeues to another rider; other issues alert Hub Triage Desk and free your active slot.</p>
           <div class="d-flex flex-column gap-2 mb-3">
             <label class="card border rounded-3 p-2 bg-white cursor-pointer d-flex flex-row align-items-center gap-2 mb-0">
               <input type="radio" name="supportReason" value="unreachable" checked>
@@ -226,16 +227,20 @@
             </label>
             <label class="card border rounded-3 p-2 bg-white cursor-pointer d-flex flex-row align-items-center gap-2 mb-0">
               <input type="radio" name="supportReason" value="breakdown">
-              <span class="small fw-bold text-dark">Vehicle breakdown / Flat tire</span>
+              <span class="small fw-bold text-dark">Vehicle breakdown / Flat tire (Auto-requeue order)</span>
             </label>
             <label class="card border rounded-3 p-2 bg-white cursor-pointer d-flex flex-row align-items-center gap-2 mb-0">
               <input type="radio" name="supportReason" value="spill">
               <span class="small fw-bold text-dark">Food container damaged / spilled in transit</span>
             </label>
           </div>
+          <div class="mb-3">
+            <label for="supportIssueNotes" class="form-label small fw-bold text-muted mb-1">Additional Rider Notes (Optional)</label>
+            <textarea id="supportIssueNotes" class="form-control form-control-sm rounded-3" rows="2" placeholder="E.g. Guard at Gate 2 refused entry, tried calling twice..."></textarea>
+          </div>
           <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-secondary rounded-pill w-50 py-2" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-danger rounded-pill w-50 py-2 fw-bold" onclick="submitSupportIssue()">
+            <button type="button" id="submitSosBtn" class="btn btn-danger rounded-pill w-50 py-2 fw-bold" onclick="submitSupportIssue()">
               <i class="bi bi-send me-1"></i> Dispatch SOS
             </button>
           </div>
@@ -493,16 +498,67 @@
     // Rider Support & Issue Modal
     function openSupportModal(orderId) {
       document.getElementById('supportOrderDisplay').textContent = '#ZIP-' + orderId;
+      const hiddenOrderInput = document.getElementById('supportOrderIdInput');
+      if (hiddenOrderInput) hiddenOrderInput.value = String(orderId || 0);
+      const notesEl = document.getElementById('supportIssueNotes');
+      if (notesEl) notesEl.value = '';
       const modal = new bootstrap.Modal(document.getElementById('riderSupportModal'));
       modal.show();
     }
 
-    function submitSupportIssue() {
-      const selected = document.querySelector('input[name="supportReason"]:checked')?.value || 'Issue';
-      const modalEl = document.getElementById('riderSupportModal');
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      if (modal) modal.hide();
-      alert('Dispatch SOS Alert transmitted to Indiranagar Hub supervisor: [' + selected.toUpperCase() + ']. A support agent will contact you shortly.');
+    async function submitSupportIssue() {
+      const orderId = document.getElementById('supportOrderIdInput')?.value || '0';
+      const selected = document.querySelector('input[name="supportReason"]:checked')?.value || 'unreachable';
+      const notes = document.getElementById('supportIssueNotes')?.value.trim() || '';
+      const btn = document.getElementById('submitSosBtn');
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('action', 'report_issue');
+        formData.append('order_id', orderId);
+        formData.append('reason_code', selected);
+        formData.append('notes', notes);
+        formData.append('is_ajax', '1');
+        formData.append('csrf_token', csrfToken);
+
+        const res = await fetch('<?= DELIVERY_URL ?>/index.php', {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken
+          },
+          body: formData
+        });
+        const data = await res.json();
+        const modalEl = document.getElementById('riderSupportModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        if (data && data.success) {
+          alert(data.message || 'SOS reported to Hub dispatch.');
+          if (selected === 'breakdown') {
+            window.location.reload();
+          } else {
+            await syncDeliveryApp(true);
+          }
+        } else {
+          alert((data && data.message) ? data.message : 'Unable to log SOS alert.');
+        }
+      } catch (err) {
+        console.error('SOS dispatch error:', err);
+        alert('Network error transmitting SOS alert. Please try again.');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send me-1"></i> Dispatch SOS';
+        }
+      }
     }
 
     // Instant Cash Out Modal
@@ -880,12 +936,25 @@
         }
 
         if (riderSyncCountdown <= 0) {
-          riderSyncCountdown = 5;
+          riderSyncCountdown = (typeof deliverySseConnected !== 'undefined' && deliverySseConnected) ? 15 : 5;
           syncDeliveryApp();
         }
       }, 1000);
     }
     startRiderAutoSync();
+
+    // 1b. True Server-Sent Events (SSE) Push Stream for Rider Fleet
+    let deliverySseConnected = false;
+    if (typeof EventSource !== 'undefined') {
+      try {
+        const delSse = new EventSource('../api/sse-stream.php?portal=delivery');
+        delSse.addEventListener('connected', () => { deliverySseConnected = true; });
+        delSse.addEventListener('delivery_update', () => { syncDeliveryApp(true); });
+        delSse.onerror = () => { deliverySseConnected = false; };
+      } catch (e) {
+        deliverySseConnected = false;
+      }
+    }
 
     // 2. Manual Sync Trigger / Toggle
     function toggleRiderAutoSync() {

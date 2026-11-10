@@ -205,7 +205,7 @@
         }
 
         if (refreshTimerSeconds <= 0) {
-          refreshTimerSeconds = 6;
+          refreshTimerSeconds = (typeof kdsSseConnected !== 'undefined' && kdsSseConnected) ? 20 : 6;
           pollKitchenOrders();
         }
       }, 1000);
@@ -266,8 +266,11 @@
 
           // Check if system state changed (e.g. driver delivered dish, order claimed, or new order marked ready)
           if (data.state_hash && lastKnownStateHash && data.state_hash !== lastKnownStateHash) {
-            console.log('KDS state changed! Syncing atelier view...');
             lastKnownStateHash = data.state_hash;
+            if (window._kdsLocalToggleTs && (Date.now() - window._kdsLocalToggleTs) < 4000) {
+              return;
+            }
+            console.log('KDS state changed! Syncing atelier view...');
             if (data.latest_incoming_id > lastKnownIncomingId) {
               lastKnownIncomingId = data.latest_incoming_id;
               playKitchenChime();
@@ -411,19 +414,100 @@
       window.open(url, 'KOT_Slip', 'width=450,height=650,toolbar=no,menubar=no,location=no,status=no');
     }
 
-    // 10. Filter Tickets by Search
+    // 10. Filter Tickets by Search & Kitchen Station
+    let activeKitchenStation = 'all';
+
+    function filterKitchenStation(station, btnEl) {
+      activeKitchenStation = (station || 'all').toLowerCase();
+      document.querySelectorAll('.station-pill-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = '';
+        b.style.borderColor = '';
+        if (!b.classList.contains('btn-outline-success')) {
+          b.classList.add('btn-outline-success');
+        }
+      });
+      if (btnEl) {
+        btnEl.classList.add('active');
+        btnEl.classList.remove('btn-outline-success');
+        btnEl.style.background = 'var(--lush-forest)';
+        btnEl.style.color = '#fff';
+        btnEl.style.borderColor = 'var(--lush-forest)';
+      }
+      filterTickets();
+    }
+
     function filterTickets() {
-      const query = document.getElementById('kdsSearchInput').value.toLowerCase().trim();
+      const searchInput = document.getElementById('kdsSearchInput');
+      const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
       const tickets = document.querySelectorAll('.ticket-item');
 
       tickets.forEach(card => {
-        const text = card.getAttribute('data-search') || '';
-        if (text.includes(query)) {
-          card.style.display = 'block';
-        } else {
-          card.style.display = 'none';
-        }
+        const text = (card.getAttribute('data-search') || '').toLowerCase();
+        const stations = (card.getAttribute('data-stations') || '').split('|').map(s => s.trim()).filter(Boolean);
+        const matchesSearch = !query || text.includes(query);
+        const matchesStation = activeKitchenStation === 'all' || stations.includes(activeKitchenStation);
+        card.style.display = (matchesSearch && matchesStation) ? 'block' : 'none';
       });
+    }
+
+    // 10b. Toggle Individual Dish Preparation State (`order_items.is_prepped`)
+    async function toggleDishPrepped(orderItemId, orderId, checkboxEl) {
+      const isPrepped = checkboxEl && checkboxEl.checked ? 1 : 0;
+      const lbl = checkboxEl ? checkboxEl.closest('.form-check')?.querySelector('label') : null;
+      if (lbl) lbl.style.textDecoration = isPrepped ? 'line-through' : '';
+
+      try {
+        const res = await fetch('<?= KITCHEN_URL ?>/ajax/toggle-item-prepped.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': kitchenCsrfToken
+          },
+          body: JSON.stringify({
+            order_item_id: orderItemId,
+            is_prepped: isPrepped,
+            csrf_token: kitchenCsrfToken
+          })
+        });
+        const data = await res.json();
+        if (data && data.success) {
+          const badge = document.getElementById(`prepCountBadge_${orderId}`);
+          if (badge) {
+            badge.textContent = `${data.prepped_count}/${data.total_count} prepped`;
+          }
+          window._kdsLocalToggleTs = Date.now();
+        }
+      } catch (e) {
+        console.warn('Unable to sync dish prep state:', e);
+      }
+    }
+
+    // 10c. True Server-Sent Events (SSE) Push Stream for KDS
+    let kdsSseConnected = false;
+    if (typeof EventSource !== 'undefined') {
+      try {
+        const kdsSse = new EventSource('<?= BASE_URL ?>/api/sse-stream.php?portal=kitchen');
+        kdsSse.addEventListener('connected', () => { kdsSseConnected = true; });
+        kdsSse.addEventListener('kds_update', (evt) => {
+          try {
+            const payload = JSON.parse(evt.data || '{}');
+            if (payload.hash && lastKnownStateHash && payload.hash !== lastKnownStateHash) {
+              if (window._kdsLocalToggleTs && (Date.now() - window._kdsLocalToggleTs) < 4000) {
+                lastKnownStateHash = payload.hash;
+                return;
+              }
+              pollKitchenOrders();
+            }
+          } catch (err) {
+            pollKitchenOrders();
+          }
+        });
+        kdsSse.onerror = () => { kdsSseConnected = false; };
+      } catch (err) {
+        kdsSseConnected = false;
+      }
     }
 
     // 11. Quick Show Chef Salary & Payslips Tab

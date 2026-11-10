@@ -144,23 +144,29 @@ if ($currentUser && !empty($currentUser['id'])) {
 
           <div id="couponMessage" class="small mb-2"></div>
 
-          <!-- Quick Coupon Pills -->
+          <!-- Quick Coupon Pills (DB-Backed Dynamic Coupons) -->
           <div class="d-flex flex-column gap-2 mt-2">
-            <div class="p-2 rounded-3 bg-light border d-flex justify-content-between align-items-center">
-              <div>
-                <span class="badge bg-mint text-dark fw-bold">LUSHFOREST</span>
-                <span class="small text-muted d-block mt-1">20% off above ₹299 (max ₹100)</span>
-              </div>
-              <button class="btn btn-sm btn-link text-success p-0 fw-bold text-decoration-none" onclick="document.getElementById('cartCouponInput').value='LUSHFOREST'; document.getElementById('applyCouponBtn').click();">APPLY</button>
-            </div>
-
-            <div class="p-2 rounded-3 bg-light border d-flex justify-content-between align-items-center">
-              <div>
-                <span class="badge bg-warning text-dark fw-bold">ZIPPY50</span>
-                <span class="small text-muted d-block mt-1">50% off above ₹399 (max ₹120)</span>
-              </div>
-              <button class="btn btn-sm btn-link text-success p-0 fw-bold text-decoration-none" onclick="document.getElementById('cartCouponInput').value='ZIPPY50'; document.getElementById('applyCouponBtn').click();">APPLY</button>
-            </div>
+            <?php if (!empty($coupons)): ?>
+              <?php foreach ($coupons as $cp): ?>
+                <?php
+                  $cpCode = (string)($cp['code'] ?? '');
+                  $cpBadge = ($cp['discount_type'] ?? '') === 'percentage'
+                    ? ((int)$cp['discount_value'] . '% OFF')
+                    : ('FLAT ₹' . (int)$cp['discount_value']);
+                  $cpDesc = (string)($cp['description'] ?? '');
+                ?>
+                <div class="p-2 rounded-3 bg-light border d-flex justify-content-between align-items-center gap-2">
+                  <div>
+                    <span class="badge bg-mint text-dark fw-bold"><?= e($cpCode) ?></span>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.65rem;"><?= e($cpBadge) ?></span>
+                    <span class="small text-muted d-block mt-1"><?= e($cpDesc) ?></span>
+                  </div>
+                  <button class="btn btn-sm btn-link text-success p-0 fw-bold text-decoration-none flex-shrink-0" type="button" onclick="document.getElementById('cartCouponInput').value=<?= e(jsJson($cpCode)) ?>; document.getElementById('applyCouponBtn').click();">APPLY</button>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="small text-muted">No active promo codes at the moment.</div>
+            <?php endif; ?>
           </div>
         </div>
 
@@ -281,22 +287,13 @@ function renderDedicatedCart() {
     container.appendChild(itemRow);
   });
 
-  // Calculate bill totals
-  const coupon = activeCoupon;
-  let discount = 0;
-  if (coupon === 'LUSHFOREST' && subtotal >= 299) {
-    discount = Math.min(subtotal * 0.20, 100);
-  } else if (coupon === 'ZIPPY50' && subtotal >= 399) {
-    discount = Math.min(subtotal * 0.50, 120);
-  } else if (coupon === 'WELCOME' && subtotal >= 199) {
-    discount = 50;
-  }
-
-  const deliveryFee = subtotal >= 499 ? 0 : 40;
-  const platformFee = 5;
-  const taxable = Math.max(0, subtotal - discount);
-  const gst = taxable * 0.05;
-  const grandTotal = taxable + gst + deliveryFee + platformFee;
+  // Calculate bill totals using centralized dynamic calculator
+  const totals = calculateCartTotals();
+  const discount = totals.discount;
+  const deliveryFee = totals.deliveryFee;
+  const platformFee = totals.platformFee;
+  const gst = totals.taxes;
+  const grandTotal = totals.finalTotal;
 
   document.getElementById('billSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
   document.getElementById('billDelivery').textContent = deliveryFee === 0 ? 'FREE' : `₹${deliveryFee.toFixed(2)}`;
@@ -368,18 +365,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const applyBtn = document.getElementById('applyCouponBtn');
   if (applyBtn) {
-    applyBtn.addEventListener('click', () => {
+    applyBtn.addEventListener('click', async () => {
       const code = document.getElementById('cartCouponInput').value.trim().toUpperCase();
       const msgDiv = document.getElementById('couponMessage');
-      if (code === 'LUSHFOREST' || code === 'ZIPPY50' || code === 'WELCOME') {
-        activeCoupon = code;
-        localStorage.setItem('pooja_active_coupon', code);
-        msgDiv.className = 'small text-success fw-bold';
-        msgDiv.textContent = `Coupon ${code} applied successfully!`;
-        renderDedicatedCart();
-      } else {
+      if (!code) {
+        activeCoupon = null;
+        window.ZIPPY_VALIDATED_COUPON = null;
+        localStorage.removeItem('pooja_active_coupon');
+        msgDiv.className = 'small text-muted fw-semibold';
+        msgDiv.textContent = 'Coupon cleared.';
+        saveCart();
+        return;
+      }
+
+      const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+      try {
+        const res = await fetch(`${window.CUSTOMER_URL}/ajax/validate-coupon.php?code=${encodeURIComponent(code)}&subtotal=${encodeURIComponent(subtotal)}`);
+        const data = await res.json();
+        if (data && data.valid) {
+          activeCoupon = code;
+          window.ZIPPY_VALIDATED_COUPON = data.coupon || null;
+          localStorage.setItem('pooja_active_coupon', code);
+          msgDiv.className = 'small text-success fw-bold';
+          msgDiv.textContent = `Coupon ${code} applied! Saving ₹${Number(data.discount || 0).toFixed(2)}.`;
+          saveCart();
+          return;
+        }
         msgDiv.className = 'small text-danger fw-bold';
-        msgDiv.textContent = 'Invalid coupon code. Try LUSHFOREST or ZIPPY50.';
+        msgDiv.textContent = (data && data.error) ? data.error : 'Invalid coupon code.';
+      } catch (err) {
+        const fallback = evaluateDynamicCoupon(code, subtotal);
+        if (fallback > 0) {
+          activeCoupon = code;
+          localStorage.setItem('pooja_active_coupon', code);
+          msgDiv.className = 'small text-success fw-bold';
+          msgDiv.textContent = `Coupon ${code} applied!`;
+          saveCart();
+        } else {
+          msgDiv.className = 'small text-danger fw-bold';
+          msgDiv.textContent = 'Coupon validation failed or minimum order not met.';
+        }
       }
     });
   }

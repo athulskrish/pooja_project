@@ -35,6 +35,8 @@ $navigationPages = [
     ['title' => 'User & Staff RBAC Management', 'subtitle' => 'System roles, permissions, passwords & profiles', 'url' => ADMIN_URL . '/users.php', 'icon' => 'bi-people', 'category' => 'Navigation', 'tags' => 'users staff rbac roles permissions accounts admin'],
     ['title' => 'Order Audit Trail & Logs', 'subtitle' => 'Immutable audit history of status changes & actor events', 'url' => ADMIN_URL . '/audit-logs.php', 'icon' => 'bi-shield-check', 'category' => 'Navigation', 'tags' => 'audit log history events security compliance'],
     ['title' => 'Customer Food Reviews & Ratings', 'subtitle' => 'Customer feedback, star ratings & dish sentiment', 'url' => ADMIN_URL . '/reviews.php', 'icon' => 'bi-star', 'category' => 'Navigation', 'tags' => 'reviews ratings stars feedback customers comments'],
+    ['title' => 'Support Tickets Desk', 'subtitle' => 'Respond to customer inquiries & track ticket resolution', 'url' => ADMIN_URL . '/support-tickets.php', 'icon' => 'bi-headset', 'category' => 'Navigation', 'tags' => 'support tickets helpdesk customer care replies'],
+    ['title' => 'Dynamic Coupons & Promo Codes', 'subtitle' => 'Create & manage promo discounts, caps & expiry', 'url' => ADMIN_URL . '/coupons.php', 'icon' => 'bi-ticket-perforated', 'category' => 'Navigation', 'tags' => 'coupons promos discounts lushforest zippy50 offers'],
     ['title' => 'Dynamic Customer FAQs Desk', 'subtitle' => 'Self-service helpdesk knowledgebase editor', 'url' => ADMIN_URL . '/faqs.php', 'icon' => 'bi-question-circle', 'category' => 'Navigation', 'tags' => 'faqs helpdesk questions answers knowledgebase support']
 ];
 

@@ -15,10 +15,15 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 $currentUser = getCurrentUser();
 
-// Handle Rider Fleet Actions
+// Handle Rider Fleet Actions & Failed Dispatch Triage
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Invalid session token.');
+    } elseif ($_POST['action'] === 'requeue_failed') {
+        $res = FleetService::requeueFailedDispatch((int)($_POST['order_id'] ?? 0), (int)($currentUser['id'] ?? 0));
+        setFlash($res['type'], $res['message']);
+        header("Location: " . ADMIN_URL . "/delivery-view.php");
+        exit;
     } else {
         $res = FleetService::handleAdminFleetAction($_POST);
         setFlash($res['type'], $res['message']);
@@ -40,6 +45,7 @@ $totalDeliveriesCompleted = $fleetData['totalDeliveriesCompleted'];
 $activeTripsMap = $fleetData['activeTripsMap'];
 $busyRidersCount = $fleetData['busyRidersCount'];
 $availableRidersCount = $fleetData['availableRidersCount'];
+$failedDispatches = $fleetData['failedDispatches'] ?? [];
 ?>
 
 <!-- ===========================================================================
@@ -192,6 +198,67 @@ $availableRidersCount = $fleetData['availableRidersCount'];
     }
   }
 </style>
+
+<?php if (!empty($failedDispatches)): ?>
+<!-- ===========================================================================
+     RIDER SOS & FAILED DELIVERY TRIAGE QUEUE
+     =========================================================================== -->
+<div class="card border-danger rounded-4 shadow-sm mb-4 bg-white overflow-hidden">
+  <div class="p-3 bg-danger-subtle border-bottom border-danger d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-exclamation-octagon-fill text-danger fs-5"></i>
+      <div>
+        <h6 class="fw-bold text-danger mb-0">Failed Delivery &amp; Rider SOS Triage (<?= count($failedDispatches) ?>)</h6>
+        <span class="small text-dark">Review delivery exception notes and immediately re-dispatch into the FCFS pool</span>
+      </div>
+    </div>
+    <a href="<?= ADMIN_URL ?>/orders.php?status=FAILED" class="btn btn-sm btn-danger rounded-pill px-3 fw-semibold">
+      View in Live Orders &rarr;
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light text-muted text-uppercase">
+        <tr>
+          <th>Order</th>
+          <th>Customer &amp; Phone</th>
+          <th>Failure Reason &amp; Notes</th>
+          <th>Reported At</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($failedDispatches as $fd): ?>
+          <tr>
+            <td class="font-monospace fw-bold">#ZIP-<?= (int)$fd['order_id'] ?></td>
+            <td>
+              <div class="fw-semibold text-dark"><?= e($fd['full_name'] ?? 'Customer') ?></div>
+              <div class="text-muted"><?= e($fd['phone_number'] ?? '') ?></div>
+            </td>
+            <td>
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle mb-1"><?= e($fd['failure_reason'] ?? 'Delivery Exception') ?></span>
+              <?php if (!empty($fd['issue_notes'])): ?>
+                <div class="text-muted"><?= e($fd['issue_notes']) ?></div>
+              <?php endif; ?>
+            </td>
+            <td class="text-muted font-monospace"><?= !empty($fd['failed_at']) ? e(date('M j, g:i A', (int)strtotime((string)$fd['failed_at']))) : 'Just now' ?></td>
+            <td class="text-end">
+              <form method="POST" action="<?= ADMIN_URL ?>/delivery-view.php" class="m-0">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="requeue_failed">
+                <input type="hidden" name="order_id" value="<?= (int)$fd['order_id'] ?>">
+                <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 fw-bold" style="background:#2E6F40; border-color:#2E6F40;">
+                  <i class="bi bi-arrow-repeat me-1"></i>Re-Dispatch
+                </button>
+              </form>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <!-- ===========================================================================
      LIVE MULTI-COURIER FLEET GPS TELEMETRY MAP

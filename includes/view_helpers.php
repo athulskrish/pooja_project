@@ -407,3 +407,127 @@ function renderEmptyState(string $tabType): void
     </div>
     <?php
 }
+
+/**
+ * Evaluate dish nutritional metadata and personal dietary conflicts for the signed-in customer.
+ *
+ * @param array<string, mixed> $dish
+ * @param array<int, string> $userDietaryPrefs
+ * @return array{allergens: array<int, string>, conflicts: array<int, string>, calories: int, protein: int, carbs: int, fat: int, spice_level: string}
+ */
+function evaluateDishDietaryConflicts(array $dish, array $userDietaryPrefs = []): array
+{
+    $rawAllergens = strtolower(trim((string)($dish['allergens'] ?? '')));
+    $allergens = array_values(array_filter(array_map('trim', explode(',', $rawAllergens))));
+    $calories = (int)($dish['calories_kcal'] ?? 0);
+    $protein = (int)($dish['protein_g'] ?? 0);
+    $carbs = (int)($dish['carbs_g'] ?? 0);
+    $fat = (int)($dish['fat_g'] ?? 0);
+    $spiceLevel = strtolower(trim((string)($dish['spice_level'] ?? 'medium')));
+    if ($spiceLevel === '') {
+        $spiceLevel = 'medium';
+    }
+
+    $conflicts = [];
+    $prefs = array_flip(array_map('strtolower', $userDietaryPrefs));
+
+    if (isset($prefs['veg_only']) && empty($dish['is_veg'])) {
+        $conflicts[] = 'Non-Veg';
+    }
+    if (isset($prefs['dairy_free']) && in_array('dairy', $allergens, true)) {
+        $conflicts[] = 'Contains Dairy';
+    }
+    if (isset($prefs['nut_free']) && in_array('nuts', $allergens, true)) {
+        $conflicts[] = 'Contains Nuts';
+    }
+    if (isset($prefs['gluten_free']) && in_array('gluten', $allergens, true)) {
+        $conflicts[] = 'Contains Gluten';
+    }
+    if (isset($prefs['mild_spice']) && in_array($spiceLevel, ['spicy', 'extra_hot', 'hot', 'extra_spicy'], true)) {
+        $conflicts[] = 'Spicy Dish';
+    }
+
+    return [
+        'allergens' => $allergens,
+        'conflicts' => $conflicts,
+        'calories' => $calories,
+        'protein' => $protein,
+        'carbs' => $carbs,
+        'fat' => $fat,
+        'spice_level' => $spiceLevel,
+    ];
+}
+
+/**
+ * Render interactive Favorite Heart button HTML for storefront/restaurant/search dish cards.
+ */
+function renderDishFavoriteButtonHtml(int $itemId, bool $isFavorited): string
+{
+    $cls = $isFavorited ? 'is-favorited' : '';
+    $icon = $isFavorited ? 'bi-heart-fill text-danger' : 'bi-heart text-dark';
+    $pressed = $isFavorited ? 'true' : 'false';
+    return '<button type="button" class="btn btn-light btn-sm rounded-circle shadow-sm d-inline-flex align-items-center justify-content-center dish-fav-btn ' . $cls . '" '
+        . 'data-item-id="' . $itemId . '" aria-pressed="' . $pressed . '" title="Toggle Favorite" '
+        . 'style="width:32px;height:32px;padding:0;backdrop-filter:blur(4px);background:rgba(255,255,255,0.92);" '
+        . 'onclick="event.stopPropagation(); toggleDishFavorite(' . $itemId . ', this);">'
+        . '<i class="bi ' . $icon . '"></i></button>';
+}
+
+/**
+ * Render uniform macro nutrition, spice, allergen pills, and customer dietary warnings.
+ *
+ * @param array<string, mixed> $dish
+ * @param array<int, string> $userDietaryPrefs
+ */
+function renderDishDietaryMetadataHtml(array $dish, array $userDietaryPrefs = []): string
+{
+    $meta = evaluateDishDietaryConflicts($dish, $userDietaryPrefs);
+    $allergenMap = function_exists('getDishAllergenOptions') ? getDishAllergenOptions() : [];
+    $parts = [];
+
+    if ($meta['calories'] > 0 || $meta['protein'] > 0) {
+        $macroText = [];
+        if ($meta['calories'] > 0) {
+            $macroText[] = $meta['calories'] . ' kcal';
+        }
+        if ($meta['protein'] > 0) {
+            $macroText[] = $meta['protein'] . 'g protein';
+        }
+        $parts[] = '<span class="badge bg-light text-dark border fw-normal" style="font-size:0.66rem;">'
+            . '<i class="bi bi-fire text-warning me-1"></i>' . e(implode(' · ', $macroText)) . '</span>';
+    }
+
+    $spiceBadge = match ($meta['spice_level']) {
+        'mild' => '<span class="badge bg-success-subtle text-success border border-success-subtle fw-normal" style="font-size:0.66rem;">🌿 Mild</span>',
+        'spicy', 'hot', 'extra_hot', 'extra_spicy' => '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-normal" style="font-size:0.66rem;">🌶️ Spicy</span>',
+        default => '',
+    };
+    if ($spiceBadge !== '') {
+        $parts[] = $spiceBadge;
+    }
+
+    if (!empty($meta['allergens'])) {
+        $labels = [];
+        foreach ($meta['allergens'] as $a) {
+            $labels[] = ucfirst($a);
+        }
+        $titleList = [];
+        foreach ($meta['allergens'] as $a) {
+            $titleList[] = $allergenMap[$a] ?? ucfirst($a);
+        }
+        $parts[] = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle fw-normal" style="font-size:0.66rem;" title="Contains: ' . e(implode(', ', $titleList)) . '">'
+            . '<i class="bi bi-exclamation-circle text-warning me-1"></i>' . e(implode(', ', $labels)) . '</span>';
+    }
+
+    $html = '';
+    if (!empty($parts)) {
+        $html .= '<div class="d-flex flex-wrap gap-1 mb-2">' . implode('', $parts) . '</div>';
+    }
+    if (!empty($meta['conflicts'])) {
+        $html .= '<div class="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center gap-1 rounded-3 border-warning" style="font-size:0.7rem;">'
+            . '<i class="bi bi-shield-exclamation text-danger"></i>'
+            . '<span>Dietary Alert: <strong>' . e(implode(' · ', $meta['conflicts'])) . '</strong></span></div>';
+    }
+
+    return $html;
+}

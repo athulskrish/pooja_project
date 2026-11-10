@@ -11,6 +11,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/WSJFQueue.php';
 
 if (!isKitchen() && !isAdmin()) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
@@ -39,6 +40,7 @@ $totalActive = $countNew + $countCooking + $countReady;
 
 // Comprehensive Canonical State Fingerprint
 $stateHash = getKdsStateHash();
+$preAlerts = WSJFQueue::getScheduledPreAlerts();
 
 echo json_encode([
     'success' => true,
@@ -49,10 +51,17 @@ echo json_encode([
         'cooking' => $countCooking,
         'ready' => $countReady,
         'scheduled' => $countScheduled,
+        'pre_alerts' => count($preAlerts),
         'handed_over' => $countHandedOver,
         'delivered' => $countDeliveredToday,
         'total_active' => $totalActive
     ],
-    'latest_incoming_id' => $latestIncomingId
+    'latest_incoming_id' => $latestIncomingId,
+    'pre_alerts' => array_map(static fn(array $a): array => [
+        'order_id' => (int)$a['order_id'],
+        'customer_name' => (string)$a['customer_name'],
+        'scheduled_slot' => (string)($a['scheduled_slot'] ?? ''),
+        'mins_until_due' => (int)($a['mins_until_due'] ?? 0),
+    ], $preAlerts),
 ]);
 exit;

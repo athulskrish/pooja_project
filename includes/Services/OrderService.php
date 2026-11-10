@@ -194,6 +194,105 @@ class OrderService
     }
 
     /**
+     * Fetch a customer's submitted support tickets along with threaded admin/customer replies.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function getCustomerSupportTickets(int $userId): array
+    {
+        if ($userId <= 0) {
+            return [];
+        }
+
+        try {
+            $tickets = dbFetchAll("
+                SELECT * FROM `support_tickets`
+                WHERE `user_id` = :uid
+                ORDER BY `created_at` DESC, `ticket_id` DESC
+            ", [':uid' => $userId]);
+
+            if (empty($tickets)) {
+                return [];
+            }
+
+            $ids = array_column($tickets, 'ticket_id');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $replies = [];
+            try {
+                $replyRows = dbFetchAll("
+                    SELECT * FROM `support_ticket_replies`
+                    WHERE `ticket_id` IN ({$placeholders})
+                    ORDER BY `created_at` ASC, `reply_id` ASC
+                ", $ids);
+                foreach ($replyRows as $rr) {
+                    $replies[(int)$rr['ticket_id']][] = $rr;
+                }
+            } catch (Throwable $e) {
+                $replies = [];
+            }
+
+            foreach ($tickets as &$t) {
+                $t['replies'] = $replies[(int)$t['ticket_id']] ?? [];
+            }
+            unset($t);
+
+            return $tickets;
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Add a customer follow-up reply to their own support ticket (`ticket_id`).
+     *
+     * @return array{ok: bool, flash_type: string, message: string}
+     */
+    public static function addCustomerTicketReply(int $ticketId, int $userId, string $senderName, string $message): array
+    {
+        $cleanMsg = cleanInput($message);
+        if ($ticketId <= 0 || $cleanMsg === '') {
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Please enter a reply message.'];
+        }
+
+        try {
+            $ok = dbTransactional(static function () use ($ticketId, $userId, $senderName, $cleanMsg): bool {
+                $ticket = dbFetchOne(
+                    "SELECT `ticket_id`, `user_id`, `ticket_status` FROM `support_tickets` WHERE `ticket_id` = :tid FOR UPDATE",
+                    [':tid' => $ticketId]
+                );
+                if (!$ticket || (int)$ticket['user_id'] !== $userId) {
+                    return false;
+                }
+
+                dbQuery("
+                    INSERT INTO `support_ticket_replies` (`ticket_id`, `user_id`, `sender_role`, `sender_name`, `reply_message`)
+                    VALUES (:tid, :uid, 'CUSTOMER', :sname, :msg)
+                ", [
+                    ':tid' => $ticketId,
+                    ':uid' => $userId,
+                    ':sname' => $senderName !== '' ? $senderName : 'Customer',
+                    ':msg' => $cleanMsg,
+                ]);
+
+                if ($ticket['ticket_status'] === 'RESOLVED' || $ticket['ticket_status'] === 'CLOSED') {
+                    dbQuery("UPDATE `support_tickets` SET `ticket_status` = 'OPEN' WHERE `ticket_id` = :tid", [':tid' => $ticketId]);
+                }
+
+                return true;
+            });
+
+            if (!$ok) {
+                return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Ticket not found or unauthorized.'];
+            }
+
+            return ['ok' => true, 'flash_type' => 'success', 'message' => "Follow-up reply posted to ticket #TKT-{$ticketId}."];
+        } catch (Throwable $e) {
+            error_log("Customer ticket reply error for #{$ticketId}: " . $e->getMessage());
+            return ['ok' => false, 'flash_type' => 'danger', 'message' => 'Failed to post reply safely. Please try again.'];
+        }
+    }
+
+    /**
      * Fetch active saved delivery addresses for a customer (`is_active = 1`).
      *
      * @return array<int, array<string, mixed>>
@@ -219,14 +318,21 @@ class OrderService
         $line = cleanInput((string)($post['address_line'] ?? ''));
         $landmark = cleanInput((string)($post['landmark'] ?? ''));
         $pincode = cleanInput((string)($post['pincode'] ?? '560038'));
+        $rawLat = isset($post['latitude']) && $post['latitude'] !== '' ? (float)$post['latitude'] : null;
+        $rawLng = isset($post['longitude']) && $post['longitude'] !== '' ? (float)$post['longitude'] : null;
         $isDefault = !empty($post['is_default']) ? 1 : 0;
 
         if ($line === '') {
             return ['type' => 'danger', 'message' => 'Please enter a complete address line.', 'should_redirect' => false];
         }
 
+        $geo = validateServiceableLocation($pincode, $rawLat, $rawLng);
+        if (!$geo['serviceable']) {
+            return ['type' => 'danger', 'message' => $geo['message'], 'should_redirect' => false];
+        }
+
         try {
-            dbTransactional(static function () use ($userId, $type, $line, $landmark, $pincode, $isDefault): void {
+            dbTransactional(static function () use ($userId, $type, $line, $landmark, $pincode, $geo, $isDefault): void {
                 dbFetchAll(
                     "SELECT `address_id` FROM `user_addresses` WHERE `user_id` = :uid AND `is_active` = 1 FOR UPDATE",
                     [':uid' => $userId]
@@ -235,19 +341,22 @@ class OrderService
                     dbQuery("UPDATE `user_addresses` SET `is_default` = 0 WHERE `user_id` = :uid", [':uid' => $userId]);
                 }
                 dbQuery("
-                    INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `is_default`, `is_active`)
-                    VALUES (:uid, :type, :line, :lm, :pin, :def, 1)
+                    INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `landmark`, `pincode`, `latitude`, `longitude`, `distance_km`, `is_default`, `is_active`)
+                    VALUES (:uid, :type, :line, :lm, :pin, :lat, :lng, :dist, :def, 1)
                 ", [
                     ':uid' => $userId,
                     ':type' => $type,
                     ':line' => $line,
                     ':lm' => $landmark,
                     ':pin' => $pincode,
+                    ':lat' => $geo['latitude'],
+                    ':lng' => $geo['longitude'],
+                    ':dist' => $geo['distance_km'],
                     ':def' => $isDefault,
                 ]);
             });
 
-            return ['type' => 'success', 'message' => 'New delivery address added successfully.', 'should_redirect' => true];
+            return ['type' => 'success', 'message' => "New delivery address added ({$geo['zone_name']} • {$geo['distance_km']} km, est. fee " . formatInr($geo['delivery_fee']) . ').', 'should_redirect' => true];
         } catch (Throwable $e) {
             error_log("add_address failed for user {$userId}: " . $e->getMessage());
             return ['type' => 'danger', 'message' => 'Failed to save delivery address. Please try again.', 'should_redirect' => true];
@@ -372,6 +481,10 @@ class OrderService
 
         $newAddressLine = cleanInput((string)($post['new_address_line'] ?? ''));
         $newPincode = cleanInput((string)($post['new_pincode'] ?? '560038'));
+        $newLat = isset($post['new_latitude']) && $post['new_latitude'] !== '' ? (float)$post['new_latitude'] : null;
+        $newLng = isset($post['new_longitude']) && $post['new_longitude'] !== '' ? (float)$post['new_longitude'] : null;
+        $useLoyalty = !empty($post['use_loyalty_points']);
+        $requestedLoyaltyPts = $useLoyalty ? max(0, (int)($post['loyalty_points_to_use'] ?? 0)) : 0;
 
         if (empty($cartItems) || !is_array($cartItems)) {
             return ['ok' => false, 'error' => 'Your cart is empty. Please add items before checking out.'];
@@ -385,30 +498,99 @@ class OrderService
         try {
             $pdo->beginTransaction();
 
+            // Lock customer loyalty balance
+            $userLockStmt = $pdo->prepare("SELECT `loyalty_points` FROM `users` WHERE `user_id` = :uid FOR UPDATE");
+            $userLockStmt->execute([':uid' => $userId]);
+            $userLoyaltyBalance = (int)($userLockStmt->fetchColumn() ?: 0);
+
+            if ($useLoyalty && $requestedLoyaltyPts === 0 && $userLoyaltyBalance > 0) {
+                $requestedLoyaltyPts = $userLoyaltyBalance;
+            }
+
+            $addrPincode = $newPincode;
+            $addrLat = $newLat;
+            $addrLng = $newLng;
+
             if ($selectedAddressId) {
                 $addrCheckStmt = $pdo->prepare("
-                    SELECT `address_id` FROM `user_addresses`
+                    SELECT `address_id`, `pincode`, `latitude`, `longitude`, `distance_km`
+                    FROM `user_addresses`
                     WHERE `address_id` = :aid AND `user_id` = :uid AND `is_active` = 1
                     LIMIT 1
                 ");
                 $addrCheckStmt->execute([':aid' => $selectedAddressId, ':uid' => $userId]);
-                if (!$addrCheckStmt->fetchColumn()) {
+                $addrRow = $addrCheckStmt->fetch();
+                if (!$addrRow) {
                     throw new Exception('Selected delivery address does not belong to your account or is archived.');
                 }
+                $addrPincode = (string)($addrRow['pincode'] ?: '560038');
+                $addrLat = isset($addrRow['latitude']) && $addrRow['latitude'] !== null ? (float)$addrRow['latitude'] : null;
+                $addrLng = isset($addrRow['longitude']) && $addrRow['longitude'] !== null ? (float)$addrRow['longitude'] : null;
             } else {
                 if ($newAddressLine === '') {
                     throw new Exception('Please select or enter a delivery address.');
                 }
+                $newGeo = validateServiceableLocation($newPincode, $newLat, $newLng);
+                if (!$newGeo['serviceable']) {
+                    throw new Exception($newGeo['message']);
+                }
+                $addrLat = $newGeo['latitude'];
+                $addrLng = $newGeo['longitude'];
                 $addrStmt = $pdo->prepare("
-                    INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `pincode`, `is_default`, `is_active`)
-                    VALUES (:uid, 'HOME', :line, :pin, 1, 1)
+                    INSERT INTO `user_addresses` (`user_id`, `address_type`, `address_line`, `pincode`, `latitude`, `longitude`, `distance_km`, `is_default`, `is_active`)
+                    VALUES (:uid, 'HOME', :line, :pin, :lat, :lng, :dist, 1, 1)
                 ");
                 $addrStmt->execute([
                     ':uid' => $userId,
                     ':line' => $newAddressLine,
                     ':pin' => $newPincode,
+                    ':lat' => $newGeo['latitude'],
+                    ':lng' => $newGeo['longitude'],
+                    ':dist' => $newGeo['distance_km'],
                 ]);
                 $selectedAddressId = (int)$pdo->lastInsertId();
+            }
+
+            // FCFS Scheduled Slot Capacity Throttling
+            $scheduledSlotKey = null;
+            if ($isScheduled && $scheduledFor !== null) {
+                $slotDate = date('Y-m-d', (int)strtotime($scheduledFor));
+                $slotHourMin = date('H:i', (int)strtotime($scheduledFor));
+                $scheduledSlotKey = $slotDate . '|' . $slotHourMin;
+                $defaultSlotCap = defined('DEFAULT_SCHEDULED_SLOT_CAPACITY') ? (int)DEFAULT_SCHEDULED_SLOT_CAPACITY : 5;
+
+                $capCheckStmt = $pdo->prepare("SELECT `slot_key`, `max_capacity`, `booked_count` FROM `scheduled_slot_caps` WHERE `slot_key` = :sk FOR UPDATE");
+                $capCheckStmt->execute([':sk' => $scheduledSlotKey]);
+                $slotRow = $capCheckStmt->fetch();
+
+                if (!$slotRow) {
+                    $existingSlotCountStmt = $pdo->prepare("
+                        SELECT COUNT(*) FROM `orders`
+                        WHERE `is_scheduled` = 1
+                          AND DATE(`scheduled_for`) = :sdate
+                          AND DATE_FORMAT(`scheduled_for`, '%H:%i') = :shm
+                          AND `order_status` != 'CANCELLED'
+                    ");
+                    $existingSlotCountStmt->execute([':sdate' => $slotDate, ':shm' => $slotHourMin]);
+                    $existingCnt = (int)$existingSlotCountStmt->fetchColumn();
+
+                    $pdo->prepare("
+                        INSERT INTO `scheduled_slot_caps` (`slot_key`, `slot_date`, `slot_label`, `max_capacity`, `booked_count`)
+                        VALUES (:sk, :sd, :sl, :mc, :bc)
+                    ")->execute([
+                        ':sk' => $scheduledSlotKey,
+                        ':sd' => $slotDate,
+                        ':sl' => (string)$scheduledSlot,
+                        ':mc' => $defaultSlotCap,
+                        ':bc' => $existingCnt,
+                    ]);
+                    $capCheckStmt->execute([':sk' => $scheduledSlotKey]);
+                    $slotRow = $capCheckStmt->fetch();
+                }
+
+                if ($slotRow && (int)$slotRow['booked_count'] >= (int)$slotRow['max_capacity']) {
+                    throw new Exception("Scheduled slot '{$scheduledSlot}' is full (FCFS limit of {$slotRow['max_capacity']} orders reached). Please select another time slot.");
+                }
             }
 
             $verifiedItems = [];
@@ -493,27 +675,61 @@ class OrderService
                 ];
             }
 
-            $bill = calculateBillTotals($verifiedItems, $couponCode);
+            $geoResult = validateServiceableLocation($addrPincode, $addrLat, $addrLng, $subtotal);
+            if (!$geoResult['serviceable']) {
+                throw new Exception($geoResult['message']);
+            }
+
+            $bill = calculateBillTotals(
+                $verifiedItems,
+                $couponCode,
+                $userId,
+                $geoResult['delivery_fee'],
+                $requestedLoyaltyPts,
+                $userLoyaltyBalance
+            );
             $taxAmount = $bill['gst_amount'];
             $deliveryFee = $bill['delivery_fee'];
             $discountAmount = $bill['discount'];
+            $loyaltyPointsUsed = (int)($bill['loyalty_points_used'] ?? 0);
+            $loyaltyDiscount = (float)($bill['loyalty_discount'] ?? 0.00);
             $totalAmount = $bill['final_total'];
-            $etaMinutes = $maxPrepTime + 15;
+            $distanceKm = (float)$geoResult['distance_km'];
+            $destLat = (float)$geoResult['latitude'];
+            $destLng = (float)$geoResult['longitude'];
+            $travelMins = max(10, (int)$geoResult['eta_minutes'] - 10);
+            $etaMinutes = $maxPrepTime + $travelMins;
+
+            // Lock coupon row if applied to prevent concurrent over-redemption
+            $appliedCouponId = null;
+            if (!empty($bill['coupon_code']) && !empty($bill['coupon_meta']['coupon_id'])) {
+                $cpLock = $pdo->prepare("SELECT `coupon_id`, `usage_limit`, `used_count` FROM `coupons` WHERE `coupon_id` = :cid FOR UPDATE");
+                $cpLock->execute([':cid' => (int)$bill['coupon_meta']['coupon_id']]);
+                $lockedCp = $cpLock->fetch();
+                if ($lockedCp) {
+                    if ((int)$lockedCp['usage_limit'] > 0 && (int)$lockedCp['used_count'] >= (int)$lockedCp['usage_limit']) {
+                        throw new Exception("Coupon {$bill['coupon_code']} has reached its maximum usage limit.");
+                    }
+                    $appliedCouponId = (int)$lockedCp['coupon_id'];
+                    $pdo->prepare("UPDATE `coupons` SET `used_count` = `used_count` + 1 WHERE `coupon_id` = :cid")
+                        ->execute([':cid' => $appliedCouponId]);
+                }
+            }
 
             $orderStmt = $pdo->prepare("
                 INSERT INTO `orders` (
                     `user_id`, `address_id`, `subtotal`, `tax_amount`,
-                    `delivery_fee`, `platform_fee`, `discount_amount`, `total_amount`,
+                    `delivery_fee`, `platform_fee`, `discount_amount`, `loyalty_points_used`, `loyalty_discount`, `distance_km`, `total_amount`,
                     `coupon_code`, `order_status`, `is_scheduled`, `scheduled_for`, `scheduled_slot`,
                     `order_notes`, `placed_at`, `estimated_delivery_time`
                 ) VALUES (
                     :uid, :aid, :sub, :tax,
-                    :del, :plat, :disc, :tot,
+                    :del, :plat, :disc, :lpts, :ldisc, :dist, :tot,
                     :coupon, 'CONFIRMED', :is_sched, :sched_for, :sched_slot,
                     :notes, NOW(), :est_delivery
                 )
             ");
-            $appliedCoupon = !empty($bill['coupon_code']) ? $bill['coupon_code'] : ($couponCode !== '' ? strtoupper(trim($couponCode)) : null);
+            $appliedCoupon = !empty($bill['coupon_code']) ? $bill['coupon_code'] : null;
             $platformFee = (float)($bill['platform_fee'] ?? 5.00);
             $estimatedDelivery = $scheduledFor ?: date('Y-m-d H:i:s', strtotime("+{$etaMinutes} minutes"));
 
@@ -525,6 +741,9 @@ class OrderService
                 ':del' => $deliveryFee,
                 ':plat' => $platformFee,
                 ':disc' => $discountAmount,
+                ':lpts' => $loyaltyPointsUsed,
+                ':ldisc' => $loyaltyDiscount,
+                ':dist' => $distanceKm,
                 ':tot' => $totalAmount,
                 ':coupon' => $appliedCoupon,
                 ':is_sched' => $isScheduled,
@@ -534,6 +753,49 @@ class OrderService
                 ':est_delivery' => $estimatedDelivery,
             ]);
             $orderId = (int)$pdo->lastInsertId();
+
+            // Increment FCFS scheduled slot counter if scheduled
+            if ($scheduledSlotKey !== null) {
+                $pdo->prepare("UPDATE `scheduled_slot_caps` SET `booked_count` = `booked_count` + 1 WHERE `slot_key` = :sk")
+                    ->execute([':sk' => $scheduledSlotKey]);
+            }
+
+            // Record coupon redemption audit
+            if ($appliedCouponId !== null && $discountAmount > 0) {
+                $pdo->prepare("
+                    INSERT INTO `coupon_redemptions` (`coupon_id`, `user_id`, `order_id`, `discount_applied`)
+                    VALUES (:cid, :uid, :oid, :disc)
+                ")->execute([
+                    ':cid' => $appliedCouponId,
+                    ':uid' => $userId,
+                    ':oid' => $orderId,
+                    ':disc' => $discountAmount,
+                ]);
+            }
+
+            // Deduct redeemed loyalty points & write loyalty ledger entry
+            if ($loyaltyPointsUsed > 0) {
+                $newLoyaltyBal = max(0, $userLoyaltyBalance - $loyaltyPointsUsed);
+                $pdo->prepare("UPDATE `users` SET `loyalty_points` = :bal WHERE `user_id` = :uid")
+                    ->execute([':bal' => $newLoyaltyBal, ':uid' => $userId]);
+                $pdo->prepare("
+                    INSERT INTO `loyalty_transactions` (`user_id`, `order_id`, `txn_type`, `points`, `balance_after`, `description`)
+                    VALUES (:uid, :oid, 'REDEEMED', :pts, :bal, :desc)
+                ")->execute([
+                    ':uid' => $userId,
+                    ':oid' => $orderId,
+                    ':pts' => -$loyaltyPointsUsed,
+                    ':bal' => $newLoyaltyBal,
+                    ':desc' => "Redeemed {$loyaltyPointsUsed} loyalty points (-" . formatInr($loyaltyDiscount) . ") on Order #ZIP-{$orderId}",
+                ]);
+            }
+
+            // Clear persistent DB cart for this user
+            try {
+                $pdo->prepare("DELETE FROM `cart_items` WHERE `user_id` = :uid")->execute([':uid' => $userId]);
+            } catch (Throwable $ce) {
+                // Non-fatal if optional table is absent
+            }
 
             $orderNumber = '#ZIP-' . $orderId;
             $pdo->prepare("UPDATE `orders` SET `order_number` = :onum WHERE `order_id` = :oid")
@@ -607,8 +869,8 @@ class OrderService
                 ) VALUES (
                     :oid, :rid, :rname, :rphone,
                     :otp, NOW(), 'ASSIGNED',
-                    12.97840000, 77.64080000, 12.96980000, 77.64990000,
-                    0, 2.40, :eta
+                    12.97840000, 77.64080000, :dlat, :dlng,
+                    0, :dkm, :eta
                 )
             ");
             $dispStmt->execute([
@@ -617,6 +879,9 @@ class OrderService
                 ':rname' => $assignedRiderName,
                 ':rphone' => $assignedRiderPhone,
                 ':otp' => $deliveryOtp,
+                ':dlat' => $destLat,
+                ':dlng' => $destLng,
+                ':dkm' => $distanceKm,
                 ':eta' => $etaMinutes,
             ]);
 
@@ -810,12 +1075,28 @@ class OrderService
 
         try {
             dbTransactional(static function () use ($orderId, $actorUserId): void {
-                $lockedOrder = dbFetchOne("SELECT `order_id`, `order_status`, `user_id` FROM `orders` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
+                $lockedOrder = dbFetchOne("SELECT `order_id`, `order_status`, `user_id`, `is_scheduled`, `scheduled_for` FROM `orders` WHERE `order_id` = :id FOR UPDATE", [':id' => $orderId]);
                 if (!$lockedOrder || !in_array($lockedOrder['order_status'], ['PLACED', 'CONFIRMED'], true)) {
                     throw new RuntimeException('Order state changed before cancellation completed.');
                 }
 
                 dbQuery("UPDATE `orders` SET `order_status` = 'CANCELLED' WHERE `order_id` = :id", [':id' => $orderId]);
+
+                // Release FCFS scheduled slot capacity if scheduled
+                if (!empty($lockedOrder['is_scheduled']) && !empty($lockedOrder['scheduled_for'])) {
+                    $sTs = strtotime((string)$lockedOrder['scheduled_for']);
+                    if ($sTs) {
+                        $sKey = date('Y-m-d', $sTs) . '|' . date('H:i', $sTs);
+                        try {
+                            dbQuery(
+                                "UPDATE `scheduled_slot_caps` SET `booked_count` = GREATEST(0, `booked_count` - 1) WHERE `slot_key` = :sk",
+                                [':sk' => $sKey]
+                            );
+                        } catch (Throwable $se) {
+                            // Ignore if table absent
+                        }
+                    }
+                }
 
                 // Lock menu_items in ascending item_id order before restoring stock quantities
                 $orderItems = dbFetchAll(
@@ -836,6 +1117,9 @@ class OrderService
                 }
 
                 dbQuery("UPDATE `payments` SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() WHERE `order_id` = :id", [':id' => $orderId]);
+
+                // Restore any loyalty points redeemed on this order
+                refundLoyaltyPointsForOrder($orderId);
 
                 dbQuery("
                     INSERT INTO `order_audit_trail` (`order_id`, `old_status`, `new_status`, `updated_by_user_id`, `change_timestamp`)
@@ -1300,6 +1584,132 @@ class OrderService
     }
 
     /**
+     * Toggle per-dish preparation checklist state (`order_items.is_prepped`) inside KDS.
+     *
+     * @return array{ok: bool, order_id: int, order_item_id: int, is_prepped: int, prepped_count: int, total_count: int, message?: string}
+     */
+    public static function toggleOrderItemPrepped(int $orderItemId, int $isPrepped): array
+    {
+        if ($orderItemId <= 0) {
+            return ['ok' => false, 'order_id' => 0, 'order_item_id' => 0, 'is_prepped' => 0, 'prepped_count' => 0, 'total_count' => 0, 'message' => 'Invalid line item ID.'];
+        }
+
+        $targetState = $isPrepped ? 1 : 0;
+
+        try {
+            return dbTransactional(static function () use ($orderItemId, $targetState): array {
+                $row = dbFetchOne("SELECT `order_item_id`, `order_id` FROM `order_items` WHERE `order_item_id` = :oiid FOR UPDATE", [':oiid' => $orderItemId]);
+                if (!$row) {
+                    return ['ok' => false, 'order_id' => 0, 'order_item_id' => $orderItemId, 'is_prepped' => 0, 'prepped_count' => 0, 'total_count' => 0, 'message' => 'Order item not found.'];
+                }
+
+                $orderId = (int)$row['order_id'];
+                if ($targetState === 1) {
+                    dbQuery("UPDATE `order_items` SET `is_prepped` = 1, `prepped_at` = NOW() WHERE `order_item_id` = :oiid", [':oiid' => $orderItemId]);
+                } else {
+                    dbQuery("UPDATE `order_items` SET `is_prepped` = 0, `prepped_at` = NULL WHERE `order_item_id` = :oiid", [':oiid' => $orderItemId]);
+                }
+
+                $summary = dbFetchOne("
+                    SELECT COUNT(*) AS total_cnt, COALESCE(SUM(`is_prepped`), 0) AS prepped_cnt
+                    FROM `order_items`
+                    WHERE `order_id` = :oid
+                ", [':oid' => $orderId]);
+
+                return [
+                    'ok' => true,
+                    'order_id' => $orderId,
+                    'order_item_id' => $orderItemId,
+                    'is_prepped' => $targetState,
+                    'prepped_count' => (int)($summary['prepped_cnt'] ?? 0),
+                    'total_count' => (int)($summary['total_cnt'] ?? 0),
+                ];
+            });
+        } catch (Throwable $e) {
+            error_log("toggleOrderItemPrepped error for #{$orderItemId}: " . $e->getMessage());
+            return ['ok' => false, 'order_id' => 0, 'order_item_id' => $orderItemId, 'is_prepped' => 0, 'prepped_count' => 0, 'total_count' => 0, 'message' => 'Failed to update prep status.'];
+        }
+    }
+
+    /**
+     * Compute First-Come First-Served scheduled slot availability for a target date.
+     *
+     * @return array<int, array{time: string, label: string, max_capacity: int, booked_count: int, remaining: int, is_full: bool}>
+     */
+    public static function getScheduledSlotAvailability(string $date): array
+    {
+        $cleanDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : date('Y-m-d');
+        $defaultCap = defined('DEFAULT_SCHEDULED_SLOT_CAPACITY') ? (int)DEFAULT_SCHEDULED_SLOT_CAPACITY : 5;
+        $standardSlots = [
+            ['time' => '12:15', 'label' => 'Lunch (12:00 PM - 12:30 PM)'],
+            ['time' => '12:45', 'label' => 'Lunch (12:30 PM - 01:00 PM)'],
+            ['time' => '13:15', 'label' => 'Lunch (01:00 PM - 01:30 PM)'],
+            ['time' => '13:45', 'label' => 'Lunch (01:30 PM - 02:00 PM)'],
+            ['time' => '14:15', 'label' => 'Lunch (02:00 PM - 02:30 PM)'],
+            ['time' => '16:45', 'label' => 'Snacks (04:30 PM - 05:00 PM)'],
+            ['time' => '17:15', 'label' => 'Snacks (05:00 PM - 05:30 PM)'],
+            ['time' => '17:45', 'label' => 'Snacks (05:30 PM - 06:00 PM)'],
+            ['time' => '19:15', 'label' => 'Dinner (07:00 PM - 07:30 PM)'],
+            ['time' => '19:45', 'label' => 'Dinner (07:30 PM - 08:00 PM)'],
+            ['time' => '20:15', 'label' => 'Dinner (08:00 PM - 08:30 PM)'],
+            ['time' => '20:45', 'label' => 'Dinner (08:30 PM - 09:00 PM)'],
+            ['time' => '21:15', 'label' => 'Dinner (09:00 PM - 09:30 PM)'],
+            ['time' => '21:45', 'label' => 'Dinner (09:30 PM - 10:00 PM)'],
+        ];
+
+        $capByTime = [];
+        try {
+            $caps = dbFetchAll("SELECT `slot_key`, `max_capacity`, `booked_count` FROM `scheduled_slot_caps` WHERE `slot_date` = :dt", [':dt' => $cleanDate]);
+            foreach ($caps as $c) {
+                $parts = explode('|', (string)$c['slot_key']);
+                if (isset($parts[1])) {
+                    $capByTime[$parts[1]] = [
+                        'max' => (int)$c['max_capacity'],
+                        'booked' => (int)$c['booked_count'],
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            // Fallback to counting orders directly
+        }
+
+        $orderCountsByTime = [];
+        try {
+            $rows = dbFetchAll("
+                SELECT DATE_FORMAT(`scheduled_for`, '%H:%i') AS slot_hm, COUNT(*) AS cnt
+                FROM `orders`
+                WHERE `is_scheduled` = 1
+                  AND DATE(`scheduled_for`) = :dt
+                  AND `order_status` != 'CANCELLED'
+                GROUP BY DATE_FORMAT(`scheduled_for`, '%H:%i')
+            ", [':dt' => $cleanDate]);
+            foreach ($rows as $r) {
+                $orderCountsByTime[(string)$r['slot_hm']] = (int)$r['cnt'];
+            }
+        } catch (Throwable $e) {
+            // Ignore
+        }
+
+        $out = [];
+        foreach ($standardSlots as $slot) {
+            $hm = $slot['time'];
+            $maxCap = $capByTime[$hm]['max'] ?? $defaultCap;
+            $booked = max($capByTime[$hm]['booked'] ?? 0, $orderCountsByTime[$hm] ?? 0);
+            $remaining = max(0, $maxCap - $booked);
+            $out[] = [
+                'time' => $hm,
+                'label' => $slot['label'],
+                'max_capacity' => $maxCap,
+                'booked_count' => $booked,
+                'remaining' => $remaining,
+                'is_full' => ($remaining <= 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * Fetch Kitchen Display System swimlanes, rider dispatches, history, chef payouts, and 86 menu.
      *
      * @param array<string, mixed> $currentUser
@@ -1400,6 +1810,33 @@ class OrderService
         ");
 
         $scheduledOrders = array_values(array_filter($allActiveOrders, static fn(array $o): bool => !empty($o['is_scheduled'])));
+        usort($scheduledOrders, static function (array $a, array $b): int {
+            $schedCmp = strcmp((string)($a['scheduled_for'] ?? ''), (string)($b['scheduled_for'] ?? ''));
+            if ($schedCmp !== 0) {
+                return $schedCmp;
+            }
+            $placedCmp = strcmp((string)$a['placed_at'], (string)$b['placed_at']);
+            return $placedCmp !== 0 ? $placedCmp : ((int)$a['order_id'] <=> (int)$b['order_id']);
+        });
+        $scheduledPreAlerts = class_exists('WSJFQueue') ? WSJFQueue::getScheduledPreAlerts() : [];
+
+        $stationSet = [];
+        foreach ($allMenuItems as $mi) {
+            $st = trim((string)($mi['kitchen_station'] ?? 'Main Kitchen'));
+            if ($st !== '') {
+                $stationSet[$st] = true;
+            }
+        }
+        foreach ($allActiveOrders as $ao) {
+            foreach (($ao['stations'] ?? []) as $st) {
+                if ($st !== '') {
+                    $stationSet[$st] = true;
+                }
+            }
+        }
+        $kitchenStations = array_keys($stationSet);
+        sort($kitchenStations);
+
         $countNew = count($laneNew);
         $countCooking = count($laneCooking);
         $countReady = count($laneReady);
@@ -1417,7 +1854,9 @@ class OrderService
             'chefPayouts' => $chefPayouts,
             'recentHandedOver' => $orderHistory,
             'allMenuItems' => $allMenuItems,
+            'kitchenStations' => $kitchenStations,
             'scheduledOrders' => $scheduledOrders,
+            'scheduledPreAlerts' => $scheduledPreAlerts,
             'countScheduled' => count($scheduledOrders),
             'countNew' => $countNew,
             'countCooking' => $countCooking,
@@ -1624,6 +2063,7 @@ class OrderService
         $statusConditionMap = [
             'LIVE'             => "o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY')",
             'SCHEDULED'        => 'o.is_scheduled = 1',
+            'FAILED'           => "d.delivery_status = 'FAILED'",
             'PREPARING'        => "o.order_status IN ('CONFIRMED', 'COOKING')",
             'COOKING'          => "o.order_status = 'COOKING'",
             'CONFIRMED'        => "o.order_status = 'CONFIRMED'",
@@ -1672,6 +2112,7 @@ class OrderService
                    a.address_line, a.landmark, a.pincode,
                    p.payment_mode, p.payment_status, p.transaction_reference,
                    d.rider_id, d.delivery_partner_name, d.delivery_partner_phone, d.delivery_otp, d.delivery_status, d.dispatched_at,
+                   d.failure_reason, d.issue_notes, d.failed_at,
                    TIMESTAMPDIFF(MINUTE, o.placed_at, NOW()) AS elapsed_minutes,
                    TIMESTAMPDIFF(MINUTE, COALESCE(d.dispatched_at, o.placed_at), NOW()) AS transit_minutes
             FROM `orders` o

@@ -14,14 +14,36 @@ $query = cleanInput($_GET['q'] ?? '');
 $categorySlug = cleanInput($_GET['category'] ?? '');
 $vegOnly = !empty($_GET['veg_only']);
 $healthyOnly = !empty($_GET['healthy_only']);
+$highProtein = !empty($_GET['high_protein']);
+$allergenFree = strtolower(cleanInput($_GET['allergen_free'] ?? ''));
 $moodFilter = cleanInput($_GET['mood'] ?? '');
 $sort = cleanInput($_GET['sort'] ?? 'recommended');
 
-$searchResult = CatalogService::searchDishes($query, $categorySlug, $vegOnly, $healthyOnly, $moodFilter, $sort);
+$activeUser = getCurrentUser();
+$uid = ($activeUser && !empty($activeUser['id'])) ? (int)$activeUser['id'] : null;
+
+$searchResult = CatalogService::searchDishes($query, $categorySlug, $vegOnly, $healthyOnly, $moodFilter, $sort, $allergenFree, $highProtein, $uid);
 $dishes = $searchResult['dishes'];
 $categories = $searchResult['categories'];
 $foodMoods = $searchResult['foodMoods'];
 $customSummaryMap = $searchResult['customSummaryMap'];
+$favoriteIds = $searchResult['favoriteIds'] ?? [];
+$userDietaryPrefs = getUserDietaryPreferences($uid);
+
+$allergenOptions = getDishAllergenOptions();
+$buildSearchUrl = static function (array $overrides = []) use ($query, $categorySlug, $vegOnly, $healthyOnly, $highProtein, $allergenFree, $moodFilter, $sort): string {
+    $params = array_merge([
+        'q' => $query,
+        'category' => $categorySlug,
+        'veg_only' => $vegOnly ? '1' : '0',
+        'healthy_only' => $healthyOnly ? '1' : '0',
+        'high_protein' => $highProtein ? '1' : '0',
+        'allergen_free' => $allergenFree,
+        'mood' => $moodFilter,
+        'sort' => $sort,
+    ], $overrides);
+    return CUSTOMER_URL . '/search.php?' . http_build_query($params);
+};
 ?>
 
 <main class="py-4">
@@ -70,17 +92,42 @@ $customSummaryMap = $searchResult['customSummaryMap'];
           <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="small fw-bold text-muted">Quick Filters:</span>
             
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '0' : '1' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=<?= urlencode($sort) ?>" 
+            <a href="<?= e($buildSearchUrl(['veg_only' => $vegOnly ? '0' : '1'])) ?>" 
                class="btn btn-sm rounded-pill <?= $vegOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
               <span style="width:8px; height:8px; border-radius:50%; background:<?= $vegOnly ? '#fff' : '#229947' ?>; display:inline-block;"></span>
               Pure Veg <?= $vegOnly ? '✓' : '' ?>
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '0' : '1' ?>&mood=<?= urlencode($moodFilter) ?>&sort=<?= urlencode($sort) ?>" 
+            <a href="<?= e($buildSearchUrl(['healthy_only' => $healthyOnly ? '0' : '1'])) ?>" 
                class="btn btn-sm rounded-pill <?= $healthyOnly ? 'btn-success text-white' : 'btn-outline-success' ?> d-flex align-items-center gap-1">
               <i class="fa-solid fa-leaf"></i>
               Healthy Food <?= $healthyOnly ? '✓' : '' ?>
             </a>
+
+            <a href="<?= e($buildSearchUrl(['high_protein' => $highProtein ? '0' : '1'])) ?>" 
+               class="btn btn-sm rounded-pill <?= $highProtein ? 'btn-primary text-white' : 'btn-outline-primary' ?> d-flex align-items-center gap-1">
+              <i class="bi bi-lightning-charge-fill"></i>
+              High Protein <?= $highProtein ? '✓' : '' ?>
+            </a>
+
+            <!-- Allergen-Free Filter Dropdown -->
+            <div class="dropdown d-inline-block">
+              <button class="btn btn-sm rounded-pill <?= $allergenFree !== '' ? 'btn-warning text-dark fw-semibold' : 'btn-outline-secondary' ?> dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-shield-check"></i>
+                <span><?= $allergenFree !== '' ? ('Free of ' . e(ucfirst($allergenFree))) : 'Avoid Allergen' ?></span>
+              </button>
+              <ul class="dropdown-menu shadow-sm border-0 rounded-4 mt-1">
+                <li><a class="dropdown-item small <?= $allergenFree === '' ? 'active fw-bold' : '' ?>" href="<?= e($buildSearchUrl(['allergen_free' => ''])) ?>">Show All Allergens</a></li>
+                <li><hr class="dropdown-divider my-1"></li>
+                <?php foreach ($allergenOptions as $aKey => $aLabel): ?>
+                  <li>
+                    <a class="dropdown-item small <?= ($allergenFree === $aKey) ? 'active fw-bold' : '' ?>" href="<?= e($buildSearchUrl(['allergen_free' => $aKey])) ?>">
+                      Avoid <?= e($aLabel) ?>
+                    </a>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+            </div>
 
             <!-- Mood Filter Dropdown Pill -->
             <div class="dropdown d-inline-block">
@@ -88,11 +135,11 @@ $customSummaryMap = $searchResult['customSummaryMap'];
                 <span>🎭 <?= !empty($moodFilter) && isset($foodMoods[$moodFilter]) ? e($foodMoods[$moodFilter]['emoji']) . ' ' . e($foodMoods[$moodFilter]['short_name']) : 'Filter by Mood' ?></span>
               </button>
               <ul class="dropdown-menu shadow-sm border-0 rounded-4 mt-1">
-                <li><a class="dropdown-item small" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=&sort=<?= urlencode($sort) ?>">🎭 All Moods</a></li>
+                <li><a class="dropdown-item small" href="<?= e($buildSearchUrl(['mood' => ''])) ?>">🎭 All Moods</a></li>
                 <li><hr class="dropdown-divider my-1"></li>
                 <?php foreach ($foodMoods as $mKey => $mInfo): ?>
                   <li>
-                    <a class="dropdown-item small d-flex align-items-center gap-2 <?= ($moodFilter === $mKey) ? 'active fw-bold' : '' ?>" href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($mKey) ?>&sort=<?= urlencode($sort) ?>">
+                    <a class="dropdown-item small d-flex align-items-center gap-2 <?= ($moodFilter === $mKey) ? 'active fw-bold' : '' ?>" href="<?= e($buildSearchUrl(['mood' => $mKey])) ?>">
                       <img src="<?= e(getMoodImageUrl($mKey)) ?>" alt="" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover;">
                       <span><?= e($mInfo['emoji']) ?> <?= e($mInfo['name']) ?></span>
                     </a>
@@ -101,12 +148,17 @@ $customSummaryMap = $searchResult['customSummaryMap'];
               </ul>
             </div>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=price_asc" 
+            <a href="<?= e($buildSearchUrl(['sort' => 'price_asc'])) ?>" 
                class="btn btn-sm rounded-pill <?= ($sort === 'price_asc') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Price: Low to High
             </a>
 
-            <a href="<?= CUSTOMER_URL ?>/search.php?q=<?= urlencode($query) ?>&category=<?= urlencode($categorySlug) ?>&veg_only=<?= $vegOnly ? '1' : '0' ?>&healthy_only=<?= $healthyOnly ? '1' : '0' ?>&mood=<?= urlencode($moodFilter) ?>&sort=prep_time" 
+            <a href="<?= e($buildSearchUrl(['sort' => 'protein_desc'])) ?>" 
+               class="btn btn-sm rounded-pill <?= ($sort === 'protein_desc') ? 'btn-dark text-white' : 'btn-light border' ?>">
+              Highest Protein
+            </a>
+
+            <a href="<?= e($buildSearchUrl(['sort' => 'prep_time'])) ?>" 
                class="btn btn-sm rounded-pill <?= ($sort === 'prep_time') ? 'btn-dark text-white' : 'btn-light border' ?>">
               Fastest Prep Time (< 15m)
             </a>
@@ -126,6 +178,7 @@ $customSummaryMap = $searchResult['customSummaryMap'];
           <?php 
             $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
             $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
+            $isFav = in_array((int)$dish['item_id'], $favoriteIds, true);
           ?>
           <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
             <div class="card h-100 border-0 rounded-4 shadow-sm overflow-hidden bg-white dish-catalog-card hover-lift m3-card" data-mood="<?= e($dish['mood'] ?? 'comfort') ?>">
@@ -149,10 +202,11 @@ $customSummaryMap = $searchResult['customSummaryMap'];
                   <?php endif; ?>
                 </div>
 
-                <div class="position-absolute top-0 end-0 m-2">
+                <div class="position-absolute top-0 end-0 m-2 d-flex align-items-center gap-1">
                   <span class="badge bg-dark bg-opacity-75 text-white shadow-sm px-2 py-1" style="font-size:0.65rem;">
                     <i class="bi bi-clock me-1 text-mint"></i> <?= (int)$dish['prep_time_minutes'] ?>m
                   </span>
+                  <?= renderDishFavoriteButtonHtml((int)$dish['item_id'], $isFav) ?>
                 </div>
               </div>
 
@@ -174,7 +228,8 @@ $customSummaryMap = $searchResult['customSummaryMap'];
                     </button>
                   </div>
 
-                  <p class="text-muted small mb-3 dish-desc-clamp" style="min-height:36px;"><?= e($dish['description']) ?></p>
+                  <p class="text-muted small mb-2 dish-desc-clamp" style="min-height:36px;"><?= e($dish['description']) ?></p>
+                  <?= renderDishDietaryMetadataHtml($dish, $userDietaryPrefs) ?>
                 </div>
 
                 <div class="d-flex align-items-center justify-content-between pt-2 border-top">

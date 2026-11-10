@@ -111,8 +111,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $currentProg = (int)($disp['route_progress'] ?? 0);
         $newProg = min(100, $currentProg + $stepDelta);
 
-        $pos = FleetService::interpolateRoute($canonicalRoute, $newProg / 100.0);
-        $remainingKm = max(0.05, round(2.40 * (1.0 - ($newProg / 100.0)), 2));
+        $destLat = (float)($disp['delivery_latitude'] ?: 12.96980000);
+        $destLng = (float)($disp['delivery_longitude'] ?: 77.64990000);
+        $routeTotalKm = max(0.5, calculateHaversineDistanceKm(HUB_LAT, HUB_LNG, $destLat, $destLng));
+        if ($routeTotalKm < 1.0 && abs($destLat - 12.9698) < 0.001) {
+            $routeTotalKm = 2.40;
+        }
+        $dynamicRoute = [];
+        for ($i = 0; $i <= 5; $i++) {
+            $t = $i / 5;
+            $curveOffset = ($i > 0 && $i < 5) ? (sin($t * M_PI) * 0.0012) : 0.0;
+            $dynamicRoute[] = [
+                'lat' => round(HUB_LAT + (($destLat - HUB_LAT) * $t) + $curveOffset, 6),
+                'lng' => round(HUB_LNG + (($destLng - HUB_LNG) * $t) - ($curveOffset * 0.5), 6),
+            ];
+        }
+
+        $pos = FleetService::interpolateRoute($dynamicRoute, $newProg / 100.0);
+        $remainingKm = max(0.05, round($routeTotalKm * (1.0 - ($newProg / 100.0)), 2));
         $remainingMins = max(1, (int)round($remainingKm * 3.5));
 
         $updateStmt = $pdo->prepare("
@@ -273,13 +289,27 @@ if ($isOutForDelivery) {
     $routeProgress = 100;
 }
 
-// Compute rider position based on route progress
+// Compute rider position based on route progress using real Indian coordinates
 $customerLat = (float)($order['delivery_latitude'] ?: 12.96980000);
 $customerLng = (float)($order['delivery_longitude'] ?: 77.64990000);
 
-// Adapt route destination to match customer location
-$adjustedRoute = $canonicalRoute;
-$adjustedRoute[count($adjustedRoute) - 1] = ['lat' => $customerLat, 'lng' => $customerLng];
+$totalRouteKm = max(0.5, calculateHaversineDistanceKm(HUB_LAT, HUB_LNG, $customerLat, $customerLng));
+if ($totalRouteKm < 1.0 && abs($customerLat - 12.9698) < 0.001) {
+    $totalRouteKm = 2.40;
+}
+
+// Build smooth 6-point Indian arterial route from Indiranagar Hub to customer destination
+$adjustedRoute = [];
+$steps = 5;
+for ($i = 0; $i <= $steps; $i++) {
+    $t = $i / $steps;
+    // Slight realistic curve offset for middle segments so path follows arterial roads
+    $curveOffset = ($i > 0 && $i < $steps) ? (sin($t * M_PI) * 0.0012) : 0.0;
+    $adjustedRoute[] = [
+        'lat' => round(HUB_LAT + (($customerLat - HUB_LAT) * $t) + $curveOffset, 6),
+        'lng' => round(HUB_LNG + (($customerLng - HUB_LNG) * $t) - ($curveOffset * 0.5), 6),
+    ];
+}
 
 if ($routeProgress > 0 && $routeProgress <= 100) {
     $riderPos = FleetService::interpolateRoute($adjustedRoute, $routeProgress / 100.0);
@@ -292,7 +322,7 @@ if ($routeProgress > 0 && $routeProgress <= 100) {
     $heading = 135;
 }
 
-$remainingKm = $isDelivered ? 0.0 : max(0.0, round(2.40 * (1.0 - ($routeProgress / 100.0)), 2));
+$remainingKm = $isDelivered ? 0.0 : max(0.0, round($totalRouteKm * (1.0 - ($routeProgress / 100.0)), 2));
 $remainingMins = $isDelivered ? 0 : max(1, (int)round($remainingKm * 3.5));
 
 // Human-friendly status texts

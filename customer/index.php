@@ -21,6 +21,8 @@ $customSummaryMap = $homeData['customSummaryMap'];
 $foodMoods = $homeData['foodMoods'];
 $aprioriCombos = $homeData['aprioriCombos'];
 $activeOrder = $homeData['activeOrder'];
+$favoriteIds = $homeData['favoriteIds'] ?? [];
+$userDietaryPrefs = $homeData['userDietaryPrefs'] ?? [];
 $statusBadge = $homeData['statusBadge'];
 $previousMeal = $homeData['previousMeal'];
 ?>
@@ -582,6 +584,24 @@ $previousMeal = $homeData['previousMeal'];
             <span>Healthy Food</span>
           </button>
 
+          <!-- Favorites Filter Toggle -->
+          <button type="button" class="btn m3-filter-chip btn-sm btn-outline-danger rounded-pill px-3 py-1 d-flex align-items-center gap-1 filter-toggle-btn" id="favoritesOnlyToggle">
+            <i class="bi bi-heart-fill text-danger"></i>
+            <span>Favorites</span>
+          </button>
+
+          <!-- High Protein Filter Toggle -->
+          <button type="button" class="btn m3-filter-chip btn-sm btn-outline-primary rounded-pill px-3 py-1 d-flex align-items-center gap-1 filter-toggle-btn" id="highProteinToggle">
+            <i class="bi bi-lightning-charge-fill"></i>
+            <span>High Protein</span>
+          </button>
+
+          <!-- Allergen-Free Filter Toggle -->
+          <button type="button" class="btn m3-filter-chip btn-sm btn-outline-success rounded-pill px-3 py-1 d-flex align-items-center gap-1 filter-toggle-btn" id="allergenFreeToggle">
+            <i class="bi bi-shield-check"></i>
+            <span>Allergen-Free</span>
+          </button>
+
           <!-- Mood Filter Dropdown Chip -->
           <div class="dropdown">
             <button class="btn m3-filter-chip btn-sm rounded-pill px-3 py-1 dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="moodFilterDropdownBtn">
@@ -663,8 +683,14 @@ $previousMeal = $homeData['previousMeal'];
             <?php 
               $isHealthyDish = (!empty($dish['is_healthy']) || ($dish['category_slug'] ?? '') === 'healthy' || stripos($dish['category_name'] ?? '', 'healthy') !== false || stripos($dish['item_name'] ?? '', 'salad') !== false || stripos($dish['item_name'] ?? '', 'quinoa') !== false);
               $dishPrimaryMood = getDishPrimaryMood($dish['mood'] ?? 'comfort');
+              $isFav = in_array((int)$dish['item_id'], $favoriteIds, true);
+              $dietMeta = evaluateDishDietaryConflicts($dish, $userDietaryPrefs);
             ?>
             <div class="col-12 col-sm-6 col-lg-4 col-xl-3 dish-card-wrapper" 
+                 data-item-id="<?= (int)$dish['item_id'] ?>"
+                 data-favorite="<?= $isFav ? 'true' : 'false' ?>"
+                 data-protein="<?= $dietMeta['protein'] ?>"
+                 data-allergens="<?= e(implode(',', $dietMeta['allergens'])) ?>"
                  data-veg="<?= $dish['is_veg'] ? 'true' : 'false' ?>" 
                  data-category="<?= e($dish['category_slug']) ?>" 
                  data-healthy="<?= $isHealthyDish ? 'true' : 'false' ?>" 
@@ -708,11 +734,12 @@ $previousMeal = $homeData['previousMeal'];
                     <?php endif; ?>
                   </div>
 
-                  <!-- Prep Time Badge -->
-                  <div class="position-absolute top-0 end-0 m-2">
+                  <!-- Prep Time Badge & Favorite Toggle -->
+                  <div class="position-absolute top-0 end-0 m-2 d-flex align-items-center gap-1">
                     <span class="badge bg-dark bg-opacity-75 text-white shadow-sm px-2 py-1" style="font-size: 0.7rem;">
                       <i class="bi bi-clock me-1 text-mint"></i> <?= (int)$dish['prep_time_minutes'] ?>m
                     </span>
+                    <?= renderDishFavoriteButtonHtml((int)$dish['item_id'], $isFav) ?>
                   </div>
 
                   <!-- Live Stock Pill -->
@@ -748,9 +775,10 @@ $previousMeal = $homeData['previousMeal'];
                       </button>
                     </div>
 
-                    <p class="text-muted small mb-3 dish-desc-clamp" style="min-height: 38px;">
+                    <p class="text-muted small mb-2 dish-desc-clamp" style="min-height: 38px;">
                       <?= e($dish['description']) ?>
                     </p>
+                    <?= renderDishDietaryMetadataHtml($dish, $userDietaryPrefs) ?>
                   </div>
 
                   <!-- Pricing & Add to Cart Controls -->

@@ -96,8 +96,8 @@ def db_conn():
 
 
 def seed_clean_database() -> None:
-    """Reset zippy_db cleanly via database/seed.php and migrate_food_moods_table.php."""
-    for rel in ("database/seed.php", "database/migrate_food_moods_table.php"):
+    """Reset zippy_db cleanly via database/seed.php, migrate_food_moods_table.php, and migrate_v2_features.php."""
+    for rel in ("database/seed.php", "database/migrate_food_moods_table.php", "database/migrate_v2_features.php"):
         script_path = os.path.join(PROJECT_ROOT, rel)
         subprocess.run(
             ["php", script_path],

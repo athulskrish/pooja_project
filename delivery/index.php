@@ -125,6 +125,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         header("Location: " . DELIVERY_URL . "/index.php");
         exit;
     }
+
+    // 4. Rider SOS / Report Failed Delivery Exception
+    if ($action === 'report_issue') {
+        $issueResult = FleetService::reportDeliveryIssue(
+            (int)($_POST['order_id'] ?? 0),
+            (string)($_POST['reason_code'] ?? ''),
+            (string)($_POST['notes'] ?? ''),
+            $currentUser
+        );
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => !empty($issueResult['ok']),
+                'requeued' => !empty($issueResult['requeued']),
+                'message' => $issueResult['message'],
+            ]);
+            exit;
+        }
+        setFlash($issueResult['flash_type'], $issueResult['message']);
+        header("Location: " . DELIVERY_URL . "/index.php");
+        exit;
+    }
 }
 
 $riderData = FleetService::getRiderDashboardData($currentUser);

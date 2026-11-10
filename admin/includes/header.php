@@ -139,6 +139,13 @@ $liveOrdersCount = $orderKpis['live'];
           </a>
         </li>
 
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/coupons.php" class="admin-nav-link <?= ($activePage === 'coupons') ? 'active' : '' ?>">
+            <i class="bi bi-ticket-perforated text-mint opacity-75"></i>
+            <span>Promo Coupons</span>
+          </a>
+        </li>
+
         <li class="m3-nav-subheader">Insights</li>
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/reports.php" class="admin-nav-link <?= ($activePage === 'reports') ? 'active' : '' ?>">
@@ -148,6 +155,13 @@ $liveOrdersCount = $orderKpis['live'];
         </li>
 
         <li class="m3-nav-subheader">Administration</li>
+        <li class="admin-nav-item">
+          <a href="<?= ADMIN_URL ?>/support-tickets.php" class="admin-nav-link <?= ($activePage === 'support_tickets') ? 'active' : '' ?>">
+            <i class="bi bi-headset text-info opacity-75"></i>
+            <span>Support Tickets</span>
+          </a>
+        </li>
+
         <li class="admin-nav-item">
           <a href="<?= ADMIN_URL ?>/categories.php" class="admin-nav-link <?= ($activePage === 'categories') ? 'active' : '' ?>">
             <i class="bi bi-tags"></i>

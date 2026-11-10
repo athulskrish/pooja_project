@@ -30,6 +30,8 @@ $hourValues = $dashboardData['hourValues'];
 $revenueToday = $dashboardData['revenueToday'];
 $stockRiskTrend = $dashboardData['stockRiskTrend'];
 $slaPerformance = $dashboardData['slaPerformance'];
+$openTicketsCount = (int)($dashboardData['openTicketsCount'] ?? 0);
+$abandonedCartUsers = (int)($dashboardData['abandonedCartUsers'] ?? 0);
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -92,6 +94,24 @@ require_once __DIR__ . '/includes/header.php';
     </div>
   </div>
 </section>
+
+<?php if ($openTicketsCount > 0 || $abandonedCartUsers > 0): ?>
+<div class="alert p-3 rounded-4 mb-4 border d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-xs bg-white">
+  <div class="d-flex flex-wrap align-items-center gap-3 small">
+    <span><i class="bi bi-headset text-success me-1"></i><strong><?= $openTicketsCount ?></strong> open support ticket(s) waiting for reply</span>
+    <span class="text-muted">&bull;</span>
+    <span><i class="bi bi-cart-check text-primary me-1"></i><strong><?= $abandonedCartUsers ?></strong> customer(s) with persistent server carts</span>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="<?= ADMIN_URL ?>/support-tickets.php" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold">
+      Open Support Desk &rarr;
+    </a>
+    <a href="<?= ADMIN_URL ?>/coupons.php" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
+      Promo Coupons &rarr;
+    </a>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($upcomingScheduledList)): ?>
 <div class="alert p-3 rounded-4 mb-4 border d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-xs" style="background:#FAF5FF; border-color:#E9D5FF !important;">

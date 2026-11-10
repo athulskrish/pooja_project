@@ -10,8 +10,12 @@ Covers end-to-end backend/API contracts across all four portals:
   4. Kitchen KDS transitions (CONFIRMED -> COOKING -> READY), pollers, 86-toggle & KOT; Delivery Fleet duty toggle,
      order claim, GPS simulation & DELIVERED heading interpolation, wrong/right OTP & IMPS double-cashout prevention
   5. Post-delivery order review & 4D dish-reviews API (authenticated CSRF submit + public read)
-  6. All 14 Admin pages, 7 Admin AJAX endpoints, categories/dishes/customizations/FAQs/moods CRUD + XSS + soft deletes,
+  6. All Admin pages, 7 Admin AJAX endpoints, categories/dishes/customizations/FAQs/moods CRUD + XSS + soft deletes,
      Z-report closure, COD cash settlement, kitchen salary disbursement, CSV exports & Staff/RBAC CRUD
+  7. V2 Customer/Admin APIs: Favorites, persistent cart sync, dietary profile + dish nutrition CRUD,
+     Bengaluru geofencing & tiered distance fees, dynamic DB coupons & loyalty earn/redeem/refund, and FCFS scheduled slot caps
+  8. V2 Kitchen/Fleet/Support/SSE APIs: KDS pre-alerts + dish prep checklists, Rider SOS failure + breakdown requeue
+     + Admin re-dispatch, threaded Support Ticket replies, and live EventSource SSE streams
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import sys
 import time
 import unittest
 import urllib.request
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -817,6 +822,526 @@ class TestApiAndWorkflowsE2E(unittest.TestCase):
         with db_conn() as conn, conn.cursor() as cur:
             cur.execute("SELECT role_id FROM users WHERE user_id = %s", (staff_id,))
             self.assertEqual(cur.fetchone()["role_id"], 4)
+
+    def _login_client(self, login_path: str, email: str, password: str = "password123") -> HttpClient:
+        client = HttpClient(BASE_URL)
+        _, _, login_html = client.get(login_path)
+        client.post_form(login_path, {
+            "csrf_token": extract_csrf(login_html),
+            "email": email,
+            "password": password,
+        })
+        return client
+
+    def test_07_v2_storefront_coupons_loyalty_geofence_and_slots(self):
+        cust = self._login_client("/customer/login.php", "athul@example.com")
+        admin = self._login_client("/admin/login.php", "admin@zippy.com")
+
+        _, _, idx_html = cust.get("/customer/index.php")
+        c_csrf = extract_csrf(idx_html)
+
+        # 1. Favorites API: guest 401 -> customer toggle ON -> OFF -> ON
+        unauth_c, _, _ = self.guest.post_json("/customer/ajax/toggle-favorite.php", {"item_id": 1})
+        self.assertEqual(unauth_c, 401)
+
+        c, _, fav1 = cust.post_json("/customer/ajax/toggle-favorite.php", {"item_id": 1, "csrf_token": c_csrf}, {"X-CSRF-TOKEN": c_csrf})
+        self.assertEqual(c, 200)
+        f1 = json.loads(fav1)
+        self.assertTrue(f1["success"] and f1["favorited"] is True)
+
+        c, _, fav2 = cust.post_json("/customer/ajax/toggle-favorite.php", {"item_id": 1, "csrf_token": c_csrf}, {"X-CSRF-TOKEN": c_csrf})
+        self.assertEqual(c, 200)
+        self.assertFalse(json.loads(fav2)["favorited"])
+
+        c, _, fav3 = cust.post_json("/customer/ajax/toggle-favorite.php", {"item_id": 1, "csrf_token": c_csrf}, {"X-CSRF-TOKEN": c_csrf})
+        self.assertEqual(c, 200)
+        self.assertTrue(json.loads(fav3)["favorited"])
+
+        # 2. Persistent Server Cart Sync (guest 401 -> merge -> GET -> clear)
+        unauth_cart, _, _ = self.guest.get("/customer/ajax/cart-sync.php")
+        self.assertEqual(unauth_cart, 401)
+
+        c, _, cs_merge = cust.post_json("/customer/ajax/cart-sync.php", {
+            "action": "merge",
+            "csrf_token": c_csrf,
+            "items": [{"id": 2, "cartItemId": "2", "qty": 2, "price": 249.0}],
+        }, {"X-CSRF-TOKEN": c_csrf})
+        self.assertEqual(c, 200)
+        merged = json.loads(cs_merge)
+        self.assertTrue(merged["success"] and any(it["id"] == 2 and it["qty"] == 2 for it in merged["items"]))
+
+        c, _, cs_get = cust.get("/customer/ajax/cart-sync.php")
+        self.assertEqual(c, 200)
+        self.assertTrue(any(it["id"] == 2 and it["qty"] == 2 for it in json.loads(cs_get)["items"]))
+
+        c, _, cs_clr = cust.post_json("/customer/ajax/cart-sync.php", {"action": "clear", "csrf_token": c_csrf}, {"X-CSRF-TOKEN": c_csrf})
+        self.assertEqual(c, 200)
+        self.assertEqual(json.loads(cs_clr)["items"], [])
+
+        # 3. Dietary Profile Update + Admin Dish Nutrition/Allergen CRUD + Search Filters
+        _, _, prof_html = cust.get("/customer/profile.php")
+        c, _, prof_diet = cust.post_form("/customer/profile.php", {
+            "csrf_token": extract_csrf(prof_html),
+            "action": "update_dietary",
+            "dietary_preferences[]": ["dairy_free", "mild_spice"],
+        })
+        assert_html_clean(self, "Update Dietary Prefs", c, prof_diet)
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT dietary_preferences FROM users WHERE email = 'athul@example.com'")
+            dp = cur.fetchone()["dietary_preferences"] or ""
+            self.assertIn("dairy_free", dp)
+            self.assertIn("mild_spice", dp)
+
+        _, _, d_html = admin.get("/admin/dishes.php")
+        dish_name = f"QA Tofu Protein Bowl {self.ts}"
+        c, _, d_add = admin.post_form("/admin/dishes.php", {
+            "csrf_token": extract_csrf(d_html),
+            "action": "add_dish",
+            "category_id": 1,
+            "kitchen_station": "Cold Bar",
+            "item_name": dish_name,
+            "price": "280",
+            "stock_quantity": "25",
+            "prep_time_minutes": "14",
+            "description": "High protein soy tofu bowl",
+            "mood": "healthy",
+            "calories_kcal": "410",
+            "protein_g": "28.5",
+            "carbs_g": "36.0",
+            "fat_g": "11.0",
+            "spice_level": "EXTRA_SPICY",
+            "allergens[]": ["soy"],
+            "is_veg": "1",
+            "is_healthy": "1",
+        })
+        assert_html_clean(self, "Add Dish With Nutrition", c, d_add, (dish_name,))
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT item_id, protein_g, allergens, spice_level FROM menu_items WHERE item_name = %s", (dish_name,))
+            d_row = cur.fetchone()
+            self.assertIsNotNone(d_row)
+            self.assertEqual(float(d_row["protein_g"]), 28.5)
+            self.assertEqual(d_row["allergens"], "soy")
+            self.assertEqual(d_row["spice_level"], "EXTRA_SPICY")
+
+        c, _, srch_html = cust.get(f"/customer/search.php?high_protein=1&allergen_free=nuts&sort=protein_desc")
+        assert_html_clean(self, "High Protein Allergen-Free Search", c, srch_html, (dish_name, "Spicy"))
+
+        # 4. Indian Bengaluru Geofence Validation & Distance-Based Tiered Pricing
+        _, _, addr_html = cust.get("/customer/manage-addresses.php")
+        a_csrf = extract_csrf(addr_html)
+
+        _, _, addr_non_blr = cust.post_form("/customer/manage-addresses.php", {
+            "csrf_token": a_csrf,
+            "action": "add_address",
+            "address_type": "WORK",
+            "address_line": f"Marine Drive Mumbai {self.ts}",
+            "pincode": "400001",
+        })
+        assert_html_clean(self, "Non-Bengaluru Pincode Reject", 200, addr_non_blr)
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS cnt FROM user_addresses WHERE address_line = %s", (f"Marine Drive Mumbai {self.ts}",))
+            self.assertEqual(cur.fetchone()["cnt"], 0)
+
+        _, _, addr_far = cust.post_form("/customer/manage-addresses.php", {
+            "csrf_token": extract_csrf(addr_non_blr),
+            "action": "add_address",
+            "address_type": "OTHER",
+            "address_line": f"Far Outskirts {self.ts}",
+            "pincode": "560038",
+            "latitude": "13.500000",
+            "longitude": "77.900000",
+        })
+        assert_html_clean(self, "Out-of-Range Geofence Reject", 200, addr_far)
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS cnt FROM user_addresses WHERE address_line = %s", (f"Far Outskirts {self.ts}",))
+            self.assertEqual(cur.fetchone()["cnt"], 0)
+
+        near_line = f"Indiranagar 12th Main {self.ts}"
+        c, _, addr_near = cust.post_form("/customer/manage-addresses.php", {
+            "csrf_token": extract_csrf(addr_far),
+            "action": "add_address",
+            "address_type": "HOME",
+            "address_line": near_line,
+            "landmark": "Near Metro",
+            "pincode": "560038",
+            "latitude": "12.971800",
+            "longitude": "77.641200",
+            "is_default": "1",
+        })
+        assert_html_clean(self, "Bengaluru Pin Address Add", c, addr_near, (near_line,))
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT address_id, distance_km FROM user_addresses WHERE address_line = %s", (near_line,))
+            near_addr = cur.fetchone()
+            self.assertIsNotNone(near_addr)
+            self.assertLess(float(near_addr["distance_km"]), 3.0)
+            near_addr_id = near_addr["address_id"]
+
+        # Checkout under ₹499 using near_addr_id should charge ₹25.00 distance fee
+        _, _, co_html = cust.get("/customer/checkout.php")
+        c, u_dist, h_dist = cust.post_form("/customer/checkout.php", {
+            "csrf_token": extract_csrf(co_html),
+            "action": "process_order",
+            "cart_json": json.dumps([{"id": 2, "qty": 1}]),
+            "address_id": near_addr_id,
+            "payment_mode": "COD",
+        })
+        m_dist = re.search(r"order-success\.php\?order_id=(\d+)", h_dist + " " + u_dist)
+        self.assertIsNotNone(m_dist)
+        dist_oid = int(m_dist.group(1))
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT delivery_fee, distance_km FROM orders WHERE order_id = %s", (dist_oid,))
+            o_dist = cur.fetchone()
+            self.assertEqual(float(o_dist["delivery_fee"]), 25.00)
+            self.assertLess(float(o_dist["distance_km"]), 3.0)
+
+        # 5. Dynamic DB Coupons CRUD + Limits + Loyalty Redeem/Cancel Refund
+        _, _, cp_html = admin.get("/admin/coupons.php")
+        assert_html_clean(self, "Admin Coupons Page", 200, cp_html, ("Dynamic Promo Coupons",))
+        v2_code = f"V2SAVE{str(self.ts)[-4:]}"
+        c, _, cp_add = admin.post_form("/admin/coupons.php", {
+            "csrf_token": extract_csrf(cp_html),
+            "action": "create_coupon",
+            "code": v2_code,
+            "title": "QA Dynamic Promo",
+            "description": "Flat 60 OFF QA",
+            "discount_type": "flat",
+            "discount_value": "60",
+            "max_discount": "60",
+            "min_order": "200",
+            "usage_limit": "10",
+            "per_user_limit": "1",
+            "is_active": "1",
+        })
+        assert_html_clean(self, "Create Dynamic Coupon", c, cp_add, (v2_code,))
+
+        c, _, vc1 = cust.get(f"/customer/ajax/validate-coupon.php?code={v2_code}&subtotal=250")
+        self.assertEqual(c, 200)
+        vc1_j = json.loads(vc1)
+        self.assertTrue(vc1_j["valid"] and float(vc1_j["discount"]) == 60.0)
+
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id, loyalty_points FROM users WHERE email = 'athul@example.com'")
+            athul = cur.fetchone()
+            pts_before = int(athul["loyalty_points"])
+        self.assertGreaterEqual(pts_before, 40)
+
+        _, _, co_html = cust.get("/customer/checkout.php")
+        c, u_cp, h_cp = cust.post_form("/customer/checkout.php", {
+            "csrf_token": extract_csrf(co_html),
+            "action": "process_order",
+            "cart_json": json.dumps([{"id": 1, "qty": 1}]),
+            "address_id": near_addr_id,
+            "coupon_code": v2_code,
+            "loyalty_points_used": 40,
+            "payment_mode": "UPI",
+            "razorpay_payment_id": f"pay_v2_{self.ts}",
+        })
+        m_cp = re.search(r"order-success\.php\?order_id=(\d+)", h_cp + " " + u_cp)
+        self.assertIsNotNone(m_cp)
+        cp_oid = int(m_cp.group(1))
+
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT discount_amount, loyalty_points_used, loyalty_discount FROM orders WHERE order_id = %s", (cp_oid,))
+            ord_cp = cur.fetchone()
+            self.assertEqual(float(ord_cp["discount_amount"]), 60.0)
+            self.assertEqual(int(ord_cp["loyalty_points_used"]), 40)
+            self.assertEqual(float(ord_cp["loyalty_discount"]), 40.0)
+            cur.execute("SELECT COUNT(*) AS cnt FROM coupon_redemptions WHERE order_id = %s", (cp_oid,))
+            self.assertEqual(cur.fetchone()["cnt"], 1)
+            cur.execute("SELECT loyalty_points FROM users WHERE user_id = %s", (athul["user_id"],))
+            self.assertEqual(int(cur.fetchone()["loyalty_points"]), pts_before - 40)
+
+        # Second validate fails per_user_limit=1
+        c, _, vc2 = cust.get(f"/customer/ajax/validate-coupon.php?code={v2_code}&subtotal=300")
+        self.assertFalse(json.loads(vc2)["valid"])
+
+        # Cancel order within 60s -> Loyalty Points refunded
+        _, _, st_cp = cust.get(f"/customer/order-status.php?order_id={cp_oid}")
+        cust.post_form(f"/customer/order-status.php?order_id={cp_oid}", {
+            "csrf_token": extract_csrf(st_cp),
+            "action": "cancel_order",
+            "order_id": cp_oid,
+        })
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT loyalty_points FROM users WHERE user_id = %s", (athul["user_id"],))
+            self.assertEqual(int(cur.fetchone()["loyalty_points"]), pts_before)
+            cur.execute("SELECT COUNT(*) AS cnt FROM loyalty_transactions WHERE order_id = %s AND txn_type = 'REFUND_BONUS'", (cp_oid,))
+            self.assertEqual(cur.fetchone()["cnt"], 1)
+
+        # Admin toggle & archive coupon
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT coupon_id FROM coupons WHERE code = %s", (v2_code,))
+            cid = cur.fetchone()["coupon_id"]
+        _, _, cp_html2 = admin.get("/admin/coupons.php")
+        admin.post_form("/admin/coupons.php", {"csrf_token": extract_csrf(cp_html2), "action": "delete_coupon", "coupon_id": cid})
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT is_active FROM coupons WHERE coupon_id = %s", (cid,))
+            self.assertEqual(cur.fetchone()["is_active"], 0)
+
+        # 6. FCFS Scheduled Slot Capacity Throttling + Release + Kitchen Pre-Alert Banner
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        slot_key = f"{tomorrow}|14:15"
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO scheduled_slot_caps (slot_key, slot_date, slot_label, max_capacity, booked_count) "
+                "VALUES (%s, %s, 'Lunch (02:00 PM - 02:30 PM)', 5, 4) "
+                "ON DUPLICATE KEY UPDATE booked_count = 4, max_capacity = 5",
+                (slot_key, tomorrow),
+            )
+
+        c, _, sa1 = cust.get(f"/customer/ajax/slot-availability.php?date={tomorrow}")
+        self.assertEqual(c, 200)
+        sa1_j = json.loads(sa1)
+        self.assertEqual(sa1_j["policy"], "FCFS")
+        self.assertEqual(sa1_j["slots_by_time"]["14:15"]["remaining"], 1)
+
+        # 5th booking fills slot 4 -> 5
+        _, _, co_html = cust.get("/customer/checkout.php")
+        c, u_s5, h_s5 = cust.post_form("/customer/checkout.php", {
+            "csrf_token": extract_csrf(co_html),
+            "action": "process_order",
+            "cart_json": json.dumps([{"id": 2, "qty": 1}]),
+            "address_id": near_addr_id,
+            "delivery_type": "schedule",
+            "scheduled_date": tomorrow,
+            "scheduled_time": "14:15",
+            "scheduled_slot": "Lunch (02:00 PM - 02:30 PM)",
+            "payment_mode": "COD",
+        })
+        m_s5 = re.search(r"order-success\.php\?order_id=(\d+)", h_s5 + " " + u_s5)
+        self.assertIsNotNone(m_s5)
+        s5_oid = int(m_s5.group(1))
+
+        sa2_j = json.loads(cust.get(f"/customer/ajax/slot-availability.php?date={tomorrow}")[2])
+        self.assertEqual(sa2_j["slots_by_time"]["14:15"]["remaining"], 0)
+        self.assertTrue(sa2_j["slots_by_time"]["14:15"]["is_full"])
+
+        # 6th booking for full slot must be rejected
+        _, _, co_html = cust.get("/customer/checkout.php")
+        _, u_s6, h_s6 = cust.post_form("/customer/checkout.php", {
+            "csrf_token": extract_csrf(co_html),
+            "action": "process_order",
+            "cart_json": json.dumps([{"id": 2, "qty": 1}]),
+            "address_id": near_addr_id,
+            "delivery_type": "schedule",
+            "scheduled_date": tomorrow,
+            "scheduled_time": "14:15",
+            "scheduled_slot": "Lunch (02:00 PM - 02:30 PM)",
+            "payment_mode": "COD",
+        })
+        self.assertNotIn("order-success.php", u_s6)
+        self.assertIn("full", h_s6.lower())
+
+        # Cancel 5th scheduled order -> slot remaining increments back to 1
+        _, _, st_s5 = cust.get(f"/customer/order-status.php?order_id={s5_oid}")
+        cust.post_form(f"/customer/order-status.php?order_id={s5_oid}", {
+            "csrf_token": extract_csrf(st_s5),
+            "action": "cancel_order",
+            "order_id": s5_oid,
+        })
+        sa3_j = json.loads(cust.get(f"/customer/ajax/slot-availability.php?date={tomorrow}")[2])
+        self.assertEqual(sa3_j["slots_by_time"]["14:15"]["remaining"], 1)
+
+        # Near-term scheduled pre-alert test on Kitchen KDS
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO orders (user_id, address_id, subtotal, delivery_fee, platform_fee, tax_amount, discount_amount, total_amount, order_status, is_scheduled, scheduled_for, scheduled_slot) "
+                "VALUES (%s, %s, 249.00, 25.00, 5.00, 12.45, 0.00, 291.45, 'CONFIRMED', 1, DATE_ADD(NOW(), INTERVAL 20 MINUTE), 'Express Pre-Alert Window')",
+                (athul["user_id"], near_addr_id),
+            )
+            pa_oid = cur.lastrowid
+            cur.execute("INSERT INTO order_items (order_id, item_id, quantity, unit_price, line_total) VALUES (%s, 2, 1, 249.00, 249.00)", (pa_oid,))
+        kitchen = self._login_client("/kitchen/login.php", "chef@zippy.com")
+        c, _, k_pa_html = kitchen.get("/kitchen/index.php")
+        assert_html_clean(self, "KDS Pre-Alert Banner", c, k_pa_html, ("scheduledPreAlertBanner", f"#ZIP-{pa_oid}"))
+        kpoll = json.loads(kitchen.get("/kitchen/ajax/poll-orders.php")[2])
+        self.assertGreaterEqual(int(kpoll.get("pre_alerts", 0)), 1)
+
+    def test_08_v2_kitchen_sos_tickets_and_sse_streams(self):
+        cust = self._login_client("/customer/login.php", "athul@example.com")
+        kitchen = self._login_client("/kitchen/login.php", "chef@zippy.com")
+        rider = self._login_client("/delivery/login.php", "shaji@zippy.com")
+        admin = self._login_client("/admin/login.php", "admin@zippy.com")
+
+        # Place fresh COD order for Kitchen prep checklist -> Rider SOS -> Re-dispatch -> Breakdown -> OTP -> Loyalty Earn
+        _, _, co_html = cust.get("/customer/checkout.php")
+        c, u_o, h_o = cust.post_form("/customer/checkout.php", {
+            "csrf_token": extract_csrf(co_html),
+            "action": "process_order",
+            "cart_json": json.dumps([{"id": 1, "qty": 1}, {"id": 5, "qty": 1}]),
+            "address_id": 1,
+            "payment_mode": "COD",
+        })
+        m_o = re.search(r"order-success\.php\?order_id=(\d+)", h_o + " " + u_o)
+        self.assertIsNotNone(m_o)
+        oid = int(m_o.group(1))
+
+        # 1. Kitchen Dish-Level Prep Checklists (COOKING -> toggle-item-prepped -> READY)
+        _, _, k_idx = kitchen.get("/kitchen/index.php")
+        k_csrf = extract_csrf(k_idx)
+        kitchen.post_json("/kitchen/ajax/update-status.php", {"order_id": oid, "target_status": "COOKING"}, {"X-CSRF-TOKEN": k_csrf})
+
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT order_item_id FROM order_items WHERE order_id = %s ORDER BY order_item_id ASC LIMIT 1", (oid,))
+            oi_id = int(cur.fetchone()["order_item_id"])
+
+        c, _, tp1 = kitchen.post_json(
+            "/kitchen/ajax/toggle-item-prepped.php",
+            {"order_item_id": oi_id, "is_prepped": 1, "csrf_token": k_csrf},
+            {"X-CSRF-TOKEN": k_csrf},
+        )
+        self.assertEqual(c, 200)
+        tp1_j = json.loads(tp1)
+        self.assertTrue(tp1_j["success"] and tp1_j["is_prepped"] == 1 and tp1_j["prepped_count"] >= 1)
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT is_prepped, prepped_at FROM order_items WHERE order_item_id = %s", (oi_id,))
+            row_oi = cur.fetchone()
+            self.assertEqual(row_oi["is_prepped"], 1)
+            self.assertIsNotNone(row_oi["prepped_at"])
+
+        kitchen.post_json("/kitchen/ajax/update-status.php", {"order_id": oid, "target_status": "READY"}, {"X-CSRF-TOKEN": k_csrf})
+
+        # 2. Rider SOS ('unreachable' -> FAILED -> Admin Re-Dispatch -> 'breakdown' -> ON_BREAK -> Deliver + Loyalty EARNED)
+        _, _, r_idx = rider.get("/delivery/index.php")
+        r_csrf = extract_csrf(r_idx)
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf, "action": "toggle_duty", "duty": "1"})
+        _, _, r_on = rider.get("/delivery/index.php")
+        r_csrf = extract_csrf(r_on)
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf, "action": "claim_order", "order_id": oid})
+
+        c, _, sos1 = rider.post_form("/delivery/index.php", {
+            "csrf_token": r_csrf,
+            "action": "report_issue",
+            "order_id": oid,
+            "reason_code": "unreachable",
+            "notes": f"QA unreachable gate closed {self.ts}",
+            "is_ajax": "1",
+        }, {"X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": r_csrf})
+        self.assertEqual(c, 200)
+        self.assertTrue(json.loads(sos1)["success"])
+
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT delivery_status, failure_reason, issue_notes, rider_id FROM delivery_dispatches WHERE order_id = %s", (oid,))
+            disp = cur.fetchone()
+            self.assertEqual(disp["delivery_status"], "FAILED")
+            self.assertIn("not answering", disp["failure_reason"])
+            self.assertIn("QA unreachable gate closed", disp["issue_notes"])
+            self.assertIsNone(disp["rider_id"])
+
+        _, _, a_fail = admin.get("/admin/orders.php?status=FAILED")
+        assert_html_clean(self, "Admin Failed Orders Tab", 200, a_fail, (f"#ZIP-{oid}", "RIDER SOS"))
+        _, _, dv_fail = admin.get("/admin/delivery-view.php")
+        assert_html_clean(self, "Admin Delivery SOS Triage", 200, dv_fail, (f"#ZIP-{oid}", "Re-Dispatch"))
+
+        # Admin Re-Dispatches Failed order
+        admin.post_form("/admin/orders.php?status=FAILED", {
+            "csrf_token": extract_csrf(a_fail),
+            "action": "requeue_failed",
+            "order_id": oid,
+        })
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT order_status FROM orders WHERE order_id = %s", (oid,))
+            self.assertIn(cur.fetchone()["order_status"], ("READY", "OUT_FOR_DELIVERY"))
+
+        # Force READY unassigned so Shaji claims and reports 'breakdown'
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE orders SET order_status = 'READY' WHERE order_id = %s", (oid,))
+            cur.execute("UPDATE delivery_dispatches SET rider_id = NULL, delivery_status = 'ASSIGNED' WHERE order_id = %s", (oid,))
+            cur.execute("UPDATE staff_profiles SET duty_status = 'OFF_DUTY' WHERE department = 'DELIVERY' AND user_id != 6")
+
+        _, _, r_idx2 = rider.get("/delivery/index.php")
+        r_csrf2 = extract_csrf(r_idx2)
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf2, "action": "claim_order", "order_id": oid})
+        c, _, sos_brk = rider.post_form("/delivery/index.php", {
+            "csrf_token": r_csrf2,
+            "action": "report_issue",
+            "order_id": oid,
+            "reason_code": "breakdown",
+            "notes": "Flat rear tire",
+            "is_ajax": "1",
+        }, {"X-Requested-With": "XMLHttpRequest", "X-CSRF-TOKEN": r_csrf2})
+        self.assertEqual(c, 200)
+        self.assertTrue(json.loads(sos_brk)["requeued"])
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT order_status FROM orders WHERE order_id = %s", (oid,))
+            self.assertEqual(cur.fetchone()["order_status"], "READY")
+            cur.execute("SELECT duty_status FROM staff_profiles WHERE user_id = 6")
+            self.assertEqual(cur.fetchone()["duty_status"], "ON_BREAK")
+
+        # Put Shaji back ON_DUTY, claim, deliver via OTP & verify Loyalty Points EARNED
+        _, _, r_idx3 = rider.get("/delivery/index.php")
+        r_csrf3 = extract_csrf(r_idx3)
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf3, "action": "toggle_duty", "duty": "1"})
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf3, "action": "claim_order", "order_id": oid})
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT delivery_otp FROM delivery_dispatches WHERE order_id = %s", (oid,))
+            otp = cur.fetchone()["delivery_otp"]
+            cur.execute("SELECT loyalty_points FROM users WHERE email = 'athul@example.com'")
+            pts_pre_del = int(cur.fetchone()["loyalty_points"])
+
+        rider.post_form("/delivery/index.php", {"csrf_token": r_csrf3, "action": "verify_otp", "order_id": oid, "otp": otp})
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT loyalty_points FROM users WHERE email = 'athul@example.com'")
+            self.assertGreater(int(cur.fetchone()["loyalty_points"]), pts_pre_del)
+            cur.execute("SELECT COUNT(*) AS cnt FROM loyalty_transactions WHERE order_id = %s AND txn_type = 'EARNED'", (oid,))
+            self.assertEqual(cur.fetchone()["cnt"], 1)
+
+        # 3. Admin Support Ticket Desk & Customer Follow-Up Thread
+        _, _, h_html = cust.get("/customer/help.php")
+        subj_marker = f"QA Threaded Issue {self.ts}"
+        cust.post_form("/customer/help.php", {
+            "csrf_token": extract_csrf(h_html),
+            "action": "submit_ticket",
+            "category": "missing_item",
+            "order_id": f"#ZIP-{oid}",
+            "description": subj_marker,
+        })
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT ticket_id FROM support_tickets WHERE message LIKE %s ORDER BY ticket_id DESC LIMIT 1", (f"%{subj_marker}%",))
+            tid = int(cur.fetchone()["ticket_id"])
+
+        _, _, st_adm = admin.get("/admin/support-tickets.php")
+        assert_html_clean(self, "Admin Support Desk", 200, st_adm, (f"#TKT-{tid}", subj_marker))
+        admin_reply_txt = f"We refunded the missing item {self.ts}"
+        _, _, st_rep = admin.post_form("/admin/support-tickets.php", {
+            "csrf_token": extract_csrf(st_adm),
+            "action": "reply_ticket",
+            "ticket_id": tid,
+            "reply_message": admin_reply_txt,
+            "ticket_status": "IN_PROGRESS",
+        })
+        assert_html_clean(self, "Admin Ticket Reply", 200, st_rep, (admin_reply_txt, "IN_PROGRESS"))
+
+        _, _, cust_h2 = cust.get("/customer/help.php")
+        assert_html_clean(self, "Customer Ticket Thread View", 200, cust_h2, (admin_reply_txt,))
+        cust_reply_txt = f"Received thank you {self.ts}"
+        _, _, cust_h3 = cust.post_form("/customer/help.php", {
+            "csrf_token": extract_csrf(cust_h2),
+            "action": "reply_ticket",
+            "ticket_id": tid,
+            "message": cust_reply_txt,
+        })
+        assert_html_clean(self, "Customer Follow-Up Reply", 200, cust_h3, (cust_reply_txt,))
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS cnt FROM support_ticket_replies WHERE ticket_id = %s", (tid,))
+            self.assertEqual(cur.fetchone()["cnt"], 2)
+
+        # 4. True Server-Sent Events (SSE) Push Stream Verification
+        c_unauth, _, _ = self.guest.get("/api/sse-stream.php?portal=kitchen&once=1")
+        self.assertEqual(c_unauth, 401)
+        c_forbid, _, _ = cust.get("/api/sse-stream.php?portal=admin&once=1")
+        self.assertEqual(c_forbid, 403)
+
+        for client, path, expected_evt in (
+            (kitchen, "/api/sse-stream.php?portal=kitchen&once=1", "event: kds_update"),
+            (rider, "/api/sse-stream.php?portal=delivery&once=1", "event: delivery_update"),
+            (admin, "/api/sse-stream.php?portal=admin&once=1", "event: admin_update"),
+            (cust, f"/api/sse-stream.php?portal=customer&order_id={oid}&once=1", "event: order_update"),
+        ):
+            sc, _, sbody = client.get(path)
+            self.assertEqual(sc, 200, f"SSE failed for {path}")
+            self.assertIn("event: connected", sbody)
+            self.assertIn(expected_evt, sbody)
 
 
 if __name__ == "__main__":

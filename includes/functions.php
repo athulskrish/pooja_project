@@ -130,46 +130,198 @@ function dbFetchVal(string $sql, array $params = []): mixed
 }
 
 /**
- * Get active coupon definitions
+ * Get active (or all) coupon definitions from database with graceful static fallback
  */
-function getAvailableCoupons(): array
+function getAvailableCoupons(bool $includeInactive = false): array
 {
-    return [
+    static $fallbackCoupons = [
         'LUSHFOREST' => [
+            'coupon_id' => 1,
             'code' => 'LUSHFOREST',
+            'title' => 'Lush Forest Special',
             'discount_type' => 'percentage',
-            'discount_value' => 20,
+            'discount_value' => 20.00,
             'max_discount' => 100.00,
             'min_order' => 299.00,
+            'usage_limit' => 0,
+            'per_user_limit' => 0,
+            'first_order_only' => 0,
+            'used_count' => 0,
+            'is_active' => 1,
             'description' => '20% OFF up to ₹100 on orders above ₹299 (Figma Lush Special)'
         ],
         'ZIPPY50' => [
+            'coupon_id' => 2,
             'code' => 'ZIPPY50',
+            'title' => 'Zippy Mega Feast',
             'discount_type' => 'percentage',
-            'discount_value' => 50,
+            'discount_value' => 50.00,
             'max_discount' => 120.00,
             'min_order' => 399.00,
+            'usage_limit' => 0,
+            'per_user_limit' => 0,
+            'first_order_only' => 0,
+            'used_count' => 0,
+            'is_active' => 1,
             'description' => '50% OFF up to ₹120 on your order above ₹399'
         ],
         'WELCOME' => [
+            'coupon_id' => 3,
             'code' => 'WELCOME',
+            'title' => 'Welcome Bonus',
             'discount_type' => 'flat',
             'discount_value' => 50.00,
             'max_discount' => 50.00,
             'min_order' => 199.00,
+            'usage_limit' => 0,
+            'per_user_limit' => 0,
+            'first_order_only' => 0,
+            'used_count' => 0,
+            'is_active' => 1,
             'description' => 'Flat ₹50 OFF for welcome customers on orders above ₹199'
         ]
+    ];
+
+    try {
+        $pdo = getDbConnection();
+        if (!$pdo) {
+            return $fallbackCoupons;
+        }
+        $where = $includeInactive ? "1=1" : "`is_active` = 1 AND (`valid_from` IS NULL OR `valid_from` <= NOW()) AND (`valid_until` IS NULL OR `valid_until` >= NOW())";
+        $rows = dbFetchAll("SELECT * FROM `coupons` WHERE {$where} ORDER BY `coupon_id` ASC");
+        if (empty($rows)) {
+            return $includeInactive ? [] : $fallbackCoupons;
+        }
+        $mapped = [];
+        foreach ($rows as $row) {
+            $code = strtoupper(trim((string)$row['code']));
+            $mapped[$code] = [
+                'coupon_id' => (int)$row['coupon_id'],
+                'code' => $code,
+                'title' => (string)($row['title'] ?? $code),
+                'description' => (string)($row['description'] ?? ''),
+                'discount_type' => (string)$row['discount_type'],
+                'discount_value' => (float)$row['discount_value'],
+                'max_discount' => (float)$row['max_discount'],
+                'min_order' => (float)$row['min_order'],
+                'valid_from' => $row['valid_from'] ?? null,
+                'valid_until' => $row['valid_until'] ?? null,
+                'usage_limit' => (int)($row['usage_limit'] ?? 0),
+                'per_user_limit' => (int)($row['per_user_limit'] ?? 0),
+                'first_order_only' => (int)($row['first_order_only'] ?? 0),
+                'used_count' => (int)($row['used_count'] ?? 0),
+                'is_active' => (int)($row['is_active'] ?? 1),
+            ];
+        }
+        return $mapped;
+    } catch (Throwable $e) {
+        return $fallbackCoupons;
+    }
+}
+
+/**
+ * Validate a promo coupon against subtotal, active dates, and per-user/global usage limits.
+ *
+ * @return array{valid: bool, coupon: array<string, mixed>|null, discount: float, error: ?string}
+ */
+function validateCouponForSubtotal(string $couponCode, float $subtotal, ?int $userId = null): array
+{
+    $code = strtoupper(trim($couponCode));
+    if ($code === '') {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => null];
+    }
+
+    $allCoupons = getAvailableCoupons(true);
+    if (!isset($allCoupons[$code])) {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Invalid coupon code: {$code}."];
+    }
+
+    $cp = $allCoupons[$code];
+    if (empty($cp['is_active'])) {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Coupon {$code} is currently inactive."];
+    }
+
+    $now = time();
+    if (!empty($cp['valid_from']) && strtotime((string)$cp['valid_from']) > $now) {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Coupon {$code} is not active yet."];
+    }
+    if (!empty($cp['valid_until']) && strtotime((string)$cp['valid_until']) < $now) {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Coupon {$code} has expired."];
+    }
+
+    if ((int)($cp['usage_limit'] ?? 0) > 0 && (int)($cp['used_count'] ?? 0) >= (int)$cp['usage_limit']) {
+        return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Coupon {$code} has reached its maximum redemption limit."];
+    }
+
+    if ($userId !== null && $userId > 0) {
+        try {
+            if (!empty($cp['first_order_only'])) {
+                $priorOrders = (int)dbFetchVal(
+                    "SELECT COUNT(*) FROM `orders` WHERE `user_id` = :uid AND `order_status` != 'CANCELLED'",
+                    [':uid' => $userId]
+                );
+                if ($priorOrders > 0) {
+                    return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "Coupon {$code} is valid on your first order only."];
+                }
+            }
+            if ((int)($cp['per_user_limit'] ?? 0) > 0 && !empty($cp['coupon_id'])) {
+                $userUsed = (int)dbFetchVal(
+                    "SELECT COUNT(*) FROM `coupon_redemptions` WHERE `coupon_id` = :cid AND `user_id` = :uid",
+                    [':cid' => (int)$cp['coupon_id'], ':uid' => $userId]
+                );
+                if ($userUsed >= (int)$cp['per_user_limit']) {
+                    return ['valid' => false, 'coupon' => null, 'discount' => 0.00, 'error' => "You have already reached the usage limit for coupon {$code}."];
+                }
+            }
+        } catch (Throwable $e) {
+            // Ignore when optional redemption tables do not exist yet
+        }
+    }
+
+    if ($subtotal < (float)$cp['min_order']) {
+        return [
+            'valid' => false,
+            'coupon' => null,
+            'discount' => 0.00,
+            'error' => "Minimum order of ₹" . number_format((float)$cp['min_order'], 0) . " required for coupon {$code}."
+        ];
+    }
+
+    if ($cp['discount_type'] === 'percentage') {
+        $calc = ($subtotal * (float)$cp['discount_value']) / 100.0;
+        $maxCap = (float)$cp['max_discount'] > 0 ? (float)$cp['max_discount'] : $calc;
+        $discount = min($calc, $maxCap);
+    } else {
+        $discount = min((float)$cp['discount_value'], $subtotal);
+    }
+
+    return [
+        'valid' => true,
+        'coupon' => $cp,
+        'discount' => round($discount, 2),
+        'error' => null,
     ];
 }
 
 /**
- * Calculate Cart Totals
- * 
+ * Calculate Cart Totals (coupons, distance delivery fee, loyalty points, GST)
+ *
  * @param array $cartItems Array of items with 'price' and 'qty'
  * @param string|null $couponCode
+ * @param int|null $userId
+ * @param float|null $overrideDeliveryFee
+ * @param int $loyaltyPointsRequested
+ * @param int|null $userLoyaltyBalance
  * @return array
  */
-function calculateBillTotals(array $cartItems, ?string $couponCode = null): array
+function calculateBillTotals(
+    array $cartItems,
+    ?string $couponCode = null,
+    ?int $userId = null,
+    ?float $overrideDeliveryFee = null,
+    int $loyaltyPointsRequested = 0,
+    ?int $userLoyaltyBalance = null
+): array
 {
     $subtotal = 0.00;
     $totalQty = 0;
@@ -181,9 +333,15 @@ function calculateBillTotals(array $cartItems, ?string $couponCode = null): arra
         $totalQty += $qty;
     }
 
-    // Delivery fee calculation
-    $deliveryFee = ($subtotal >= FREE_DELIVERY_THRESHOLD || $subtotal == 0) ? 0.00 : DEFAULT_DELIVERY_FEE;
-    
+    // Delivery fee calculation (supports Haversine override while maintaining free threshold)
+    if ($subtotal >= FREE_DELIVERY_THRESHOLD || $subtotal == 0) {
+        $deliveryFee = 0.00;
+    } elseif ($overrideDeliveryFee !== null) {
+        $deliveryFee = max(0.00, round($overrideDeliveryFee, 2));
+    } else {
+        $deliveryFee = DEFAULT_DELIVERY_FEE;
+    }
+
     // Platform fee
     $platformFee = ($subtotal > 0) ? PLATFORM_FEE : 0.00;
 
@@ -191,30 +349,33 @@ function calculateBillTotals(array $cartItems, ?string $couponCode = null): arra
     $discount = 0.00;
     $couponApplied = false;
     $couponError = null;
+    $appliedCouponMeta = null;
 
     if (!empty($couponCode)) {
-        $coupons = getAvailableCoupons();
-        $code = strtoupper(trim($couponCode));
-        if (isset($coupons[$code])) {
-            $cp = $coupons[$code];
-            if ($subtotal >= $cp['min_order']) {
-                if ($cp['discount_type'] === 'percentage') {
-                    $calc = ($subtotal * $cp['discount_value']) / 100;
-                    $discount = min($calc, $cp['max_discount']);
-                } else {
-                    $discount = min($cp['discount_value'], $subtotal);
-                }
-                $couponApplied = true;
-            } else {
-                $couponError = "Minimum order of ₹{$cp['min_order']} required for coupon {$code}.";
-            }
+        $cpCheck = validateCouponForSubtotal($couponCode, $subtotal, $userId);
+        if ($cpCheck['valid']) {
+            $discount = $cpCheck['discount'];
+            $couponApplied = true;
+            $appliedCouponMeta = $cpCheck['coupon'];
         } else {
-            $couponError = "Invalid coupon code: {$code}.";
+            $couponError = $cpCheck['error'];
         }
     }
 
-    // Tax calculation on discounted food subtotal (5% GST)
-    $taxableSubtotal = max(0.00, $subtotal - $discount);
+    // Loyalty Points redemption (1 Point = ₹1.00, max 50% of post-coupon food subtotal)
+    $afterCouponSubtotal = max(0.00, $subtotal - $discount);
+    $loyaltyPointsUsed = 0;
+    $loyaltyDiscount = 0.00;
+    if ($loyaltyPointsRequested > 0 && $afterCouponSubtotal > 0) {
+        $maxRedeemableRupees = floor($afterCouponSubtotal * LOYALTY_MAX_DISCOUNT_RATIO);
+        $maxPointsByRatio = (int)floor($maxRedeemableRupees / LOYALTY_POINT_RUPEE_VALUE);
+        $balanceLimit = $userLoyaltyBalance !== null ? max(0, $userLoyaltyBalance) : $loyaltyPointsRequested;
+        $loyaltyPointsUsed = max(0, min($loyaltyPointsRequested, $balanceLimit, $maxPointsByRatio));
+        $loyaltyDiscount = round($loyaltyPointsUsed * LOYALTY_POINT_RUPEE_VALUE, 2);
+    }
+
+    // Tax calculation on net food subtotal (5% GST)
+    $taxableSubtotal = max(0.00, $afterCouponSubtotal - $loyaltyDiscount);
     $gstAmount = round(($taxableSubtotal * GST_PERCENT) / 100, 2);
     $cgst = round($gstAmount / 2, 2);
     $sgst = round($gstAmount / 2, 2);
@@ -225,8 +386,11 @@ function calculateBillTotals(array $cartItems, ?string $couponCode = null): arra
         'subtotal' => round($subtotal, 2),
         'total_qty' => $totalQty,
         'discount' => round($discount, 2),
-        'coupon_code' => $couponApplied ? strtoupper(trim($couponCode)) : null,
+        'coupon_code' => $couponApplied ? strtoupper(trim((string)$couponCode)) : null,
+        'coupon_meta' => $appliedCouponMeta,
         'coupon_error' => $couponError,
+        'loyalty_points_used' => $loyaltyPointsUsed,
+        'loyalty_discount' => $loyaltyDiscount,
         'gst_amount' => $gstAmount,
         'cgst' => $cgst,
         'sgst' => $sgst,
@@ -1041,12 +1205,27 @@ function getKdsStateHash(): string
         WHERE o.order_status = 'READY'
     ");
 
+    $failedDispatches = (int)dbFetchVal("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `delivery_status` = 'FAILED'");
+    $preppedItemsCount = 0;
+    try {
+        $preppedItemsCount = (int)dbFetchVal("
+            SELECT COALESCE(SUM(oi.is_prepped), 0)
+            FROM `order_items` oi
+            JOIN `orders` o ON oi.order_id = o.order_id
+            WHERE o.order_status IN ('PLACED', 'CONFIRMED', 'COOKING')
+        ");
+    } catch (Throwable $e) {
+        $preppedItemsCount = 0;
+    }
+
     return md5(json_encode([
         'new' => $countNew,
         'cooking' => $countCooking,
         'ready' => $countReady,
         'out' => $countOutForDelivery,
         'delivered' => $countDelivered,
+        'failed_disp' => $failedDispatches,
+        'prepped_items' => $preppedItemsCount,
         'max_audit' => $latestAudit['max_audit'] ?? 0,
         'audit_time' => $latestAudit['max_time'] ?? '',
         'max_disp' => $latestDispatch['max_disp'] ?? 0,
@@ -1624,6 +1803,8 @@ function transitionOrderStatus(int $orderId, string $newStatus, ?string $assigne
                         ':id'  => $orderId
                     ]);
                 }
+
+                awardLoyaltyPointsForOrder($orderId);
             } elseif ($newStatus === 'CANCELLED') {
                 // Lock menu_items in ascending item_id order before restocking cancelled order items
                 dbFetchAll("
@@ -1650,6 +1831,8 @@ function transitionOrderStatus(int $orderId, string $newStatus, ?string $assigne
                     SET `payment_status` = 'REFUNDED', `payment_timestamp` = NOW() 
                     WHERE `order_id` = :id
                 ", [':id' => $orderId]);
+
+                refundLoyaltyPointsForOrder($orderId);
             }
 
             // Automatically invoke FCFS allocation engine when order is ready or delivered
@@ -2076,6 +2259,323 @@ function sanitizeFaqContent(string $input): string
         $out .= $doc->saveHTML($child);
     }
     return trim($out);
+}
+
+/**
+ * Dummy Indian Serviceable Zones (Bengaluru Neighborhood Pincodes & Coordinates)
+ * Centered around Zippy Kitchen Hub in Indiranagar (12.9784, 77.6408)
+ *
+ * @return array<string, array{pincode: string, zone: string, lat: float, lng: float}>
+ */
+function getIndianServiceZones(): array
+{
+    return [
+        '560038' => ['pincode' => '560038', 'zone' => 'Indiranagar 100ft Rd', 'lat' => 12.97180000, 'lng' => 77.64120000],
+        '560008' => ['pincode' => '560008', 'zone' => 'Halasuru / Ulsoor Lake', 'lat' => 12.98170000, 'lng' => 77.62850000],
+        '560071' => ['pincode' => '560071', 'zone' => 'Domlur / EGL Tech Park', 'lat' => 12.96100000, 'lng' => 77.63870000],
+        '560075' => ['pincode' => '560075', 'zone' => 'New Thippasandra', 'lat' => 12.97350000, 'lng' => 77.65400000],
+        '560017' => ['pincode' => '560017', 'zone' => 'HAL Old Airport Rd', 'lat' => 12.95920000, 'lng' => 77.65660000],
+        '560042' => ['pincode' => '560042', 'zone' => 'Ulsoor / Sivanchetti Gardens', 'lat' => 12.98540000, 'lng' => 77.61940000],
+        '560001' => ['pincode' => '560001', 'zone' => 'MG Road / Cubbon Park', 'lat' => 12.97560000, 'lng' => 77.60660000],
+        '560025' => ['pincode' => '560025', 'zone' => 'Richmond Town', 'lat' => 12.96550000, 'lng' => 77.60120000],
+        '560034' => ['pincode' => '560034', 'zone' => 'Koramangala 4th Block', 'lat' => 12.93520000, 'lng' => 77.62450000],
+        '560095' => ['pincode' => '560095', 'zone' => 'Koramangala 6th Block', 'lat' => 12.93890000, 'lng' => 77.62210000],
+        '560068' => ['pincode' => '560068', 'zone' => 'HSR Layout Sector 1', 'lat' => 12.91210000, 'lng' => 77.64460000],
+        '560103' => ['pincode' => '560103', 'zone' => 'Bellandur / EcoSpace', 'lat' => 12.92790000, 'lng' => 77.67620000],
+        '560087' => ['pincode' => '560087', 'zone' => 'Kadubeesanahalli / ORR', 'lat' => 12.93690000, 'lng' => 77.69140000],
+        '560066' => ['pincode' => '560066', 'zone' => 'Whitefield / Palm Meadows', 'lat' => 12.96980000, 'lng' => 77.74990000],
+        '560004' => ['pincode' => '560004', 'zone' => 'Basavanagudi', 'lat' => 12.94060000, 'lng' => 77.57380000],
+        '560037' => ['pincode' => '560037', 'zone' => 'Marathahalli', 'lat' => 12.95690000, 'lng' => 77.70110000],
+    ];
+}
+
+/**
+ * Calculate great-circle Haversine distance in kilometers between two coordinates.
+ */
+function calculateHaversineDistanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+{
+    $earthRadiusKm = 6371.0;
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLng = deg2rad($lng2 - $lng1);
+
+    $a = sin($dLat / 2.0) * sin($dLat / 2.0)
+        + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+        * sin($dLng / 2.0) * sin($dLng / 2.0);
+    $c = 2.0 * atan2(sqrt($a), sqrt(max(0.0, 1.0 - $a)));
+
+    return round($earthRadiusKm * $c, 2);
+}
+
+/**
+ * Calculate distance-tiered delivery fee in INR.
+ */
+function calculateDistanceDeliveryFee(float $distanceKm, float $subtotal = 0.0): float
+{
+    if ($subtotal >= FREE_DELIVERY_THRESHOLD) {
+        return 0.00;
+    }
+    if ($distanceKm <= 3.0) {
+        return 25.00;
+    }
+    if ($distanceKm <= 6.0) {
+        return 40.00;
+    }
+    if ($distanceKm <= 10.0) {
+        return 55.00;
+    }
+    return 70.00;
+}
+
+/**
+ * Validate Indian pincode / Leaflet coordinates against the Bangalore hub geofence.
+ *
+ * @return array{serviceable: bool, latitude: float, longitude: float, distance_km: float, delivery_fee: float, eta_minutes: int, zone_name: string, message: string}
+ */
+function validateServiceableLocation(?string $pincode, ?float $lat = null, ?float $lng = null, float $subtotal = 0.0): array
+{
+    $cleanPin = preg_replace('/\D+/', '', (string)($pincode ?? ''));
+    $zones = getIndianServiceZones();
+    $hubLat = defined('ZIPPY_HUB_LAT') ? (float)ZIPPY_HUB_LAT : 12.97840000;
+    $hubLng = defined('ZIPPY_HUB_LNG') ? (float)ZIPPY_HUB_LNG : 77.64080000;
+    $maxRadius = defined('MAX_DELIVERY_RADIUS_KM') ? (float)MAX_DELIVERY_RADIUS_KM : 12.0;
+
+    $resolvedZone = $zones[$cleanPin] ?? null;
+    if ($lat !== null && $lng !== null && abs($lat) > 0.01 && abs($lng) > 0.01) {
+        $useLat = round($lat, 8);
+        $useLng = round($lng, 8);
+        $zoneName = $resolvedZone['zone'] ?? ($cleanPin !== '' ? "Bengaluru PIN {$cleanPin}" : 'Custom Map Pin');
+    } elseif ($resolvedZone !== null) {
+        $useLat = $resolvedZone['lat'];
+        $useLng = $resolvedZone['lng'];
+        $zoneName = $resolvedZone['zone'];
+    } elseif (preg_match('/^560\d{3}$/', $cleanPin)) {
+        // Fallback deterministic Bengaluru dummy offset for valid 560xxx pincodes
+        $offsetSeed = ((int)substr($cleanPin, -3)) % 25;
+        $useLat = round(12.9500 + ($offsetSeed * 0.0018), 8);
+        $useLng = round(77.6200 + ($offsetSeed * 0.0016), 8);
+        $zoneName = "Bengaluru Zone ({$cleanPin})";
+    } else {
+        return [
+            'serviceable' => false,
+            'latitude' => 12.96980000,
+            'longitude' => 77.64990000,
+            'distance_km' => 99.0,
+            'delivery_fee' => DEFAULT_DELIVERY_FEE,
+            'eta_minutes' => 0,
+            'zone_name' => 'Outside Service Zone',
+            'message' => 'Sorry! We currently deliver only within Bengaluru Indian serviceable pincodes (560xxx) and within 12 km of Indiranagar Hub.'
+        ];
+    }
+
+    // Ensure coordinates fall within realistic Indian geographic bounding box (Lat 6..38, Lng 68..98)
+    if ($useLat < 6.0 || $useLat > 38.0 || $useLng < 68.0 || $useLng > 98.0) {
+        return [
+            'serviceable' => false,
+            'latitude' => $useLat,
+            'longitude' => $useLng,
+            'distance_km' => 99.0,
+            'delivery_fee' => DEFAULT_DELIVERY_FEE,
+            'eta_minutes' => 0,
+            'zone_name' => 'Outside India Service Area',
+            'message' => 'Please drop your pin within an Indian serviceable neighborhood (Bengaluru zone).'
+        ];
+    }
+
+    $distanceKm = max(0.4, calculateHaversineDistanceKm($hubLat, $hubLng, $useLat, $useLng));
+    if ($distanceKm > $maxRadius) {
+        return [
+            'serviceable' => false,
+            'latitude' => $useLat,
+            'longitude' => $useLng,
+            'distance_km' => $distanceKm,
+            'delivery_fee' => DEFAULT_DELIVERY_FEE,
+            'eta_minutes' => 0,
+            'zone_name' => $zoneName,
+            'message' => "Selected location is {$distanceKm} km from Indiranagar Hub, exceeding our {$maxRadius} km fresh-delivery geofence."
+        ];
+    }
+
+    $fee = calculateDistanceDeliveryFee($distanceKm, $subtotal);
+    $etaMins = max(12, (int)round(12 + ($distanceKm * 2.5)));
+
+    return [
+        'serviceable' => true,
+        'latitude' => $useLat,
+        'longitude' => $useLng,
+        'distance_km' => $distanceKm,
+        'delivery_fee' => $fee,
+        'eta_minutes' => $etaMins,
+        'zone_name' => $zoneName,
+        'message' => "Serviceable ({$zoneName} • {$distanceKm} km from hub)"
+    ];
+}
+
+/**
+ * Compute loyalty points earned for a delivered order.
+ */
+function calculateLoyaltyPointsEarned(float $eligibleAmount): int
+{
+    $divisor = defined('LOYALTY_EARN_DIVISOR') ? (float)LOYALTY_EARN_DIVISOR : 20.0;
+    return max(0, (int)floor($eligibleAmount / max(1.0, $divisor)));
+}
+
+/**
+ * Atomically credit loyalty points when an order reaches DELIVERED (idempotent per order).
+ */
+function awardLoyaltyPointsForOrder(int $orderId): int
+{
+    if ($orderId <= 0) {
+        return 0;
+    }
+
+    try {
+        $existingEarned = (int)(dbFetchVal(
+            "SELECT COUNT(*) FROM `loyalty_transactions` WHERE `order_id` = :oid AND `txn_type` = 'EARNED'",
+            [':oid' => $orderId]
+        ) ?: 0);
+        if ($existingEarned > 0) {
+            return 0;
+        }
+
+        $order = dbFetchOne(
+            "SELECT `order_id`, `user_id`, `subtotal`, `discount_amount`, `loyalty_discount`, `order_status` FROM `orders` WHERE `order_id` = :oid FOR UPDATE",
+            [':oid' => $orderId]
+        );
+        if (!$order) {
+            return 0;
+        }
+
+        $netFoodPaid = max(0.0, (float)$order['subtotal'] - (float)$order['discount_amount'] - (float)($order['loyalty_discount'] ?? 0));
+        $pointsEarned = calculateLoyaltyPointsEarned($netFoodPaid);
+        if ($pointsEarned <= 0) {
+            return 0;
+        }
+
+        $userId = (int)$order['user_id'];
+        $userRow = dbFetchOne("SELECT `loyalty_points` FROM `users` WHERE `user_id` = :uid FOR UPDATE", [':uid' => $userId]);
+        $currentPts = (int)($userRow['loyalty_points'] ?? 0);
+        $newBalance = $currentPts + $pointsEarned;
+
+        dbQuery("UPDATE `users` SET `loyalty_points` = :pts WHERE `user_id` = :uid", [':pts' => $newBalance, ':uid' => $userId]);
+        dbQuery("
+            INSERT INTO `loyalty_transactions` (`user_id`, `order_id`, `txn_type`, `points`, `balance_after`, `description`)
+            VALUES (:uid, :oid, 'EARNED', :pts, :bal, :desc)
+        ", [
+            ':uid' => $userId,
+            ':oid' => $orderId,
+            ':pts' => $pointsEarned,
+            ':bal' => $newBalance,
+            ':desc' => "Earned {$pointsEarned} points on delivered order #ZIP-{$orderId}"
+        ]);
+
+        return $pointsEarned;
+    } catch (Throwable $e) {
+        error_log("awardLoyaltyPointsForOrder error for order {$orderId}: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Atomically restore redeemed loyalty points when an order is CANCELLED (idempotent).
+ */
+function refundLoyaltyPointsForOrder(int $orderId): int
+{
+    if ($orderId <= 0) {
+        return 0;
+    }
+
+    try {
+        $alreadyRefunded = (int)(dbFetchVal(
+            "SELECT COUNT(*) FROM `loyalty_transactions` WHERE `order_id` = :oid AND `txn_type` = 'REFUND_BONUS'",
+            [':oid' => $orderId]
+        ) ?: 0);
+        if ($alreadyRefunded > 0) {
+            return 0;
+        }
+
+        $order = dbFetchOne(
+            "SELECT `order_id`, `user_id`, `loyalty_points_used` FROM `orders` WHERE `order_id` = :oid FOR UPDATE",
+            [':oid' => $orderId]
+        );
+        $ptsUsed = (int)($order['loyalty_points_used'] ?? 0);
+        if (!$order || $ptsUsed <= 0) {
+            return 0;
+        }
+
+        $userId = (int)$order['user_id'];
+        $userRow = dbFetchOne("SELECT `loyalty_points` FROM `users` WHERE `user_id` = :uid FOR UPDATE", [':uid' => $userId]);
+        $currentPts = (int)($userRow['loyalty_points'] ?? 0);
+        $newBalance = $currentPts + $ptsUsed;
+
+        dbQuery("UPDATE `users` SET `loyalty_points` = :pts WHERE `user_id` = :uid", [':pts' => $newBalance, ':uid' => $userId]);
+        dbQuery("
+            INSERT INTO `loyalty_transactions` (`user_id`, `order_id`, `txn_type`, `points`, `balance_after`, `description`)
+            VALUES (:uid, :oid, 'REFUND_BONUS', :pts, :bal, :desc)
+        ", [
+            ':uid' => $userId,
+            ':oid' => $orderId,
+            ':pts' => $ptsUsed,
+            ':bal' => $newBalance,
+            ':desc' => "Restored {$ptsUsed} loyalty points from cancelled order #ZIP-{$orderId}"
+        ]);
+
+        return $ptsUsed;
+    } catch (Throwable $e) {
+        error_log("refundLoyaltyPointsForOrder error for order {$orderId}: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Supported catalog allergen identifiers & human-friendly labels.
+ *
+ * @return array<string, string>
+ */
+function getDishAllergenOptions(): array
+{
+    return [
+        'dairy' => 'Dairy / Milk',
+        'nuts' => 'Tree Nuts / Cashews / Almonds',
+        'gluten' => 'Gluten / Wheat',
+        'egg' => 'Egg',
+        'soy' => 'Soy'
+    ];
+}
+
+/**
+ * Supported customer dietary preference flags.
+ *
+ * @return array<string, array{label: string, badge: string, icon: string}>
+ */
+function getDietaryPreferenceOptions(): array
+{
+    return [
+        'veg_only' => ['label' => 'Pure Vegetarian Only', 'badge' => 'Veg Only', 'icon' => 'bi-circle-fill text-success'],
+        'high_protein' => ['label' => 'High Protein (>= 20g)', 'badge' => 'High Protein', 'icon' => 'bi-lightning-charge-fill text-warning'],
+        'low_calorie' => ['label' => 'Calorie-Conscious (<= 400 kcal)', 'badge' => 'Low Cal', 'icon' => 'bi-heart-pulse-fill text-danger'],
+        'dairy_free' => ['label' => 'Dairy-Free (Avoid Dairy)', 'badge' => 'Dairy-Free', 'icon' => 'bi-droplet-half text-info'],
+        'nut_free' => ['label' => 'Nut-Free (Avoid Nuts)', 'badge' => 'Nut-Free', 'icon' => 'bi-shield-check text-success'],
+        'gluten_free' => ['label' => 'Gluten-Free (Avoid Gluten)', 'badge' => 'Gluten-Free', 'icon' => 'bi-slash-circle text-primary'],
+        'mild_spice' => ['label' => 'Mild Spice Preferred', 'badge' => 'Mild Spice', 'icon' => 'bi-thermometer-low text-success'],
+    ];
+}
+
+/**
+ * Fetch saved dietary/allergen preference keys for a customer account.
+ *
+ * @return array<int, string>
+ */
+function getUserDietaryPreferences(?int $userId): array
+{
+    if ($userId === null || $userId <= 0) {
+        return [];
+    }
+    try {
+        $raw = (string)(dbFetchVal("SELECT `dietary_preferences` FROM `users` WHERE `user_id` = :uid", [':uid' => $userId]) ?? '');
+        return array_values(array_filter(array_map('trim', explode(',', $raw))));
+    } catch (Throwable $e) {
+        return [];
+    }
 }
 
 require_once __DIR__ . '/view_helpers.php';

@@ -90,7 +90,18 @@ $addresses = OrderService::getCustomerAddresses($userId);
                 <?php if (!empty($addr['landmark'])): ?>
                   <div class="small text-muted mb-1"><i class="bi bi-pin-map me-1 text-danger"></i>Near <?= e($addr['landmark']) ?></div>
                 <?php endif; ?>
-                <div class="small text-muted">PIN: <?= e($addr['pincode']) ?> | Bangalore</div>
+                <?php
+                  $aLat = isset($addr['latitude']) && $addr['latitude'] !== null ? (float)$addr['latitude'] : ZIPPY_HUB_LAT;
+                  $aLng = isset($addr['longitude']) && $addr['longitude'] !== null ? (float)$addr['longitude'] : ZIPPY_HUB_LNG;
+                  $aDist = isset($addr['distance_km']) && $addr['distance_km'] !== null
+                    ? (float)$addr['distance_km']
+                    : calculateHaversineDistanceKm(ZIPPY_HUB_LAT, ZIPPY_HUB_LNG, $aLat, $aLng);
+                  $aFee = calculateDistanceDeliveryFee($aDist, 100.00);
+                ?>
+                <div class="small text-muted">PIN: <?= e($addr['pincode']) ?> | Bengaluru</div>
+                <div class="small text-success fw-semibold mt-1">
+                  <i class="bi bi-signpost-split me-1"></i><?= number_format($aDist, 1) ?> km from Indiranagar Hub &bull; Est. Delivery ₹<?= number_format($aFee, 0) ?>
+                </div>
               </div>
 
               <div class="border-top pt-3 mt-3 d-flex align-items-center justify-content-between">
@@ -126,18 +137,23 @@ $addresses = OrderService::getCustomerAddresses($userId);
   </div>
 </main>
 
-<!-- Add Address Modal -->
+<!-- Add Address Modal (Interactive Leaflet Indian Coordinates Pin-Drop & 12km Geofence) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
 <div class="modal fade" id="addAddressModal" tabindex="-1" aria-labelledby="addAddressModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <div class="modal-header border-bottom">
-        <h5 class="modal-title fw-bold font-outfit" id="addAddressModalLabel"><i class="bi bi-geo-alt-fill text-success me-2"></i>Add Delivery Destination</h5>
+        <h5 class="modal-title fw-bold font-outfit" id="addAddressModalLabel"><i class="bi bi-geo-alt-fill text-success me-2"></i>Add Delivery Destination (Bengaluru)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       
       <form method="POST" action="<?= CUSTOMER_URL ?>/manage-addresses.php">
         <?= csrfField() ?>
         <input type="hidden" name="action" value="add_address">
+        <input type="hidden" name="latitude" id="addrLatInput" value="<?= e((string)ZIPPY_HUB_LAT) ?>">
+        <input type="hidden" name="longitude" id="addrLngInput" value="<?= e((string)ZIPPY_HUB_LNG) ?>">
         
         <div class="modal-body p-4">
           <div class="mb-3">
@@ -155,8 +171,25 @@ $addresses = OrderService::getCustomerAddresses($userId);
           </div>
 
           <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+              <label class="form-label small fw-bold mb-0"><i class="bi bi-pin-map-fill text-danger me-1"></i>Drop Pin on Bengaluru Map (12 km Radius)</label>
+              <span class="badge bg-success-subtle text-success border border-success-subtle" id="pinDistanceBadge">0.0 km from Hub &bull; ₹25 Delivery</span>
+            </div>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+              <?php foreach (array_slice(getIndianServiceZones(), 0, 6, true) as $zPin => $zInfo): ?>
+                <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 quick-zone-btn" style="font-size:0.72rem;"
+                        data-pin="<?= e($zPin) ?>" data-lat="<?= e((string)$zInfo['lat']) ?>" data-lng="<?= e((string)$zInfo['lng']) ?>">
+                  <?= e($zInfo['zone']) ?> (<?= e($zPin) ?>)
+                </button>
+              <?php endforeach; ?>
+            </div>
+            <div id="addressPinMap" class="rounded-3 border" style="height: 220px; z-index: 1;"></div>
+            <div class="form-text small">Drag the green pin or click anywhere on the Bengaluru map. Deliveries outside <?= (int)MAX_DELIVERY_RADIUS_KM ?> km from Indiranagar Hub are restricted.</div>
+          </div>
+
+          <div class="mb-3">
             <label class="form-label small fw-bold">Complete Street Address *</label>
-            <textarea name="address_line" class="form-control rounded-3" rows="3" placeholder="Door No, Apartment / Building Name, Street / Layout" required></textarea>
+            <textarea name="address_line" class="form-control rounded-3" rows="2" placeholder="Door No, Apartment / Building Name, Street / Layout" required></textarea>
           </div>
 
           <div class="row g-3 mb-3">
@@ -165,8 +198,8 @@ $addresses = OrderService::getCustomerAddresses($userId);
               <input type="text" name="landmark" class="form-control rounded-3" placeholder="Opposite Metro Station">
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-bold">Pincode *</label>
-              <input type="text" name="pincode" class="form-control rounded-3" placeholder="560038" value="560038" required>
+              <label class="form-label small fw-bold">Pincode (560xxx) *</label>
+              <input type="text" name="pincode" id="addrPincodeInput" class="form-control rounded-3" placeholder="560038" value="560038" required>
             </div>
           </div>
 
@@ -180,11 +213,121 @@ $addresses = OrderService::getCustomerAddresses($userId);
 
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">Save Address</button>
+          <button type="submit" id="saveAddressSubmitBtn" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" style="background:#2E6F40; border-color:#2E6F40;">Save Address</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const HUB_LAT = <?= json_encode((float)ZIPPY_HUB_LAT) ?>;
+  const HUB_LNG = <?= json_encode((float)ZIPPY_HUB_LNG) ?>;
+  const MAX_RADIUS = <?= json_encode((float)MAX_DELIVERY_RADIUS_KM) ?>;
+  const ZONES = <?= json_encode(getIndianServiceZones()) ?>;
+
+  const modalEl = document.getElementById('addAddressModal');
+  const latInput = document.getElementById('addrLatInput');
+  const lngInput = document.getElementById('addrLngInput');
+  const pinInput = document.getElementById('addrPincodeInput');
+  const distBadge = document.getElementById('pinDistanceBadge');
+  const submitBtn = document.getElementById('saveAddressSubmitBtn');
+
+  let pinMap = null;
+  let pinMarker = null;
+
+  function haversineKm(lat1, lng1, lat2, lng2) {
+    const rad = d => (d * Math.PI) / 180;
+    const R = 6371;
+    const dLat = rad(lat2 - lat1);
+    const dLng = rad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))) * 100) / 100;
+  }
+
+  function updatePinMetrics(lat, lng) {
+    if (latInput) latInput.value = lat.toFixed(6);
+    if (lngInput) lngInput.value = lng.toFixed(6);
+    const d = haversineKm(HUB_LAT, HUB_LNG, lat, lng);
+    const fee = d <= 3 ? 25 : (d <= 6 ? 40 : (d <= 10 ? 55 : 70));
+    const inRange = d <= MAX_RADIUS;
+    if (distBadge) {
+      if (inRange) {
+        distBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+        distBadge.textContent = `${d.toFixed(1)} km from Hub • Delivery ₹${fee}`;
+      } else {
+        distBadge.className = 'badge bg-danger text-white';
+        distBadge.textContent = `${d.toFixed(1)} km (Outside ${MAX_RADIUS} km geofence!)`;
+      }
+    }
+    if (submitBtn) submitBtn.disabled = !inRange;
+  }
+
+  function setPinLocation(lat, lng, pan = true) {
+    if (pinMarker) pinMarker.setLatLng([lat, lng]);
+    if (pinMap && pan) pinMap.setView([lat, lng], 13);
+    updatePinMetrics(lat, lng);
+  }
+
+  if (modalEl && typeof L !== 'undefined') {
+    modalEl.addEventListener('shown.bs.modal', () => {
+      if (!pinMap) {
+        pinMap = L.map('addressPinMap').setView([HUB_LAT, HUB_LNG], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(pinMap);
+
+        L.circleMarker([HUB_LAT, HUB_LNG], {
+          radius: 7,
+          color: '#2E6F40',
+          fillColor: '#2E6F40',
+          fillOpacity: 1
+        }).bindPopup('Zippy Kitchen Hub (Indiranagar)').addTo(pinMap);
+
+        L.circle([HUB_LAT, HUB_LNG], {
+          radius: MAX_RADIUS * 1000,
+          color: '#2E6F40',
+          weight: 1.5,
+          fillColor: '#CEFFDC',
+          fillOpacity: 0.12
+        }).addTo(pinMap);
+
+        pinMarker = L.marker([HUB_LAT, HUB_LNG], { draggable: true }).addTo(pinMap);
+        pinMarker.on('dragend', () => {
+          const pos = pinMarker.getLatLng();
+          updatePinMetrics(pos.lat, pos.lng);
+        });
+        pinMap.on('click', (evt) => {
+          setPinLocation(evt.latlng.lat, evt.latlng.lng, false);
+        });
+        updatePinMetrics(HUB_LAT, HUB_LNG);
+      }
+      setTimeout(() => pinMap && pinMap.invalidateSize(), 150);
+    });
+  }
+
+  document.querySelectorAll('.quick-zone-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lat = parseFloat(btn.dataset.lat);
+      const lng = parseFloat(btn.dataset.lng);
+      const pin = btn.dataset.pin || '';
+      if (pinInput && pin) pinInput.value = pin;
+      if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+        setPinLocation(lat, lng, true);
+      }
+    });
+  });
+
+  if (pinInput) {
+    pinInput.addEventListener('input', () => {
+      const p = pinInput.value.trim();
+      if (ZONES[p]) {
+        setPinLocation(Number(ZONES[p].lat), Number(ZONES[p].lng), true);
+      }
+    });
+  }
+});
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -20,6 +20,20 @@ $filterStatus = cleanInput($_GET['status'] ?? 'LIVE');
 $searchQuery = cleanInput($_GET['search'] ?? '');
 $paymentFilter = cleanInput($_GET['payment'] ?? '');
 
+// Handle Failed Delivery Re-Dispatch POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'requeue_failed') {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        setFlash('danger', 'Invalid session token.');
+    } else {
+        $requeueRes = FleetService::requeueFailedDispatch((int)($_POST['order_id'] ?? 0), (int)($currentUser['id'] ?? 0));
+        setFlash($requeueRes['type'], $requeueRes['message']);
+        $redirectUrl = ADMIN_URL . "/orders.php" . (!empty($filterStatus) ? "?status=" . urlencode($filterStatus) : '');
+        if (!empty($searchQuery)) $redirectUrl .= "&search=" . urlencode($searchQuery);
+        header("Location: " . $redirectUrl);
+        exit;
+    }
+}
+
 // Handle Status Update POST (Centralized via transitionOrderStatus())
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_order_status') {
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
@@ -93,6 +107,7 @@ $cntDelivering = $adminOrdersData['cntDelivering'];
 $cntDelivered = $adminOrdersData['cntDelivered'];
 $cntCancelled = $adminOrdersData['cntCancelled'];
 $cntScheduled = $adminOrdersData['cntScheduled'];
+$cntFailed = (int)(dbFetchVal("SELECT COUNT(*) FROM `delivery_dispatches` WHERE `delivery_status` = 'FAILED'") ?: 0);
 $orders = $adminOrdersData['orders'];
 $codPendingOrders = $adminOrdersData['codPendingOrders'];
 $delayedOrders = $adminOrdersData['delayedOrders'];
@@ -156,6 +171,10 @@ $orderItemsGrouped = $adminOrdersData['orderItemsGrouped'];
       <a href="<?= ADMIN_URL ?>/orders.php?status=CANCELLED<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'CANCELLED') ? 'btn-danger' : 'btn-light border' ?>">
         ❌ Cancelled (<?= $cntCancelled ?>)
+      </a>
+      <a href="<?= ADMIN_URL ?>/orders.php?status=FAILED<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
+         class="btn btn-sm rounded-pill <?= ($filterStatus === 'FAILED') ? 'btn-danger text-white fw-bold' : 'btn-outline-danger' ?>">
+        🚨 Failed / SOS (<?= $cntFailed ?>)
       </a>
       <a href="<?= ADMIN_URL ?>/orders.php?status=ALL<?= !empty($searchQuery) ? '&search=' . urlencode($searchQuery) : '' ?>" 
          class="btn btn-sm rounded-pill <?= ($filterStatus === 'ALL') ? 'btn-dark' : 'btn-light border' ?>">
@@ -456,6 +475,25 @@ $orderItemsGrouped = $adminOrdersData['orderItemsGrouped'];
                       <?php endif; ?>
                     </div>
                   <?php endif; ?>
+                </div>
+              <?php endif; ?>
+
+              <?php if (strtoupper((string)($order['delivery_status'] ?? '')) === 'FAILED'): ?>
+                <div class="alert alert-danger py-2 px-3 mb-2 rounded-3 d-flex align-items-center justify-content-between gap-2 small">
+                  <div>
+                    <div class="fw-bold"><i class="bi bi-exclamation-octagon-fill me-1"></i>RIDER SOS: <?= e($order['failure_reason'] ?: 'Delivery Exception') ?></div>
+                    <?php if (!empty($order['issue_notes'])): ?>
+                      <div class="text-dark" style="font-size:0.75rem;"><?= e($order['issue_notes']) ?></div>
+                    <?php endif; ?>
+                  </div>
+                  <form method="POST" action="<?= ADMIN_URL ?>/orders.php?status=<?= urlencode($filterStatus) ?>" class="m-0 flex-shrink-0">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="requeue_failed">
+                    <input type="hidden" name="order_id" value="<?= (int)$order['order_id'] ?>">
+                    <button type="submit" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold">
+                      <i class="bi bi-arrow-repeat me-1"></i>Re-Dispatch
+                    </button>
+                  </form>
                 </div>
               <?php endif; ?>
 
@@ -1193,39 +1231,52 @@ async function openAdminGpsModal(orderId, custName, riderName, otp) {
   }, 300);
 }
 
-// Background poller for Admin HUD (every 4 seconds)
+// Background poller & Server-Sent Events (SSE) Push for Admin HUD
 let syncCountdown = 4;
 let lastKnownLiveCount = <?= (int)$cntLive ?>;
+let adminSseConnected = false;
 
-setInterval(async () => {
+async function refreshAdminLiveMetrics() {
+  try {
+    const res = await fetch('../api/live-stream.php?portal=admin');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.success && data.metrics) {
+      const liveCount = document.getElementById('ordersLiveCount');
+      const readyCount = document.getElementById('ordersReadyCount');
+      const transitCount = document.getElementById('ordersTransitCount');
+
+      if (liveCount) liveCount.textContent = data.metrics.total_active;
+      if (readyCount) readyCount.textContent = data.metrics.ready;
+      if (transitCount) transitCount.textContent = data.metrics.out_for_delivery;
+
+      if (data.metrics.total_active > lastKnownLiveCount) {
+        playAdminChime();
+      }
+      lastKnownLiveCount = data.metrics.total_active;
+    }
+  } catch(e) {}
+}
+
+if (typeof EventSource !== 'undefined') {
+  try {
+    const adminSse = new EventSource('../api/sse-stream.php?portal=admin');
+    adminSse.addEventListener('connected', () => { adminSseConnected = true; });
+    adminSse.addEventListener('admin_update', () => { refreshAdminLiveMetrics(); });
+    adminSse.onerror = () => { adminSseConnected = false; };
+  } catch(e) {
+    adminSseConnected = false;
+  }
+}
+
+setInterval(() => {
   syncCountdown--;
   const timerSpan = document.getElementById('adminSyncTimer');
   if (timerSpan) timerSpan.textContent = syncCountdown + 's';
 
   if (syncCountdown <= 0) {
-    syncCountdown = 4;
-    try {
-      const res = await fetch('../api/live-stream.php?portal=admin');
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success && data.metrics) {
-        const liveCount = document.getElementById('ordersLiveCount');
-        const readyCount = document.getElementById('ordersReadyCount');
-        const transitCount = document.getElementById('ordersTransitCount');
-
-        if (liveCount) liveCount.textContent = data.metrics.total_active;
-        if (readyCount) readyCount.textContent = data.metrics.ready;
-        if (transitCount) transitCount.textContent = data.metrics.out_for_delivery;
-
-        // If new live orders arrived, alert the admin
-        if (data.metrics.total_active > lastKnownLiveCount) {
-          playAdminChime();
-          lastKnownLiveCount = data.metrics.total_active;
-        } else {
-          lastKnownLiveCount = data.metrics.total_active;
-        }
-      }
-    } catch(e) {}
+    syncCountdown = adminSseConnected ? 15 : 4;
+    refreshAdminLiveMetrics();
   }
 }, 1000);
 </script>

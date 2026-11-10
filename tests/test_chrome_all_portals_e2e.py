@@ -15,6 +15,12 @@ clicks, modals, client-side JS state, and zero SEVERE console/network errors:
   6. Admin Console: all 14 pages, Command Palette search, Order GPS/Status modals,
      Dishes bulk toolbar, Customization group lifecycle, FAQ ops, self-demotion guard,
      COD cash collection, kitchen duty toggle, fleet salary payout & logout guard
+  7. V2 Customer UI: Favorites & dietary/nutrition chips, persistent DB cart merge,
+     dietary profile alerts, Leaflet Indiranagar pin-drop + geofence, distance fee tiers,
+     loyalty points toggle & FCFS scheduled slot FULL locking
+  8. V2 Operations UI: Admin Dynamic Coupons CRUD, Dish nutrition edit, Support Tickets
+     reply thread, KDS pre-alerts + station pills + persistent dish prep checklists,
+     Rider SOS modal -> Admin Re-Dispatch, and real browser EventSource SSE stream
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import re
 import sys
 import time
 import unittest
+from datetime import datetime, timedelta
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -711,6 +718,267 @@ class TestChromeAllPortalsE2E(unittest.TestCase):
         self.driver.get(f"{BASE_URL}/admin/index.php")
         self.assertIn("admin/login.php", self.driver.current_url)
         assert_no_severe_console_errors(self, self.driver, "test_06")
+
+    def test_07_v2_customer_ui_favorites_cart_sync_geofence_loyalty_and_slots(self):
+        self._login_portal("/customer/login.php", "athul@example.com", "password123", "customer/index.php", "#loginEmail", "#loginPassword")
+        assert_page_clean_in_browser(self, self.driver, "V2 Storefront Home")
+
+        # 1. Storefront Favorites heart toggle + High-Protein + Allergen-Free filter chips
+        fav_btn = self.driver.find_element(By.CSS_SELECTOR, ".dish-fav-btn[data-item-id='1']")
+        js_click(self.driver, fav_btn)
+        self.wait.until(lambda d: "is-favorited" in d.find_element(By.CSS_SELECTOR, ".dish-fav-btn[data-item-id='1']").get_attribute("class"))
+
+        js_click(self.driver, self.driver.find_element(By.ID, "favoritesOnlyToggle"))
+        self.assertTrue(self.driver.find_element(By.CSS_SELECTOR, ".dish-card-wrapper[data-item-id='1']").is_displayed())
+        js_click(self.driver, self.driver.find_element(By.ID, "favoritesOnlyToggle"))
+
+        for chip_id in ("highProteinToggle", "allergenFreeToggle"):
+            js_click(self.driver, self.driver.find_element(By.ID, chip_id))
+            time.sleep(0.15)
+        self.wait.until(lambda d: d.find_element(By.ID, "resetStorefrontFiltersBtn").is_displayed())
+        js_click(self.driver, self.driver.find_element(By.ID, "resetStorefrontFiltersBtn"))
+
+        # 2. Persistent Server Cart merge on re-login (`cart_items`)
+        self.driver.execute_script("localStorage.removeItem('pooja_zippy_cart'); sessionStorage.removeItem('zippy_cart_merged');")
+        add_slot = self.driver.find_element(By.CSS_SELECTOR, ".dish-qty-control-slot[data-dish-id='2'] button")
+        js_click(self.driver, add_slot)
+        time.sleep(0.8)  # Allow debounced cart-sync.php replace call to flush
+
+        self.driver.get(f"{BASE_URL}/customer/logout.php")
+        self.driver.execute_script("localStorage.removeItem('pooja_zippy_cart'); sessionStorage.removeItem('zippy_cart_merged');")
+        self._login_portal("/customer/login.php", "athul@example.com", "password123", "customer/index.php", "#loginEmail", "#loginPassword")
+        self.wait.until(lambda d: len(json.loads(d.execute_script("return localStorage.getItem('pooja_zippy_cart') || '[]';"))) >= 1)
+
+        # 3. Dietary Profile preferences & Loyalty ledger UI + Dietary Alert on storefront
+        self.driver.get(f"{BASE_URL}/customer/profile.php")
+        assert_page_clean_in_browser(self, self.driver, "V2 Profile Dietary & Loyalty", ("Dietary", "Zippy Loyalty Points"))
+        dairy_chk = self.driver.find_element(By.CSS_SELECTOR, "#dietary-preferences input[value='dairy_free']")
+        if not dairy_chk.is_selected():
+            js_click(self.driver, dairy_chk)
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "#dietary-preferences button[type='submit']"))
+        self.wait.until(lambda d: "preferences updated" in d.page_source.lower() or "active" in d.find_element(By.ID, "dietary-preferences").text.lower())
+
+        self.driver.get(f"{BASE_URL}/customer/index.php")
+        self.assertIn("Dietary Alert", self.driver.page_source)
+
+        # 4. Interactive Bengaluru Pin-Drop & 12km Geofence in Manage Addresses
+        self.driver.get(f"{BASE_URL}/customer/manage-addresses.php")
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "[data-bs-target='#addAddressModal']"))
+        self.wait.until(EC.visibility_of_element_located((By.ID, "addAddressModal")))
+        time.sleep(0.3)
+
+        zone_btn = self.driver.find_element(By.CSS_SELECTOR, ".quick-zone-btn[data-pin='560038']")
+        js_click(self.driver, zone_btn)
+        self.wait.until(lambda d: "Delivery ₹25" in d.find_element(By.ID, "pinDistanceBadge").text)
+        lat_val = float(self.driver.find_element(By.ID, "addrLatInput").get_attribute("value"))
+        lng_val = float(self.driver.find_element(By.ID, "addrLngInput").get_attribute("value"))
+        self.assertTrue(12.8 < lat_val < 13.1 and 77.5 < lng_val < 77.8)
+
+        modal = self.driver.find_element(By.ID, "addAddressModal")
+        near_addr_text = f"100ft Rd Indiranagar QA {self.ts}"
+        modal.find_element(By.NAME, "address_line").send_keys(near_addr_text)
+        js_click(self.driver, self.driver.find_element(By.ID, "saveAddressSubmitBtn"))
+        self.wait.until(lambda d: near_addr_text in d.page_source)
+        self.assertIn("km from Indiranagar Hub", self.driver.page_source)
+
+        # 5. Checkout Distance Fee (₹25), Loyalty Points Redeem Toggle, and FCFS Slot FULL Check
+        self.driver.execute_script(
+            "localStorage.setItem('pooja_zippy_cart', JSON.stringify([{id: 2, name: 'Hyderabadi Veg Dum Biryani', price: 249, qty: 1, isVeg: true}]));"
+        )
+        self.driver.get(f"{BASE_URL}/customer/checkout.php")
+        self.wait.until(EC.presence_of_element_located((By.ID, "chkDelivery")))
+
+        near_radio = self.driver.find_elements(By.CSS_SELECTOR, "input.address-radio-input[data-pincode='560038']")
+        if near_radio:
+            js_click(self.driver, near_radio[0])
+            time.sleep(0.2)
+        self.assertEqual(self.driver.find_element(By.ID, "chkDelivery").text.strip(), "₹25.00")
+
+        loyalty_toggles = self.driver.find_elements(By.ID, "useLoyaltyPointsToggle")
+        if loyalty_toggles:
+            js_click(self.driver, loyalty_toggles[0])
+            self.wait.until(lambda d: int(d.find_element(By.ID, "checkoutLoyaltyInput").get_attribute("value")) > 0)
+            self.assertTrue(self.driver.find_element(By.ID, "chkLoyaltyRow").is_displayed())
+
+        # Seed tomorrow's 14:15 slot to 5/5 FULL, open Schedule box & verify disabled FULL chip
+        tom_pill = self.driver.find_element(By.CSS_SELECTOR, "#datePillsGroup .date-pill-btn:nth-child(2)")
+        tomorrow = tom_pill.get_attribute("data-date")
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO scheduled_slot_caps (slot_key, slot_date, slot_label, max_capacity, booked_count) "
+                "VALUES (%s, %s, 'Lunch (02:00 PM - 02:30 PM)', 5, 5) "
+                "ON DUPLICATE KEY UPDATE booked_count = 5, max_capacity = 5",
+                (f"{tomorrow}|14:15", tomorrow),
+            )
+
+        js_click(self.driver, self.driver.find_element(By.ID, "cardDeliverSchedule"))
+        self.wait.until(EC.visibility_of_element_located((By.ID, "advanceScheduleBox")))
+        js_click(self.driver, tom_pill)
+
+        full_chip_sel = ".slot-chip-btn[data-time='14:15']"
+        self.wait.until(lambda d: "FULL" in d.find_element(By.CSS_SELECTOR, full_chip_sel).text)
+        self.assertFalse(self.driver.find_element(By.CSS_SELECTOR, full_chip_sel).is_enabled())
+
+        # Pick available dinner slot and place COD scheduled order
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, ".slot-chip-btn[data-time='19:15']"))
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "input[name='payment_mode'][value='COD']"))
+        js_click(self.driver, self.driver.find_element(By.ID, "checkoutSubmitBtn"))
+        self.wait.until(lambda d: "order-success.php" in d.current_url)
+        assert_no_severe_console_errors(self, self.driver, "test_07")
+
+    def test_08_v2_admin_coupons_tickets_kds_checklists_rider_sos_and_sse(self):
+        # 1. Customer creates ticket + fresh COD order for Kitchen & Rider SOS UI flow
+        self._login_portal("/customer/login.php", "athul@example.com", "password123", "customer/index.php", "#loginEmail", "#loginPassword")
+        self.driver.get(f"{BASE_URL}/customer/help.php")
+        help_desc = f"Chrome V2 Threaded Ticket {self.ts}"
+        help_form = self.driver.find_element(By.XPATH, "//form[.//textarea[@name='description']]")
+        help_form.find_element(By.NAME, "description").send_keys(help_desc)
+        js_click(self.driver, help_form.find_element(By.CSS_SELECTOR, "button[type='submit']"))
+        self.wait.until(lambda d: help_desc in d.page_source)
+
+        self.driver.execute_script(
+            "localStorage.setItem('pooja_zippy_cart', JSON.stringify([{id: 1, name: 'Meghana Special Chicken Biryani', price: 319, qty: 1, isVeg: false}, {id: 5, name: 'Paneer Butter Masala', price: 279, qty: 1, isVeg: true}]));"
+        )
+        self.driver.get(f"{BASE_URL}/customer/checkout.php")
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "input[name='payment_mode'][value='COD']"))
+        js_click(self.driver, self.driver.find_element(By.ID, "checkoutSubmitBtn"))
+        self.wait.until(lambda d: "order-success.php" in d.current_url)
+        v2_oid = int(re.search(r"order_id=(\d+)", self.driver.current_url).group(1))
+
+        # Check Customer Order Tracking page loads cleanly with SSE initialized
+        self.driver.get(f"{BASE_URL}/customer/order-status.php?order_id={v2_oid}")
+        assert_page_clean_in_browser(self, self.driver, "Customer SSE Order Tracker", (f"#ZIP-{v2_oid}",))
+
+        # Insert near-term scheduled order for KDS Pre-Alert Banner visibility
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM users WHERE email = 'athul@example.com'")
+            uid = cur.fetchone()["user_id"]
+            cur.execute(
+                "INSERT INTO orders (user_id, address_id, subtotal, delivery_fee, platform_fee, tax_amount, discount_amount, total_amount, order_status, is_scheduled, scheduled_for, scheduled_slot) "
+                "VALUES (%s, 1, 249.00, 40.00, 5.00, 12.45, 0.00, 306.45, 'CONFIRMED', 1, DATE_ADD(NOW(), INTERVAL 20 MINUTE), 'Chrome Pre-Alert Slot')",
+                (uid,),
+            )
+            pa_oid = cur.lastrowid
+            cur.execute("INSERT INTO order_items (order_id, item_id, quantity, unit_price, line_total) VALUES (%s, 2, 1, 249.00, 249.00)", (pa_oid,))
+
+        # 2. Admin Dynamic Coupons CRUD, Dish Nutrition fields & Support Ticket Desk reply
+        self._login_portal("/admin/login.php", "admin@zippy.com", "password123", "admin/index.php")
+        self.driver.get(f"{BASE_URL}/admin/coupons.php")
+        assert_page_clean_in_browser(self, self.driver, "Admin Dynamic Coupons", ("Dynamic Promo Coupons",))
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "button[onclick='openCreateCouponModal()']"))
+        self.wait.until(EC.visibility_of_element_located((By.ID, "couponFormModal")))
+        cp_code = f"UI{str(self.ts)[-5:]}"
+        self.driver.find_element(By.ID, "cpCode").send_keys(cp_code)
+        self.driver.find_element(By.ID, "cpTitle").send_keys("Chrome UI Coupon")
+        self.driver.find_element(By.ID, "cpValue").clear()
+        self.driver.find_element(By.ID, "cpValue").send_keys("35")
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "#couponFormModal button[type='submit']"))
+        self.wait.until(lambda d: cp_code in d.page_source)
+
+        self.driver.get(f"{BASE_URL}/admin/dishes.php")
+        edit_btn = self.driver.find_element(By.CSS_SELECTOR, ".btn-edit-dish[data-id='1']")
+        js_click(self.driver, edit_btn)
+        self.wait.until(EC.visibility_of_element_located((By.ID, "editDishModal")))
+        cal_inp = self.driver.find_element(By.ID, "editDishCalories")
+        cal_inp.clear()
+        cal_inp.send_keys("545")
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "#editDishModal button[type='submit']"))
+        self.wait.until(lambda d: "admin/dishes.php" in d.current_url)
+
+        self.driver.get(f"{BASE_URL}/admin/support-tickets.php")
+        assert_page_clean_in_browser(self, self.driver, "Admin Support Tickets", (help_desc,))
+        adm_reply = f"Admin Chrome reply {self.ts}"
+        ticket_card = self.driver.find_element(By.XPATH, f"//div[contains(@class,'card') and .//*[contains(text(),'{help_desc}')]]")
+        ticket_card.find_element(By.NAME, "reply_message").send_keys(adm_reply)
+        js_click(self.driver, ticket_card.find_element(By.CSS_SELECTOR, "button[type='submit'].btn-success"))
+        self.wait.until(lambda d: adm_reply in d.page_source)
+
+        # Customer sees Admin reply and posts follow-up on help.php
+        self.driver.get(f"{BASE_URL}/customer/help.php#my-tickets")
+        self.wait.until(lambda d: adm_reply in d.page_source)
+        cust_reply = f"Customer Chrome reply {self.ts}"
+        follow_form = self.driver.find_element(By.XPATH, "//form[.//input[@name='action' and @value='reply_ticket']]")
+        follow_form.find_element(By.NAME, "message").send_keys(cust_reply)
+        js_click(self.driver, follow_form.find_element(By.CSS_SELECTOR, "button[type='submit']"))
+        self.wait.until(lambda d: cust_reply in d.page_source)
+
+        # 3. Kitchen KDS: Pre-Alert Banner, Station Routing pills & persisted Prep Checklist
+        self._login_portal("/kitchen/login.php", "chef@zippy.com", "password123", "kitchen/index.php")
+        assert_page_clean_in_browser(self, self.driver, "KDS Pre-Alert & Stations", ("scheduledPreAlertBanner", f"#ZIP-{pa_oid}"))
+
+        station_pills = self.driver.find_elements(By.CSS_SELECTOR, "#kitchenStationFilterBar .station-pill-btn")
+        if len(station_pills) > 1:
+            js_click(self.driver, station_pills[1])
+            time.sleep(0.15)
+            js_click(self.driver, station_pills[0])
+
+        new_tkt = self.driver.find_element(By.CSS_SELECTOR, f"#laneNewContainer .ticket-item[data-ticket-id='{v2_oid}']")
+        js_click(self.driver, new_tkt.find_element(By.CSS_SELECTOR, "form button[type='submit']"))
+        self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"#laneCookingContainer .ticket-item[data-ticket-id='{v2_oid}']")))
+
+        cook_tkt = self.driver.find_element(By.CSS_SELECTOR, f"#laneCookingContainer .ticket-item[data-ticket-id='{v2_oid}']")
+        first_chk = cook_tkt.find_element(By.CSS_SELECTOR, ".dish-checkbox")
+        js_click(self.driver, first_chk)
+        self.wait.until(lambda d: d.find_element(By.ID, f"prepCountBadge_{v2_oid}").text.startswith("1/"))
+        self.driver.get(f"{BASE_URL}/kitchen/index.php")
+        self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"#laneCookingContainer .ticket-item[data-ticket-id='{v2_oid}'] .dish-checkbox")))
+        self.assertTrue(self.driver.find_element(By.CSS_SELECTOR, f"#laneCookingContainer .ticket-item[data-ticket-id='{v2_oid}'] .dish-checkbox").is_selected())
+
+        cook_tkt = self.driver.find_element(By.CSS_SELECTOR, f"#laneCookingContainer .ticket-item[data-ticket-id='{v2_oid}']")
+        js_click(self.driver, cook_tkt.find_element(By.CSS_SELECTOR, "form button[type='submit']"))
+        self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"#laneReadyContainer .ticket-item[data-ticket-id='{v2_oid}']")))
+
+        # 4. Delivery Rider SOS modal -> Admin FAILED triage & Re-Dispatch
+        with db_conn() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE orders SET order_status = 'READY' WHERE order_id = %s", (v2_oid,))
+            cur.execute("UPDATE delivery_dispatches SET rider_id = NULL, delivery_status = 'ASSIGNED' WHERE order_id = %s", (v2_oid,))
+            cur.execute("UPDATE staff_profiles SET duty_status = 'OFF_DUTY' WHERE department = 'DELIVERY' AND user_id != 6")
+
+        self._login_portal("/delivery/login.php", "shaji@zippy.com", "password123", "delivery/index.php")
+        if "OFFLINE" in self.driver.find_element(By.ID, "dutyStatusHeading").text.upper():
+            js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, "#dutyToggleForm input[type='checkbox']"))
+            time.sleep(0.4)
+        sos_btns = self.driver.find_elements(By.CSS_SELECTOR, f"button[onclick*='openSupportModal({v2_oid})']")
+        if not sos_btns:
+            claim_btn = self.driver.find_element(By.CSS_SELECTOR, f"button#btnClaimOrder{v2_oid}, button[id^='btnClaimOrder']")
+            js_click(self.driver, claim_btn)
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, f"button[onclick*='openSupportModal({v2_oid})']")))
+
+        js_click(self.driver, self.driver.find_element(By.CSS_SELECTOR, f"button[onclick*='openSupportModal({v2_oid})']"))
+        self.wait.until(EC.visibility_of_element_located((By.ID, "riderSupportModal")))
+        self.driver.find_element(By.ID, "supportIssueNotes").send_keys("Chrome E2E SOS test")
+        js_click(self.driver, self.driver.find_element(By.ID, "submitSosBtn"))
+        accept_alert_if_present(self.driver, 4.0)
+        self.wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, f"button[onclick*='openSupportModal({v2_oid})']")) == 0)
+
+        # Admin sees Failed SOS alert in Delivery View & Orders FAILED tab -> clicks Re-Dispatch
+        self.driver.get(f"{BASE_URL}/admin/delivery-view.php")
+        assert_page_clean_in_browser(self, self.driver, "Admin Delivery SOS UI", ("Failed Delivery", f"#ZIP-{v2_oid}"))
+
+        self.driver.get(f"{BASE_URL}/admin/orders.php?status=FAILED")
+        assert_page_clean_in_browser(self, self.driver, "Admin Failed Tab UI", (f"#ZIP-{v2_oid}", "RIDER SOS"))
+        requeue_form = self.driver.find_element(By.XPATH, f"//form[.//input[@name='action' and @value='requeue_failed'] and .//input[@name='order_id' and @value='{v2_oid}']]")
+        js_click(self.driver, requeue_form.find_element(By.CSS_SELECTOR, "button[type='submit']"))
+        self.wait.until(lambda d: "admin/orders.php" in d.current_url)
+
+        # Verify live EventSource SSE stream connects & delivers events in real Chrome
+        self.driver.get(f"{BASE_URL}/customer/order-status.php?order_id={v2_oid}")
+        self.driver.set_script_timeout(10)
+        sse_result = self.driver.execute_async_script("""
+            const [oid, cb] = arguments;
+            const es = new EventSource('../api/sse-stream.php?portal=customer&order_id=' + oid + '&once=1');
+            const seen = { connected: false, updated: false };
+            es.addEventListener('connected', () => { seen.connected = true; });
+            es.addEventListener('order_update', (e) => {
+                seen.updated = Boolean(JSON.parse(e.data || '{}').hash);
+                es.close();
+                cb(seen);
+            });
+            setTimeout(() => { es.close(); cb(seen); }, 5000);
+        """, v2_oid)
+        self.assertTrue(sse_result.get("connected") and sse_result.get("updated"), f"Chrome EventSource SSE failed: {sse_result}")
+
+        assert_no_severe_console_errors(self, self.driver, "test_08")
 
 
 if __name__ == "__main__":

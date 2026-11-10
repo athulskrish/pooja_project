@@ -102,6 +102,8 @@ class CatalogService
         $activeOrder = null;
         $statusBadge = null;
         $previousMeal = null;
+        $favoriteIds = [];
+        $userDietaryPrefs = [];
 
         if ($customerUserId !== null && $customerUserId > 0) {
             $activeOrder = dbFetchOne("
@@ -126,6 +128,8 @@ class CatalogService
             }
 
             $previousMeal = getCustomerPreviousMeal($customerUserId);
+            $favoriteIds = self::getUserFavoriteItemIds($customerUserId);
+            $userDietaryPrefs = getUserDietaryPreferences($customerUserId);
         }
 
         return [
@@ -137,15 +141,70 @@ class CatalogService
             'activeOrder' => $activeOrder,
             'statusBadge' => $statusBadge,
             'previousMeal' => $previousMeal,
+            'favoriteIds' => $favoriteIds,
+            'userDietaryPrefs' => $userDietaryPrefs,
         ];
+    }
+
+    /**
+     * Fetch user's bookmarked/favorite menu item IDs.
+     *
+     * @return array<int, int>
+     */
+    public static function getUserFavoriteItemIds(?int $userId): array
+    {
+        if ($userId === null || $userId <= 0) {
+            return [];
+        }
+        try {
+            $rows = dbFetchAll("SELECT `item_id` FROM `user_favorites` WHERE `user_id` = :uid", [':uid' => $userId]);
+            return array_map(static fn(array $r): int => (int)$r['item_id'], $rows);
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Toggle a menu item in customer's favorites (`user_favorites`).
+     *
+     * @return array{ok: bool, favorited: bool, count: int, message: string}
+     */
+    public static function toggleUserFavorite(int $userId, int $itemId): array
+    {
+        if ($userId <= 0 || $itemId <= 0) {
+            return ['ok' => false, 'favorited' => false, 'count' => 0, 'message' => 'Invalid user or dish.'];
+        }
+
+        try {
+            return dbTransactional(static function () use ($userId, $itemId): array {
+                $exists = dbFetchOne(
+                    "SELECT `favorite_id` FROM `user_favorites` WHERE `user_id` = :uid AND `item_id` = :iid FOR UPDATE",
+                    [':uid' => $userId, ':iid' => $itemId]
+                );
+                if ($exists) {
+                    dbQuery("DELETE FROM `user_favorites` WHERE `favorite_id` = :fid", [':fid' => (int)$exists['favorite_id']]);
+                    $favorited = false;
+                    $msg = 'Removed from your Favorites.';
+                } else {
+                    dbQuery("INSERT INTO `user_favorites` (`user_id`, `item_id`) VALUES (:uid, :iid)", [':uid' => $userId, ':iid' => $itemId]);
+                    $favorited = true;
+                    $msg = 'Saved to your Favorites!';
+                }
+                $cnt = (int)dbFetchVal("SELECT COUNT(*) FROM `user_favorites` WHERE `user_id` = :uid", [':uid' => $userId]);
+                return ['ok' => true, 'favorited' => $favorited, 'count' => $cnt, 'message' => $msg];
+            });
+        } catch (Throwable $e) {
+            error_log("toggleUserFavorite error: " . $e->getMessage());
+            return ['ok' => false, 'favorited' => false, 'count' => 0, 'message' => 'Unable to update favorites right now.'];
+        }
     }
 
     /**
      * Fetch grouped menu catalog and Apriori cross-sell items for restaurant menu page.
      *
-     * @return array{aprioriRecs: array<int, array<string, mixed>>, categories: array<int, array<string, mixed>>, itemsByCategory: array<int, array<int, array<string, mixed>>>, customSummaryMap: array<int, array{group_count: int, option_count: int}>}
+     * @return array{aprioriRecs: array<int, array<string, mixed>>, categories: array<int, array<string, mixed>>, itemsByCategory: array<int, array<int, array<string, mixed>>>, customSummaryMap: array<int, array{group_count: int, option_count: int}>, favoriteIds: array<int, int>}
      */
-    public static function getRestaurantCatalog(): array
+    public static function getRestaurantCatalog(?int $customerUserId = null): array
     {
         $aprioriRecs = class_exists('AprioriEngine') ? AprioriEngine::getRecommendations([1], 4) : [];
 
@@ -182,13 +241,14 @@ class CatalogService
             'categories' => $categories,
             'itemsByCategory' => $itemsByCategory,
             'customSummaryMap' => getAllDishesCustomizationCounts(),
+            'favoriteIds' => self::getUserFavoriteItemIds($customerUserId),
         ];
     }
 
     /**
-     * Search active storefront dishes by text, category slug, diet flags, mood, and sort order.
+     * Search active storefront dishes by text, category slug, diet flags, mood, allergen exclusions, and sort order.
      *
-     * @return array{dishes: array<int, array<string, mixed>>, categories: array<int, array<string, mixed>>, foodMoods: array<string, array<string, mixed>>, customSummaryMap: array<int, array{group_count: int, option_count: int}>}
+     * @return array{dishes: array<int, array<string, mixed>>, categories: array<int, array<string, mixed>>, foodMoods: array<string, array<string, mixed>>, customSummaryMap: array<int, array{group_count: int, option_count: int}>, favoriteIds: array<int, int>}
      */
     public static function searchDishes(
         string $query,
@@ -196,7 +256,10 @@ class CatalogService
         bool $vegOnly,
         bool $healthyOnly,
         string $moodFilter,
-        string $sort
+        string $sort,
+        string $allergenFree = '',
+        bool $highProtein = false,
+        ?int $customerUserId = null
     ): array
     {
         $conditions = ["m.is_active = 1", "m.is_available = 1", "c.is_active = 1"];
@@ -223,6 +286,20 @@ class CatalogService
             $conditions[] = "(c.category_slug = 'healthy' OR m.is_healthy = 1 OR LOWER(c.category_name) LIKE '%healthy%' OR LOWER(m.item_name) LIKE '%salad%' OR LOWER(m.item_name) LIKE '%quinoa%' OR LOWER(m.item_name) LIKE '%detox%')";
         }
 
+        if ($highProtein) {
+            $conditions[] = "COALESCE(m.protein_g, 0) >= 20";
+        }
+
+        if ($allergenFree !== '') {
+            $allowedAllergens = array_keys(getDishAllergenOptions());
+            $requestedExclusions = array_values(array_intersect($allowedAllergens, array_map('trim', explode(',', strtolower($allergenFree)))));
+            foreach ($requestedExclusions as $idx => $alg) {
+                $pKey = ":alg_excl_{$idx}";
+                $conditions[] = "(m.allergens IS NULL OR m.allergens = '' OR FIND_IN_SET({$pKey}, LOWER(m.allergens)) = 0)";
+                $params[$pKey] = $alg;
+            }
+        }
+
         if ($moodFilter !== '' && $moodFilter !== 'all') {
             $conditions[] = "(FIND_IN_SET(:mood, m.mood) > 0 OR m.mood LIKE :mood_like)";
             $params[':mood'] = $moodFilter;
@@ -233,6 +310,7 @@ class CatalogService
             'price_asc' => "m.price ASC",
             'price_desc' => "m.price DESC",
             'prep_time' => "m.prep_time_minutes ASC",
+            'protein_desc' => "COALESCE(m.protein_g, 0) DESC",
             default => "m.stock_quantity DESC, m.item_id ASC",
         };
 
@@ -252,6 +330,7 @@ class CatalogService
             'categories' => $categories,
             'foodMoods' => getFoodMoods(),
             'customSummaryMap' => getAllDishesCustomizationCounts(),
+            'favoriteIds' => self::getUserFavoriteItemIds($customerUserId),
         ];
     }
 
@@ -541,6 +620,19 @@ class CatalogService
         $isVeg = !empty($post['is_veg']) ? 1 : 0;
         $isHealthy = !empty($post['is_healthy']) ? 1 : 0;
         $mood = cleanInput((string)($post['mood'] ?? 'comfort'));
+        $calories = isset($post['calories_kcal']) && $post['calories_kcal'] !== '' ? max(0, (int)$post['calories_kcal']) : null;
+        $protein = isset($post['protein_g']) && $post['protein_g'] !== '' ? max(0.0, (float)$post['protein_g']) : null;
+        $carbs = isset($post['carbs_g']) && $post['carbs_g'] !== '' ? max(0.0, (float)$post['carbs_g']) : null;
+        $fat = isset($post['fat_g']) && $post['fat_g'] !== '' ? max(0.0, (float)$post['fat_g']) : null;
+        $rawAllergens = $post['allergens'] ?? [];
+        $allergenList = is_array($rawAllergens) ? $rawAllergens : explode(',', (string)$rawAllergens);
+        $allowedAlg = array_keys(getDishAllergenOptions());
+        $cleanAllergens = implode(',', array_values(array_intersect($allowedAlg, array_map('trim', array_map('strtolower', $allergenList)))));
+        $allergensVal = $cleanAllergens !== '' ? $cleanAllergens : null;
+        $spiceLevel = strtoupper(cleanInput((string)($post['spice_level'] ?? 'MEDIUM')));
+        if (!in_array($spiceLevel, ['MILD', 'MEDIUM', 'SPICY', 'EXTRA_SPICY'], true)) {
+            $spiceLevel = 'MEDIUM';
+        }
         $image = cleanInput((string)($post['image_url'] ?? ''));
         $desc = cleanInput((string)($post['description'] ?? ''));
 
@@ -563,8 +655,8 @@ class CatalogService
         }
 
         dbQuery("
-            INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_active`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `image_url`)
-            VALUES (:cid, :name, :desc, :price, :stock, 1, 1, :veg, :healthy, :mood, :prep, :station, :img)
+            INSERT INTO `menu_items` (`category_id`, `item_name`, `description`, `price`, `stock_quantity`, `is_available`, `is_active`, `is_veg`, `is_healthy`, `mood`, `prep_time_minutes`, `kitchen_station`, `calories_kcal`, `protein_g`, `carbs_g`, `fat_g`, `allergens`, `spice_level`, `image_url`)
+            VALUES (:cid, :name, :desc, :price, :stock, 1, 1, :veg, :healthy, :mood, :prep, :station, :cal, :pro, :carb, :fat, :alg, :sp, :img)
         ", [
             ':cid' => $catId,
             ':name' => $name,
@@ -576,6 +668,12 @@ class CatalogService
             ':mood' => $mood,
             ':prep' => $prep,
             ':station' => $station,
+            ':cal' => $calories,
+            ':pro' => $protein,
+            ':carb' => $carbs,
+            ':fat' => $fat,
+            ':alg' => $allergensVal,
+            ':sp' => $spiceLevel,
             ':img' => $image,
         ]);
 
@@ -601,6 +699,19 @@ class CatalogService
         $isHealthy = !empty($post['is_healthy']) ? 1 : 0;
         $mood = cleanInput((string)($post['mood'] ?? 'comfort'));
         $isAvailable = !empty($post['is_available']) ? 1 : 0;
+        $calories = isset($post['calories_kcal']) && $post['calories_kcal'] !== '' ? max(0, (int)$post['calories_kcal']) : null;
+        $protein = isset($post['protein_g']) && $post['protein_g'] !== '' ? max(0.0, (float)$post['protein_g']) : null;
+        $carbs = isset($post['carbs_g']) && $post['carbs_g'] !== '' ? max(0.0, (float)$post['carbs_g']) : null;
+        $fat = isset($post['fat_g']) && $post['fat_g'] !== '' ? max(0.0, (float)$post['fat_g']) : null;
+        $rawAllergens = $post['allergens'] ?? [];
+        $allergenList = is_array($rawAllergens) ? $rawAllergens : explode(',', (string)$rawAllergens);
+        $allowedAlg = array_keys(getDishAllergenOptions());
+        $cleanAllergens = implode(',', array_values(array_intersect($allowedAlg, array_map('trim', array_map('strtolower', $allergenList)))));
+        $allergensVal = $cleanAllergens !== '' ? $cleanAllergens : null;
+        $spiceLevel = strtoupper(cleanInput((string)($post['spice_level'] ?? 'MEDIUM')));
+        if (!in_array($spiceLevel, ['MILD', 'MEDIUM', 'SPICY', 'EXTRA_SPICY'], true)) {
+            $spiceLevel = 'MEDIUM';
+        }
         $image = cleanInput((string)($post['image_url'] ?? ''));
         $desc = cleanInput((string)($post['description'] ?? ''));
 
@@ -626,7 +737,9 @@ class CatalogService
             SET `category_id` = :cid, `item_name` = :name, `description` = :desc,
                 `price` = :price, `stock_quantity` = :stock, `is_available` = :avail,
                 `is_veg` = :veg, `is_healthy` = :healthy, `mood` = :mood, `prep_time_minutes` = :prep,
-                `kitchen_station` = :station, `image_url` = :img
+                `kitchen_station` = :station, `calories_kcal` = :cal, `protein_g` = :pro,
+                `carbs_g` = :carb, `fat_g` = :fat, `allergens` = :alg, `spice_level` = :sp,
+                `image_url` = :img
             WHERE `item_id` = :id AND `is_active` = 1
         ", [
             ':cid' => $catId,
@@ -640,6 +753,12 @@ class CatalogService
             ':mood' => $mood,
             ':prep' => $prep,
             ':station' => $station,
+            ':cal' => $calories,
+            ':pro' => $protein,
+            ':carb' => $carbs,
+            ':fat' => $fat,
+            ':alg' => $allergensVal,
+            ':sp' => $spiceLevel,
             ':img' => $image,
             ':id' => $itemId,
         ]);

@@ -2,8 +2,8 @@
 
 **Database Engine:** MySQL 8.0 / MariaDB (InnoDB)
 **Character Set:** `utf8mb4_unicode_ci`
-**Schema Sources:** `database/schema.sql` (20 core tables) + `database/migrate_food_moods_table.php` (`food_moods`) = **21 Tables**
-**Soft-Delete Policy (`is_active = 1 / 0`):** Enforced on `users`, `user_addresses`, `categories`, `menu_items`, `dish_customization_groups`, `dish_customization_options`, `faqs`, and `food_moods` (see `database/migrate_soft_deletes.php`).
+**Schema Sources:** `database/schema.sql` (27 core tables) + `database/migrate_food_moods_table.php` (`food_moods`) = **28 Tables** (with idempotent migration via `database/migrate_v2_features.php`)
+**Soft-Delete Policy (`is_active = 1 / 0`):** Enforced on `users`, `user_addresses`, `categories`, `menu_items`, `dish_customization_groups`, `dish_customization_options`, `faqs`, `food_moods`, and `coupons` (see `database/migrate_soft_deletes.php`).
 
 ---
 
@@ -29,6 +29,8 @@
 | `password_hash` | `VARCHAR(255) NOT NULL` | Bcrypt/Argon2id hash (`password_hash()`) |
 | `security_question` | `VARCHAR(255) NULL DEFAULT NULL` | Password recovery prompt |
 | `security_answer_hash` | `VARCHAR(255) NULL DEFAULT NULL` | Normalized security answer hash |
+| `loyalty_points` | `INT NOT NULL DEFAULT 0` | Current redeemable customer loyalty points balance (`1 pt = ₹1`) |
+| `dietary_preferences` | `VARCHAR(255) NULL DEFAULT NULL` | Comma-separated preference keys (`veg_only`, `high_protein`, `dairy_free`, etc.) |
 | `is_active` | `TINYINT(1) NOT NULL DEFAULT 1` | Account active flag (`0 = suspended/soft-archived`) |
 | `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Registration timestamp |
 
@@ -40,7 +42,9 @@
 | `address_type` | `ENUM('HOME', 'WORK', 'OTHER') NOT NULL DEFAULT 'HOME'` | Address label |
 | `address_line` | `TEXT NOT NULL` | Full delivery street/building address |
 | `landmark` | `VARCHAR(150) NULL` | Nearby landmark |
-| `pincode` | `VARCHAR(10) NOT NULL` | Postal code |
+| `pincode` | `VARCHAR(10) NOT NULL` | Bengaluru postal code (`560xxx`) |
+| `latitude` / `longitude` | `DECIMAL(10,8)` / `DECIMAL(11,8) NULL` | Pinned customer map coordinates (India/Bengaluru) |
+| `distance_km` | `DECIMAL(5,2) NULL DEFAULT NULL` | Haversine distance from Indiranagar Kitchen Hub |
 | `is_default` | `TINYINT(1) NOT NULL DEFAULT 0` | Default checkout address flag |
 | `is_active` | `TINYINT(1) NOT NULL DEFAULT 1` | Soft-delete flag (`0 = archived`) |
 
@@ -77,6 +81,10 @@
 | `mood` | `VARCHAR(100) NOT NULL DEFAULT 'comfort'` | Comma-separated / keyed mood assignment |
 | `prep_time_minutes` | `INT NOT NULL DEFAULT 20` | Estimated prep time for WSJF duration calculation |
 | `kitchen_station` | `VARCHAR(50) NOT NULL DEFAULT 'Main Kitchen'` | Assigned station |
+| `calories_kcal` | `INT NULL DEFAULT NULL` | Energy content per serving (kcal) |
+| `protein_g` / `carbs_g` / `fat_g` | `DECIMAL(5,1) NULL DEFAULT NULL` | Macronutrient breakdown in grams |
+| `allergens` | `VARCHAR(255) NULL DEFAULT NULL` | Comma-separated allergen tags (`dairy`, `nuts`, `gluten`, `egg`, `soy`) |
+| `spice_level` | `ENUM('MILD', 'MEDIUM', 'SPICY', 'EXTRA_SPICY') NOT NULL DEFAULT 'MEDIUM'` | Dish spice intensity |
 | `image_url` | `VARCHAR(500) NULL` | Dish photo path/URL |
 | `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Creation timestamp |
 
@@ -139,6 +147,9 @@
 | `delivery_fee` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Delivery charge |
 | `platform_fee` | `DECIMAL(10,2) NOT NULL DEFAULT 5.00` | Fixed platform convenience charge |
 | `discount_amount` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Applied coupon discount |
+| `loyalty_points_used` | `INT NOT NULL DEFAULT 0` | Loyalty points redeemed at checkout |
+| `loyalty_discount` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | INR value redeemed via loyalty points |
+| `distance_km` | `DECIMAL(5,2) NULL DEFAULT NULL` | Customer delivery distance snapshot (km) |
 | `total_amount` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Grand payable total |
 | `coupon_code` | `VARCHAR(50) NULL` | Applied promo code |
 | `order_status` | `ENUM('PLACED', 'CONFIRMED', 'COOKING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED') NOT NULL DEFAULT 'PLACED'` | Order lifecycle state |
@@ -161,6 +172,8 @@
 | `line_total` | `DECIMAL(10,2) NOT NULL` | Total line amount (`(unit_price + customization_unit_total) * quantity`) |
 | `customizations` | `TEXT NULL` | JSON snapshot of selected customization groups/options |
 | `customization_total` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Total customization surcharge for the line |
+| `is_prepped` | `TINYINT(1) NOT NULL DEFAULT 0` | Dish-level KDS prep checklist completion flag |
+| `prepped_at` | `TIMESTAMP NULL DEFAULT NULL` | Timestamp when marked prepped on KDS |
 
 #### `payments`
 | Column | Type / Constraints | Description |
@@ -190,6 +203,9 @@
 | `assigned_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Dispatch claim timestamp |
 | `dispatched_at` / `delivered_at` | `TIMESTAMP NULL` | Lifecycle timestamps |
 | `delivery_status` | `ENUM('ASSIGNED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED') NOT NULL DEFAULT 'ASSIGNED'` | Dispatch progress status |
+| `failure_reason` | `VARCHAR(255) NULL DEFAULT NULL` | Rider SOS exception category |
+| `issue_notes` | `TEXT NULL DEFAULT NULL` | Optional rider SOS notes |
+| `failed_at` | `TIMESTAMP NULL DEFAULT NULL` | Timestamp when SOS failure was logged |
 
 #### `order_audit_trail`
 | Column | Type / Constraints | Description |
@@ -251,7 +267,79 @@
 | `subject` | `VARCHAR(200) NOT NULL` | Ticket subject |
 | `message` | `TEXT NOT NULL` | Inquiry body |
 | `ticket_status` | `ENUM('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED') NOT NULL DEFAULT 'OPEN'` | Ticket workflow status |
-| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Submission timestamp |
+| `assigned_admin_id` | `INT NULL DEFAULT NULL` | Handling administrator `users.user_id` |
+| `created_at` / `updated_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Submission & latest reply timestamps |
+
+#### `support_ticket_replies`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `reply_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Reply PK |
+| `ticket_id` | `INT NOT NULL` (FK -> `support_tickets.ticket_id`) | Parent support ticket |
+| `user_id` | `INT NULL` (FK -> `users.user_id`) | Author account (`NULL` if detached) |
+| `sender_role` | `ENUM('CUSTOMER', 'ADMIN') NOT NULL DEFAULT 'ADMIN'` | Message sender portal role |
+| `sender_name` | `VARCHAR(120) NOT NULL` | Display name snapshot |
+| `reply_message` | `TEXT NOT NULL` | Reply message body |
+| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Reply timestamp |
+
+---
+
+### 1.5 Promotions, FCFS Capacity, Persistence & Loyalty Tables
+
+#### `coupons`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `coupon_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Coupon PK |
+| `code` | `VARCHAR(50) NOT NULL UNIQUE` | Uppercase promo code |
+| `title` / `description` | `VARCHAR(120)` / `VARCHAR(255) NOT NULL` | Offer display metadata |
+| `discount_type` | `ENUM('percentage', 'flat') NOT NULL DEFAULT 'percentage'` | Calculation mode |
+| `discount_value` / `max_discount` / `min_order` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Percentage/rupee value, cap, and minimum subtotal |
+| `valid_from` / `valid_until` | `DATETIME NULL DEFAULT NULL` | Active promo date window |
+| `usage_limit` / `per_user_limit` / `used_count` | `INT NOT NULL DEFAULT 0` | Global & per-customer redemption quotas |
+| `first_order_only` / `is_active` | `TINYINT(1) NOT NULL` | First-order gate (`0/1`) and active soft flag |
+
+#### `coupon_redemptions`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `redemption_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Redemption ledger PK |
+| `coupon_id` / `user_id` / `order_id` | `INT NOT NULL` (FKs -> `coupons`, `users`, `orders`) | Coupon, customer, and checkout order |
+| `discount_applied` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Actual discount deducted |
+| `redeemed_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Redemption timestamp |
+
+#### `scheduled_slot_caps`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `slot_key` | `VARCHAR(120) PRIMARY KEY` | Canonical `YYYY-MM-DD|SlotLabel` FCFS lock key |
+| `slot_date` | `DATE NOT NULL` | Scheduled delivery date (`idx_slot_date`) |
+| `slot_label` | `VARCHAR(100) NOT NULL` | Display meal slot window |
+| `max_capacity` / `booked_count` | `INT NOT NULL` | Slot cap (default `5`) and locked FCFS reservation counter |
+| `updated_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Last slot counter change |
+
+#### `cart_items`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `cart_item_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Cart row PK |
+| `user_id` / `item_id` | `INT NOT NULL` (FKs -> `users`, `menu_items`) | Customer and catalog dish |
+| `cart_key` | `VARCHAR(120) NOT NULL` | Unique per `(user_id, cart_key)` including customizations |
+| `quantity` | `INT NOT NULL DEFAULT 1` | Requested quantity |
+| `customizations_json` / `customization_text` | `TEXT NULL` / `VARCHAR(500) NULL` | Saved customization add-on state |
+| `unit_price` | `DECIMAL(10,2) NOT NULL DEFAULT 0.00` | Dish + add-on unit price |
+
+#### `user_favorites`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `favorite_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Favorite bookmark PK |
+| `user_id` / `item_id` | `INT NOT NULL` (FKs -> `users`, `menu_items`) | Unique pair `(user_id, item_id)` |
+| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Bookmark timestamp |
+
+#### `loyalty_transactions`
+| Column | Type / Constraints | Description |
+| :--- | :--- | :--- |
+| `loyalty_txn_id` | `INT AUTO_INCREMENT PRIMARY KEY` | Loyalty audit PK |
+| `user_id` / `order_id` | `INT NOT NULL` / `INT NULL` | Linked customer & order |
+| `txn_type` | `ENUM('EARNED', 'REDEEMED', 'REFUND_BONUS', 'ADMIN_ADJUST') NOT NULL` | Ledger movement category |
+| `points` / `balance_after` | `INT NOT NULL` | Point delta (`+/-`) and resulting balance |
+| `description` | `VARCHAR(255) NOT NULL` | Human-readable ledger remark |
+| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | Transaction timestamp |
 
 #### `staff_profiles`
 | Column | Type / Constraints | Description |

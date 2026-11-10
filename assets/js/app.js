@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updateCartBadge();
   renderCartDrawer();
+  if (typeof initServerCartSync === 'function') {
+    initServerCartSync();
+  }
   setupFilterPills();
   setupSearchInput();
   setupDietaryFilters();
@@ -113,9 +116,103 @@ function escapeHtml(str) {
 }
 
 /**
+ * Persistent Server Cart Synchronization Helpers (Logged-In Customers)
+ */
+let _cartSyncTimer = null;
+
+function syncCartWithServer(action = 'replace', applyReturned = false) {
+  if (!window.ZIPPY_CUSTOMER_LOGGED_IN || !window.CUSTOMER_URL) {
+    return Promise.resolve(null);
+  }
+  return fetch(`${window.CUSTOMER_URL}/ajax/cart-sync.php`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': window.ZIPPY_CSRF_TOKEN || ''
+    },
+    body: JSON.stringify({
+      action,
+      items: action === 'clear' ? [] : cart,
+      csrf_token: window.ZIPPY_CSRF_TOKEN || ''
+    })
+  })
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => {
+      if (applyReturned && data && data.success && Array.isArray(data.items)) {
+        cart = data.items;
+        localStorage.setItem('pooja_zippy_cart', JSON.stringify(cart));
+        saveCart(true);
+      }
+      return data;
+    })
+    .catch(() => null);
+}
+
+function initServerCartSync() {
+  if (!window.ZIPPY_CUSTOMER_LOGGED_IN || !window.CUSTOMER_URL) return;
+  if (sessionStorage.getItem('zippy_cart_merged') !== '1') {
+    syncCartWithServer('merge', true).then(res => {
+      if (res && res.success) {
+        sessionStorage.setItem('zippy_cart_merged', '1');
+      }
+    });
+  }
+}
+
+/**
+ * Toggle Favorite Dish Heart Button (`user_favorites`)
+ */
+window.toggleDishFavorite = function(itemId, btnEl) {
+  if (!window.ZIPPY_CUSTOMER_LOGGED_IN) {
+    showToast('Please sign in to save dishes to Favorites', 'info');
+    return;
+  }
+  const numId = Number(itemId) || 0;
+  if (!numId || !window.CUSTOMER_URL) return;
+
+  fetch(`${window.CUSTOMER_URL}/ajax/toggle-favorite.php`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': window.ZIPPY_CSRF_TOKEN || ''
+    },
+    body: JSON.stringify({
+      item_id: numId,
+      csrf_token: window.ZIPPY_CSRF_TOKEN || ''
+    })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data || !data.success) {
+        showToast((data && data.error) ? data.error : 'Unable to update favorite', 'danger');
+        return;
+      }
+      const isFav = Boolean(data.favorited);
+      document.querySelectorAll(`.dish-fav-btn[data-item-id="${numId}"]`).forEach(btn => {
+        btn.classList.toggle('is-favorited', isFav);
+        const icon = btn.querySelector('i');
+        if (icon) {
+          icon.className = isFav ? 'bi bi-heart-fill text-danger' : 'bi bi-heart text-dark';
+        }
+        btn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+      });
+      document.querySelectorAll(`[data-item-id="${numId}"].dish-card-wrapper, [data-item-id="${numId}"].dish-item-row`).forEach(card => {
+        card.setAttribute('data-favorite', isFav ? 'true' : 'false');
+      });
+      if (btnEl && !btnEl.dataset.itemId) {
+        const icon = btnEl.querySelector('i');
+        if (icon) icon.className = isFav ? 'bi bi-heart-fill text-danger' : 'bi bi-heart text-dark';
+      }
+      showToast(data.message || (isFav ? 'Added to Favorites' : 'Removed from Favorites'));
+      document.dispatchEvent(new CustomEvent('zippy:favoriteUpdated', { detail: { itemId: numId, favorited: isFav } }));
+    })
+    .catch(() => showToast('Network error updating favorites', 'danger'));
+};
+
+/**
  * Save Cart to LocalStorage and trigger UI updates
  */
-function saveCart() {
+function saveCart(skipServerSync = false) {
   localStorage.setItem('pooja_zippy_cart', JSON.stringify(cart));
   updateCartBadge();
   renderCartDrawer();
@@ -125,6 +222,12 @@ function saveCart() {
   }
   if (document.getElementById('checkout-items-container')) {
     renderCheckoutPage();
+  }
+  if (!skipServerSync && window.ZIPPY_CUSTOMER_LOGGED_IN) {
+    clearTimeout(_cartSyncTimer);
+    _cartSyncTimer = setTimeout(() => {
+      syncCartWithServer('replace', false);
+    }, 350);
   }
 }
 
@@ -548,7 +651,9 @@ function clearCart() {
   localStorage.removeItem('pooja_zippy_cart');
   localStorage.removeItem('pooja_active_coupon');
   activeCoupon = null;
-  saveCart();
+  window.ZIPPY_VALIDATED_COUPON = null;
+  saveCart(true);
+  syncCartWithServer('clear', false);
   showToast('Cart cleared');
 }
 
@@ -660,21 +765,55 @@ function reorderItems(items, orderId) {
 /**
  * Calculate Cart Totals (Matches Backend Logic Exactly)
  */
-function calculateCartTotals() {
-  const itemTotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
-  const deliveryFee = (itemTotal >= 499 || itemTotal === 0) ? 0 : 40;
-  const platformFee = itemTotal > 0 ? 5 : 0;
-  
-  let discount = 0;
-  if (activeCoupon === 'LUSHFOREST' && itemTotal >= 299) {
-    discount = Math.min(Math.round(itemTotal * 0.20), 100);
-  } else if (activeCoupon === 'ZIPPY50' && itemTotal >= 399) {
-    discount = Math.min(Math.round(itemTotal * 0.50), 120);
-  } else if (activeCoupon === 'WELCOME' && itemTotal >= 199) {
-    discount = 50;
+function evaluateDynamicCoupon(code, itemTotal) {
+  if (!code || itemTotal <= 0) return 0;
+  const upper = String(code).trim().toUpperCase();
+  const validated = window.ZIPPY_VALIDATED_COUPON;
+  const couponMap = window.ZIPPY_AVAILABLE_COUPONS || {};
+  const cp = (validated && String(validated.code || '').toUpperCase() === upper)
+    ? validated
+    : couponMap[upper];
+
+  if (!cp) {
+    return 0;
   }
 
-  const taxable = Math.max(0, itemTotal - discount);
+  const minOrder = Number(cp.min_order || 0);
+  if (itemTotal < minOrder) {
+    return 0;
+  }
+
+  const dtype = String(cp.discount_type || 'flat').toLowerCase();
+  const dval = Number(cp.discount_value || 0);
+  const maxDisc = Number(cp.max_discount || 0);
+
+  if (dtype === 'percentage') {
+    const raw = (itemTotal * dval) / 100;
+    const capped = maxDisc > 0 ? Math.min(raw, maxDisc) : raw;
+    return Math.round(Math.min(capped, itemTotal) * 100) / 100;
+  }
+
+  return Math.round(Math.min(dval, itemTotal) * 100) / 100;
+}
+
+function calculateCartTotals() {
+  const itemTotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+  const overrideFee = (typeof window.ZIPPY_OVERRIDE_DELIVERY_FEE === 'number' && !Number.isNaN(window.ZIPPY_OVERRIDE_DELIVERY_FEE))
+    ? window.ZIPPY_OVERRIDE_DELIVERY_FEE
+    : 40;
+  const deliveryFee = (itemTotal >= 499 || itemTotal === 0) ? 0 : overrideFee;
+  const platformFee = itemTotal > 0 ? 5 : 0;
+
+  const discount = evaluateDynamicCoupon(activeCoupon, itemTotal);
+  const afterCoupon = Math.max(0, itemTotal - discount);
+
+  const rawLoyalty = (typeof window.ZIPPY_OVERRIDE_LOYALTY_DISCOUNT === 'number' && !Number.isNaN(window.ZIPPY_OVERRIDE_LOYALTY_DISCOUNT))
+    ? window.ZIPPY_OVERRIDE_LOYALTY_DISCOUNT
+    : 0;
+  const maxLoyaltyAllowed = Math.floor(afterCoupon * 0.5);
+  const loyaltyDiscount = Math.max(0, Math.min(rawLoyalty, maxLoyaltyAllowed));
+
+  const taxable = Math.max(0, afterCoupon - loyaltyDiscount);
   const taxes = Math.round(taxable * 0.05 * 100) / 100; // 5% GST
   const finalTotal = Math.max(0, Math.round((taxable + taxes + deliveryFee + platformFee) * 100) / 100);
 
@@ -684,6 +823,7 @@ function calculateCartTotals() {
     platformFee,
     taxes,
     discount,
+    loyaltyDiscount,
     finalTotal
   };
 }
@@ -953,19 +1093,66 @@ function applyFilters() {
  * Dietary Filters (Pure Veg & Healthy Food) on Homepage & Restaurant Page
  */
 function setupDietaryFilters() {
-  // 1. Homepage Filter Buttons (#vegOnlyToggle & #healthyOnlyToggle)
+  // 1. Homepage Filter Buttons (#vegOnlyToggle, #healthyOnlyToggle, #favoritesOnlyToggle, #highProteinToggle, #allergenFreeToggle)
   const vegBtn = document.getElementById('vegOnlyToggle');
   const healthyBtn = document.getElementById('healthyOnlyToggle');
+  const favBtn = document.getElementById('favoritesOnlyToggle');
+  const highProtBtn = document.getElementById('highProteinToggle');
+  const allergenFreeBtn = document.getElementById('allergenFreeToggle');
   const dishesGrid = document.getElementById('dishesGrid');
 
-  if (dishesGrid && (vegBtn || healthyBtn)) {
+  if (dishesGrid && (vegBtn || healthyBtn || favBtn || highProtBtn || allergenFreeBtn)) {
     let vegActive = false;
     let healthyActive = false;
+    let favoriteActive = false;
+    let highProteinActive = false;
+    let allergenFreeActive = false;
     let activeMood = 'all';
     let activeCategorySlug = 'all';
     let searchQuery = '';
     let currentSort = 'recommended';
     let originalCardOrder = Array.from(dishesGrid.querySelectorAll('.dish-card-wrapper'));
+
+    function updateExtraDietaryButtons() {
+      const pairs = [
+        [favBtn, favoriteActive, 'btn-danger', 'btn-outline-danger'],
+        [highProtBtn, highProteinActive, 'btn-primary', 'btn-outline-primary'],
+        [allergenFreeBtn, allergenFreeActive, 'btn-success', 'btn-outline-success'],
+      ];
+      pairs.forEach(([btn, active, activeCls, outlineCls]) => {
+        if (!btn) return;
+        btn.classList.toggle(activeCls, active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle(outlineCls, !active);
+      });
+    }
+
+    if (favBtn) {
+      favBtn.addEventListener('click', () => {
+        favoriteActive = !favoriteActive;
+        updateExtraDietaryButtons();
+        applyStorefrontDietaryFilters();
+      });
+    }
+    if (highProtBtn) {
+      highProtBtn.addEventListener('click', () => {
+        highProteinActive = !highProteinActive;
+        updateExtraDietaryButtons();
+        applyStorefrontDietaryFilters();
+      });
+    }
+    if (allergenFreeBtn) {
+      allergenFreeBtn.addEventListener('click', () => {
+        allergenFreeActive = !allergenFreeActive;
+        updateExtraDietaryButtons();
+        applyStorefrontDietaryFilters();
+      });
+    }
+    document.addEventListener('zippy:favoriteUpdated', () => {
+      if (favoriteActive) {
+        applyStorefrontDietaryFilters();
+      }
+    });
 
     function applyStorefrontDietaryFilters() {
       const cards = dishesGrid.querySelectorAll('.dish-card-wrapper');
@@ -974,6 +1161,9 @@ function setupDietaryFilters() {
       cards.forEach(card => {
         const isVeg = card.getAttribute('data-veg') === 'true';
         const isHealthy = card.getAttribute('data-healthy') === 'true';
+        const isFav = card.getAttribute('data-favorite') === 'true';
+        const proteinG = Number(card.getAttribute('data-protein') || 0);
+        const allergens = (card.getAttribute('data-allergens') || '').trim();
         const cardCategory = (card.getAttribute('data-category') || '').trim().toLowerCase();
         const cardMood = (card.getAttribute('data-mood') || '').trim().toLowerCase();
         const cardName = (card.getAttribute('data-name') || card.querySelector('.dish-title')?.textContent || '').toLowerCase();
@@ -982,6 +1172,9 @@ function setupDietaryFilters() {
         let show = true;
         if (vegActive && !isVeg) show = false;
         if (healthyActive && !isHealthy) show = false;
+        if (favoriteActive && !isFav) show = false;
+        if (highProteinActive && proteinG < 20) show = false;
+        if (allergenFreeActive && allergens !== '') show = false;
         if (activeCategorySlug !== 'all' && cardCategory !== activeCategorySlug) show = false;
         if (activeMood !== 'all') {
           const moodList = cardMood.split(',').map(m => m.trim());
@@ -1025,7 +1218,7 @@ function setupDietaryFilters() {
       // Show or hide the quick "Clear Filters" button in toolbar
       const resetBtn = document.getElementById('resetStorefrontFiltersBtn');
       if (resetBtn) {
-        const isFiltered = vegActive || healthyActive || (activeCategorySlug !== 'all') || (activeMood !== 'all') || searchQuery.length > 0 || currentSort !== 'recommended';
+        const isFiltered = vegActive || healthyActive || favoriteActive || highProteinActive || allergenFreeActive || (activeCategorySlug !== 'all') || (activeMood !== 'all') || searchQuery.length > 0 || currentSort !== 'recommended';
         resetBtn.style.display = isFiltered ? 'inline-block' : 'none';
       }
     }
@@ -1246,10 +1439,14 @@ function setupDietaryFilters() {
     window.resetAllStorefrontFilters = function() {
       vegActive = false;
       healthyActive = false;
+      favoriteActive = false;
+      highProteinActive = false;
+      allergenFreeActive = false;
       activeMood = 'all';
       activeCategorySlug = 'all';
       searchQuery = '';
       currentSort = 'recommended';
+      updateExtraDietaryButtons();
 
       const quickSearch = document.getElementById('storefrontQuickSearch');
       if (quickSearch) quickSearch.value = '';
@@ -1356,15 +1553,19 @@ function setupDietaryFilters() {
     }
   };
 
-  // 2. Restaurant Page Switches (#vegOnlySwitch, #healthyOnlySwitch & #restaurantMoodSelect)
+  // 2. Restaurant Page Switches (#vegOnlySwitch, #healthyOnlySwitch, #restaurantFavSwitch, #restaurantAllergenFreeSwitch & #restaurantMoodSelect)
   const vegSwitch = document.getElementById('vegOnlySwitch');
   const healthySwitch = document.getElementById('healthyOnlySwitch');
+  const restFavSwitch = document.getElementById('restaurantFavoritesOnlySwitch');
+  const restAllergenSwitch = document.getElementById('restaurantAllergenFreeSwitch');
   const moodSelect = document.getElementById('restaurantMoodSelect');
 
-  if (vegSwitch || healthySwitch || moodSelect) {
+  if (vegSwitch || healthySwitch || restFavSwitch || restAllergenSwitch || moodSelect) {
     function applyRestaurantFilters() {
       const isVegOnly = vegSwitch ? vegSwitch.checked : false;
       const isHealthyOnly = healthySwitch ? healthySwitch.checked : false;
+      const isFavOnly = restFavSwitch ? restFavSwitch.checked : false;
+      const isAllergenFree = restAllergenSwitch ? restAllergenSwitch.checked : false;
       const selectedMood = (moodSelect ? moodSelect.value : 'all').trim().toLowerCase();
 
       const categoryBlocks = document.querySelectorAll('.category-menu-block');
@@ -1375,11 +1576,15 @@ function setupDietaryFilters() {
         dishRows.forEach(row => {
           const isVeg = (row.getAttribute('data-is-veg') === 'true' || row.getAttribute('data-veg') === 'true');
           const isHealthy = row.getAttribute('data-healthy') === 'true';
+          const isFav = row.getAttribute('data-favorite') === 'true';
+          const rowAllergens = (row.getAttribute('data-allergens') || '').trim();
           const rowMood = (row.getAttribute('data-mood') || '').trim().toLowerCase();
 
           let show = true;
           if (isVegOnly && !isVeg) show = false;
           if (isHealthyOnly && !isHealthy) show = false;
+          if (isFavOnly && !isFav) show = false;
+          if (isAllergenFree && rowAllergens !== '') show = false;
           if (selectedMood !== 'all') {
             const moodList = rowMood.split(',').map(m => m.trim());
             if (!moodList.includes(selectedMood)) show = false;
@@ -1396,6 +1601,8 @@ function setupDietaryFilters() {
 
     if (vegSwitch) vegSwitch.addEventListener('change', applyRestaurantFilters);
     if (healthySwitch) healthySwitch.addEventListener('change', applyRestaurantFilters);
+    if (restFavSwitch) restFavSwitch.addEventListener('change', applyRestaurantFilters);
+    if (restAllergenSwitch) restAllergenSwitch.addEventListener('change', applyRestaurantFilters);
     if (moodSelect) moodSelect.addEventListener('change', applyRestaurantFilters);
   }
 }
@@ -1533,26 +1740,49 @@ function renderCheckoutPage() {
 }
 
 /**
- * Apply Coupon Code
+ * Apply Coupon Code (Dynamic DB-Backed via validate-coupon.php)
  */
-function applyCoupon() {
+async function applyCoupon() {
   const input = document.getElementById('couponCodeInput');
   if (!input) return;
 
   const code = input.value.trim().toUpperCase();
-  if (code === 'LUSHFOREST') {
-    activeCoupon = 'LUSHFOREST';
-    localStorage.setItem('pooja_active_coupon', activeCoupon);
-    showToast('Success! 20% discount applied with code LUSHFOREST 🎉');
-  } else if (code === 'ZIPPY50') {
-    activeCoupon = 'ZIPPY50';
-    localStorage.setItem('pooja_active_coupon', activeCoupon);
-    showToast('Success! 50% discount applied with code ZIPPY50 🎉');
-  } else {
-    showToast('Invalid Coupon Code. Try LUSHFOREST or ZIPPY50', 'danger');
+  if (!code) {
+    activeCoupon = null;
+    window.ZIPPY_VALIDATED_COUPON = null;
+    localStorage.removeItem('pooja_active_coupon');
+    saveCart();
+    showToast('Coupon removed', 'info');
+    return;
   }
 
-  saveCart();
+  const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+  const url = `${window.CUSTOMER_URL || ''}/ajax/validate-coupon.php?code=${encodeURIComponent(code)}&subtotal=${encodeURIComponent(subtotal)}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data && data.valid) {
+      activeCoupon = code;
+      window.ZIPPY_VALIDATED_COUPON = data.coupon || null;
+      localStorage.setItem('pooja_active_coupon', activeCoupon);
+      showToast(`Success! Coupon ${code} applied (Save ₹${Number(data.discount || 0).toFixed(2)}) 🎉`);
+      saveCart();
+      return;
+    }
+    showToast((data && data.error) ? data.error : 'Invalid or ineligible coupon code.', 'danger');
+  } catch (err) {
+    const localDiscount = evaluateDynamicCoupon(code, subtotal);
+    const map = window.ZIPPY_AVAILABLE_COUPONS || {};
+    if (map[code] && localDiscount > 0) {
+      activeCoupon = code;
+      localStorage.setItem('pooja_active_coupon', activeCoupon);
+      showToast(`Success! Coupon ${code} applied 🎉`);
+      saveCart();
+    } else {
+      showToast('Invalid Coupon Code or minimum order not met.', 'danger');
+    }
+  }
 }
 
 let activeToastTimeout = null;

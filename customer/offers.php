@@ -28,85 +28,68 @@ $coupons = getAvailableCoupons();
 
     <!-- Active Promo Codes Grid -->
     <div class="row g-4 mb-5">
-      
-      <!-- Coupon 1 -->
-      <div class="col-md-4">
-        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
-          <div class="position-absolute top-0 end-0 m-3">
-            <span class="badge" style="background:#2E6F40; color:#CEFFDC;">20% OFF</span>
-          </div>
+      <?php
+        $accentThemes = [
+          ['badgeStyle' => 'background:#2E6F40; color:#CEFFDC;', 'iconBg' => 'background:#EDFBF2; color:#2E6F40;', 'icon' => 'fa-solid fa-seedling', 'codeClass' => 'text-forest', 'btnClass' => 'btn-success', 'btnStyle' => 'background:#2E6F40; border-color:#2E6F40;'],
+          ['badgeStyle' => 'background:#dc3545; color:#fff;', 'iconBg' => 'background:#fff1f1; color:#D32F2F;', 'icon' => 'fa-solid fa-fire-flame-curved', 'codeClass' => 'text-danger', 'btnClass' => 'btn-danger', 'btnStyle' => ''],
+          ['badgeStyle' => 'background:#ffc107; color:#212529;', 'iconBg' => 'background:#fffbe6; color:#E5A100;', 'icon' => 'fa-solid fa-gift', 'codeClass' => 'text-dark', 'btnClass' => 'btn-dark', 'btnStyle' => ''],
+        ];
+        $cIdx = 0;
+      ?>
+      <?php if (!empty($coupons)): ?>
+        <?php foreach ($coupons as $cp): ?>
+          <?php
+            $theme = $accentThemes[$cIdx % count($accentThemes)];
+            $cIdx++;
+            $cpCode = (string)($cp['code'] ?? '');
+            $cpTitle = (string)($cp['title'] ?? $cpCode);
+            $cpDesc = (string)($cp['description'] ?? '');
+            $badgeTxt = ($cp['discount_type'] ?? '') === 'percentage'
+              ? ((int)$cp['discount_value'] . '% OFF')
+              : ('FLAT ₹' . (int)$cp['discount_value']);
+          ?>
+          <div class="col-md-4">
+            <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
+              <div class="position-absolute top-0 end-0 m-3 d-flex gap-1">
+                <?php if (!empty($cp['first_order_only'])): ?>
+                  <span class="badge bg-info-subtle text-info border border-info-subtle">1st Order</span>
+                <?php endif; ?>
+                <span class="badge" style="<?= e($theme['badgeStyle']) ?>"><?= e($badgeTxt) ?></span>
+              </div>
 
-          <div>
-            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#EDFBF2; color:#2E6F40;">
-              <i class="fa-solid fa-seedling fs-5"></i>
+              <div>
+                <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; <?= e($theme['iconBg']) ?>">
+                  <i class="<?= e($theme['icon']) ?> fs-5"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-1 font-outfit"><?= e($cpTitle) ?></h5>
+                <p class="text-muted small mb-2"><?= e($cpDesc) ?></p>
+                <div class="d-flex flex-wrap gap-2 small text-muted mb-3">
+                  <?php if ((float)($cp['min_order'] ?? 0) > 0): ?>
+                    <span><i class="bi bi-bag me-1"></i>Min order ₹<?= number_format((float)$cp['min_order'], 0) ?></span>
+                  <?php endif; ?>
+                  <?php if (!empty($cp['valid_until'])): ?>
+                    <span><i class="bi bi-calendar2 me-1"></i>Until <?= e(date('M j', strtotime((string)$cp['valid_until']))) ?></span>
+                  <?php endif; ?>
+                </div>
+              </div>
+
+              <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
+                <code class="fs-5 fw-bold <?= e($theme['codeClass']) ?>"><?= e($cpCode) ?></code>
+                <button type="button" class="btn btn-sm <?= e($theme['btnClass']) ?> rounded-pill px-3 fw-bold" style="<?= e($theme['btnStyle']) ?>"
+                        onclick="navigator.clipboard?.writeText(<?= e(jsJson($cpCode)) ?>); localStorage.setItem('pooja_active_coupon', <?= e(jsJson($cpCode)) ?>); showToast('Coupon ' + <?= e(jsJson($cpCode)) ?> + ' applied & copied!');">
+                  APPLY
+                </button>
+              </div>
             </div>
-            <h5 class="fw-bold text-dark mb-1 font-outfit">Lush Forest Special</h5>
-            <p class="text-muted small mb-3">
-              Get 20% discount up to ₹100 on orders above ₹299. Exclusive to our Figma Lush Forest edition!
-            </p>
           </div>
-
-          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
-            <code class="fs-5 fw-bold text-forest">LUSHFOREST</code>
-            <button class="btn btn-sm btn-success rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('LUSHFOREST'); localStorage.setItem('pooja_active_coupon', 'LUSHFOREST'); showToast('Coupon LUSHFOREST applied & copied!');" style="background:#2E6F40; border-color:#2E6F40;">
-              APPLY
-            </button>
+        <?php endforeach; ?>
+      <?php else: ?>
+        <div class="col-12">
+          <div class="card border-0 rounded-4 shadow-sm p-5 text-center bg-white">
+            <p class="text-muted mb-0">No active promo codes are currently scheduled. Check back soon!</p>
           </div>
         </div>
-      </div>
-
-      <!-- Coupon 2 -->
-      <div class="col-md-4">
-        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
-          <div class="position-absolute top-0 end-0 m-3">
-            <span class="badge bg-danger">50% OFF</span>
-          </div>
-
-          <div>
-            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#fff1f1; color:#D32F2F;">
-              <i class="fa-solid fa-fire-flame-curved fs-5"></i>
-            </div>
-            <h5 class="fw-bold text-dark mb-1 font-outfit">Mega Feast 50</h5>
-            <p class="text-muted small mb-3">
-              Enjoy flat 50% discount up to ₹120 on orders above ₹399. Valid across all biryani and curries.
-            </p>
-          </div>
-
-          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
-            <code class="fs-5 fw-bold text-danger">ZIPPY50</code>
-            <button class="btn btn-sm btn-danger rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('ZIPPY50'); localStorage.setItem('pooja_active_coupon', 'ZIPPY50'); showToast('Coupon ZIPPY50 applied & copied!');">
-              APPLY
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Coupon 3 -->
-      <div class="col-md-4">
-        <div class="card h-100 border-0 rounded-4 shadow-sm p-4 bg-white d-flex flex-column justify-content-between position-relative overflow-hidden">
-          <div class="position-absolute top-0 end-0 m-3">
-            <span class="badge bg-warning text-dark">FLAT ₹50</span>
-          </div>
-
-          <div>
-            <div class="brand-icon-box mb-3" style="width: 44px; height: 44px; background:#fffbe6; color:#E5A100;">
-              <i class="fa-solid fa-gift fs-5"></i>
-            </div>
-            <h5 class="fw-bold text-dark mb-1 font-outfit">Welcome Treat</h5>
-            <p class="text-muted small mb-3">
-              Flat ₹50 OFF on your first food order above ₹199. Zero terms & conditions, instant savings!
-            </p>
-          </div>
-
-          <div class="d-flex align-items-center justify-content-between p-2 rounded-3 border bg-light">
-            <code class="fs-5 fw-bold text-dark">WELCOME</code>
-            <button class="btn btn-sm btn-dark rounded-pill px-3 fw-bold" onclick="navigator.clipboard.writeText('WELCOME'); localStorage.setItem('pooja_active_coupon', 'WELCOME'); showToast('Coupon WELCOME applied & copied!');">
-              APPLY
-            </button>
-          </div>
-        </div>
-      </div>
-
+      <?php endif; ?>
     </div>
 
     <!-- Bank & Payment Offers -->

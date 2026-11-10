@@ -875,45 +875,72 @@ function playStatusChime() {
     }
   }, 1000);
 
-  // Poll for status & live location updates
-  pollInterval = setInterval(async () => {
+  async function fetchOrderTelemetry() {
     try {
-      // 1. Fetch live coordinates and routing status
       const locRes = await fetch(`../api/live-location.php?portal=customer&order_id=${encodeURIComponent(orderId)}`);
-      if (locRes.ok) {
-        const data = await locRes.json();
-        if (data.success && data.status) {
-          const newStatus = data.status.toUpperCase();
-          updateLiveMapTelemetry(data);
+      if (!locRes.ok) return;
+      const data = await locRes.json();
+      if (data.success && data.status) {
+        const newStatus = data.status.toUpperCase();
+        updateLiveMapTelemetry(data);
 
-          if (newStatus === 'DELIVERED') {
-            handleDelivered(data.delivery_otp);
-          } else if (newStatus === 'OUT_FOR_DELIVERY' && orderStatus !== 'OUT_FOR_DELIVERY') {
-            orderStatus = newStatus;
-            playStatusChime();
-            if (statusHeading) statusHeading.textContent = 'Rider is on the way to your door';
-            if (statusSubtext) statusSubtext.textContent = 'Live GPS transit active • Indiranagar delivery corridor';
-            setStepActive(2);
-            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
-          } else if (newStatus === 'READY' && orderStatus !== 'READY') {
-            orderStatus = newStatus;
-            playStatusChime();
-            if (statusHeading) statusHeading.textContent = 'Order Plated & Packed!';
-            if (statusSubtext) statusSubtext.textContent = 'Packed in thermal bag at kitchen • Awaiting courier departure';
-            setStepActive(2);
-            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
-          } else if (newStatus === 'COOKING' && orderStatus !== 'COOKING') {
-            orderStatus = newStatus;
-            playStatusChime();
-            if (statusHeading) statusHeading.textContent = 'Chef is cooking your hot meal';
-            if (statusSubtext) statusSubtext.textContent = 'Active preparation on stoves at Zippy Kitchen Hub';
-            setStepActive(1);
-            if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
-          }
+        if (newStatus === 'DELIVERED') {
+          handleDelivered(data.delivery_otp);
+        } else if (newStatus === 'OUT_FOR_DELIVERY' && orderStatus !== 'OUT_FOR_DELIVERY') {
+          orderStatus = newStatus;
+          playStatusChime();
+          if (statusHeading) statusHeading.textContent = 'Rider is on the way to your door';
+          if (statusSubtext) statusSubtext.textContent = 'Live GPS transit active • Indiranagar delivery corridor';
+          setStepActive(2);
+          if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+        } else if (newStatus === 'READY' && orderStatus !== 'READY') {
+          orderStatus = newStatus;
+          playStatusChime();
+          if (statusHeading) statusHeading.textContent = 'Order Plated & Packed!';
+          if (statusSubtext) statusSubtext.textContent = 'Packed in thermal bag at kitchen • Awaiting courier departure';
+          setStepActive(2);
+          if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+        } else if (newStatus === 'COOKING' && orderStatus !== 'COOKING') {
+          orderStatus = newStatus;
+          playStatusChime();
+          if (statusHeading) statusHeading.textContent = 'Chef is cooking your hot meal';
+          if (statusSubtext) statusSubtext.textContent = 'Active preparation on stoves at Zippy Kitchen Hub';
+          setStepActive(1);
+          if (topBadgeContainer && data.badge_html) topBadgeContainer.innerHTML = data.badge_html;
+        } else if (newStatus === 'CANCELLED' && orderStatus !== 'CANCELLED') {
+          window.location.reload();
         }
       }
     } catch (e) {
       // silent network catch
+    }
+  }
+
+  // Real-time Server-Sent Events (SSE) push stream with graceful polling fallback
+  let sseConnected = false;
+  if (typeof EventSource !== 'undefined') {
+    try {
+      const sse = new EventSource(`../api/sse-stream.php?portal=customer&order_id=${encodeURIComponent(orderId)}`);
+      sse.addEventListener('connected', () => { sseConnected = true; });
+      sse.addEventListener('order_update', () => {
+        fetchOrderTelemetry();
+      });
+      sse.onerror = () => {
+        sseConnected = false;
+      };
+    } catch (e) {
+      sseConnected = false;
+    }
+  }
+
+  // Poll for live GPS map coordinates while OUT_FOR_DELIVERY, or fallback if SSE unavailable
+  pollInterval = setInterval(() => {
+    if (orderStatus === 'DELIVERED' || orderStatus === 'CANCELLED') {
+      clearInterval(pollInterval);
+      return;
+    }
+    if (!sseConnected || orderStatus === 'OUT_FOR_DELIVERY') {
+      fetchOrderTelemetry();
     }
   }, 3000);
 

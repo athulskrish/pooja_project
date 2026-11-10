@@ -20,8 +20,17 @@ $currentUser = getCurrentUser();
 
 require_once __DIR__ . '/includes/header.php';
 
-// Saved addresses for current user
+// Saved addresses, loyalty balance, and Indian geofenced zones for current user
 $savedAddresses = $currentUser ? OrderService::getCustomerAddresses((int)$currentUser['id']) : [];
+$userLoyaltyPoints = 0;
+if ($currentUser && !empty($currentUser['id'])) {
+    try {
+        $userLoyaltyPoints = max(0, (int)(dbFetchVal("SELECT `loyalty_points` FROM `users` WHERE `user_id` = :uid", [':uid' => (int)$currentUser['id']]) ?? 0));
+    } catch (Throwable $e) {
+        $userLoyaltyPoints = 0;
+    }
+}
+$indianZones = getIndianServiceZones();
 
 $errorMessage = null;
 
@@ -65,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       <input type="hidden" name="action" value="process_order">
       <input type="hidden" name="cart_json" id="checkoutCartJsonInput" value="[]">
       <input type="hidden" name="coupon_code" id="checkoutCouponInput" value="">
+      <input type="hidden" name="loyalty_points_used" id="checkoutLoyaltyInput" value="0">
       <input type="hidden" name="razorpay_payment_id" id="razorpayPaymentIdInput" value="">
       <input type="hidden" name="razorpay_order_id" id="razorpayOrderIdInput" value="">
       <input type="hidden" name="razorpay_signature" id="razorpaySignatureInput" value="">
@@ -97,17 +107,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php if (!empty($savedAddresses)): ?>
               <div class="row g-3 mb-3">
                 <?php foreach ($savedAddresses as $idx => $addr): ?>
+                  <?php
+                    $addrLat = isset($addr['latitude']) && $addr['latitude'] !== null ? (float)$addr['latitude'] : ZIPPY_HUB_LAT;
+                    $addrLng = isset($addr['longitude']) && $addr['longitude'] !== null ? (float)$addr['longitude'] : ZIPPY_HUB_LNG;
+                    $addrDist = isset($addr['distance_km']) && $addr['distance_km'] !== null
+                        ? (float)$addr['distance_km']
+                        : calculateHaversineDistanceKm(ZIPPY_HUB_LAT, ZIPPY_HUB_LNG, $addrLat, $addrLng);
+                    $addrFee = calculateDistanceDeliveryFee($addrDist, 100.00);
+                  ?>
                   <div class="col-md-6">
                     <label class="card h-100 p-3 border rounded-3 address-selector-card cursor-pointer <?= $addr['is_default'] ? 'border-success bg-mint-soft' : '' ?>" style="cursor: pointer;">
                       <div class="d-flex align-items-start gap-2">
-                        <input class="form-check-input mt-1" type="radio" name="address_id" value="<?= (int)$addr['address_id'] ?>" <?= ($idx === 0) ? 'checked' : '' ?>>
+                        <input class="form-check-input mt-1 address-radio-input" type="radio" name="address_id" value="<?= (int)$addr['address_id'] ?>"
+                               data-lat="<?= e((string)$addrLat) ?>" data-lng="<?= e((string)$addrLng) ?>" data-distance="<?= e(number_format($addrDist, 2, '.', '')) ?>" data-pincode="<?= e((string)$addr['pincode']) ?>"
+                               <?= ($idx === 0) ? 'checked' : '' ?>>
                         <div>
-                          <span class="badge bg-dark small mb-1"><?= e($addr['address_type']) ?></span>
+                          <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
+                            <span class="badge bg-dark small"><?= e($addr['address_type']) ?></span>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:0.66rem;">
+                              <?= number_format($addrDist, 1) ?> km &bull; ₹<?= number_format($addrFee, 0) ?> fee
+                            </span>
+                          </div>
                           <div class="small fw-semibold text-dark"><?= e($addr['address_line']) ?></div>
                           <?php if (!empty($addr['landmark'])): ?>
                             <div class="small text-muted">Near <?= e($addr['landmark']) ?></div>
                           <?php endif; ?>
-                          <div class="small text-muted">PIN: <?= e($addr['pincode']) ?></div>
+                          <div class="small text-muted">PIN: <?= e($addr['pincode']) ?> (Bengaluru)</div>
                         </div>
                       </div>
                     </label>
@@ -117,22 +142,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php endif; ?>
 
             <div class="border-top pt-3">
-              <a class="text-success small fw-bold text-decoration-none" data-bs-toggle="collapse" href="#newAddressCollapse" role="button">
-                + Deliver to a different or new address
+              <a class="text-success small fw-bold text-decoration-none" data-bs-toggle="collapse" href="#newAddressCollapse" role="button" id="toggleNewAddressBtn">
+                + Deliver to a different or new Bengaluru address
               </a>
               <div class="collapse <?= empty($savedAddresses) ? 'show' : '' ?> mt-3" id="newAddressCollapse">
+                <input type="hidden" name="new_latitude" id="newLatitudeInput" value="<?= e((string)ZIPPY_HUB_LAT) ?>">
+                <input type="hidden" name="new_longitude" id="newLongitudeInput" value="<?= e((string)ZIPPY_HUB_LNG) ?>">
                 <div class="row g-3">
                   <div class="col-12">
+                    <label class="form-label small fw-bold">Quick Select Bengaluru Delivery Zone (12 km Geofence)</label>
+                    <select id="newZoneSelector" class="form-select rounded-3">
+                      <option value="">-- Pick Bengaluru Area or Enter Pincode Below --</option>
+                      <?php foreach ($indianZones as $pin => $zInfo): ?>
+                        <option value="<?= e($pin) ?>" data-lat="<?= e((string)$zInfo['lat']) ?>" data-lng="<?= e((string)$zInfo['lng']) ?>">
+                          <?= e($zInfo['zone']) ?> (<?= e($pin) ?>) — <?= number_format(calculateHaversineDistanceKm(ZIPPY_HUB_LAT, ZIPPY_HUB_LNG, (float)$zInfo['lat'], (float)$zInfo['lng']), 1) ?> km from hub
+                        </option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-12">
                     <label class="form-label small fw-bold">Street Address / Flat / Building *</label>
-                    <textarea name="new_address_line" class="form-control rounded-3" rows="2" placeholder="Flat No, Apartment, Street Name, Landmark" <?= empty($savedAddresses) ? 'required' : '' ?>></textarea>
+                    <textarea name="new_address_line" id="newAddressLineInput" class="form-control rounded-3" rows="2" placeholder="Flat No, Apartment, Street Name, Landmark" <?= empty($savedAddresses) ? 'required' : '' ?>></textarea>
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label small fw-bold">Pincode (Bangalore) *</label>
-                    <input type="text" name="new_pincode" class="form-control rounded-3" placeholder="560038" value="560038">
+                    <label class="form-label small fw-bold">Pincode (Bengaluru 560xxx) *</label>
+                    <input type="text" name="new_pincode" id="newPincodeInput" class="form-control rounded-3" placeholder="560038" value="560038">
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-bold">City / State</label>
-                    <input type="text" class="form-control rounded-3 bg-light" value="Bangalore, Karnataka" readonly>
+                    <input type="text" class="form-control rounded-3 bg-light" value="Bengaluru, Karnataka (India)" readonly>
                   </div>
                 </div>
               </div>
@@ -208,17 +246,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
               <!-- Meal Slot Selection Chips -->
               <div class="mb-3">
-                <label class="form-label small fw-bold text-muted text-uppercase mb-2" style="font-size:0.72rem; letter-spacing:0.5px;">Choose Meal Time Window</label>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                  <label class="form-label small fw-bold text-muted text-uppercase mb-0" style="font-size:0.72rem; letter-spacing:0.5px;">Choose Meal Time Window</label>
+                  <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill" style="font-size:0.7rem;" id="fcfsSlotStatusBadge">
+                    <i class="bi bi-hourglass-split me-1"></i> FCFS Slot Capacity Active
+                  </span>
+                </div>
                 
                 <!-- Lunch Slots -->
                 <div class="mb-2">
                   <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-sun text-warning me-1"></i> Lunch Slots (12:00 PM – 02:30 PM)</span>
                   <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:15" data-slot="Lunch (12:00 PM - 12:30 PM)">12:00 PM - 12:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:45" data-slot="Lunch (12:30 PM - 01:00 PM)">12:30 PM - 01:00 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn active" data-time="13:15" data-slot="Lunch (01:00 PM - 01:30 PM)" style="background:#7C3AED; color:#fff; border-color:#7C3AED;">01:00 PM - 01:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="13:45" data-slot="Lunch (01:30 PM - 02:00 PM)">01:30 PM - 02:00 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="14:15" data-slot="Lunch (02:00 PM - 02:30 PM)">02:00 PM - 02:30 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:15" data-slot="Lunch (12:00 PM - 12:30 PM)">12:00 PM - 12:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="12:45" data-slot="Lunch (12:30 PM - 01:00 PM)">12:30 PM - 01:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn active" data-time="13:15" data-slot="Lunch (01:00 PM - 01:30 PM)" style="background:#7C3AED; color:#fff; border-color:#7C3AED;">01:00 PM - 01:30 PM <span class="slot-cap-badge badge bg-light text-dark ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="13:45" data-slot="Lunch (01:30 PM - 02:00 PM)">01:30 PM - 02:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="14:15" data-slot="Lunch (02:00 PM - 02:30 PM)">02:00 PM - 02:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
                   </div>
                 </div>
 
@@ -226,9 +269,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <div class="mb-2">
                   <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-cup-hot text-danger me-1"></i> High Tea & Snacks (04:30 PM – 06:00 PM)</span>
                   <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="16:45" data-slot="Snacks (04:30 PM - 05:00 PM)">04:30 PM - 05:00 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:15" data-slot="Snacks (05:00 PM - 05:30 PM)">05:00 PM - 05:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:45" data-slot="Snacks (05:30 PM - 06:00 PM)">05:30 PM - 06:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="16:45" data-slot="Snacks (04:30 PM - 05:00 PM)">04:30 PM - 05:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:15" data-slot="Snacks (05:00 PM - 05:30 PM)">05:00 PM - 05:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="17:45" data-slot="Snacks (05:30 PM - 06:00 PM)">05:30 PM - 06:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
                   </div>
                 </div>
 
@@ -236,12 +279,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <div class="mb-2">
                   <span class="small fw-semibold text-dark d-block mb-1"><i class="bi bi-moon-stars text-primary me-1"></i> Dinner Slots (07:00 PM – 10:00 PM)</span>
                   <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:15" data-slot="Dinner (07:00 PM - 07:30 PM)">07:00 PM - 07:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:45" data-slot="Dinner (07:30 PM - 08:00 PM)">07:30 PM - 08:00 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:15" data-slot="Dinner (08:00 PM - 08:30 PM)">08:00 PM - 08:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:45" data-slot="Dinner (08:30 PM - 09:00 PM)">08:30 PM - 09:00 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:15" data-slot="Dinner (09:00 PM - 09:30 PM)">09:00 PM - 09:30 PM</button>
-                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:45" data-slot="Dinner (09:30 PM - 10:00 PM)">09:30 PM - 10:00 PM</button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:15" data-slot="Dinner (07:00 PM - 07:30 PM)">07:00 PM - 07:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="19:45" data-slot="Dinner (07:30 PM - 08:00 PM)">07:30 PM - 08:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:15" data-slot="Dinner (08:00 PM - 08:30 PM)">08:00 PM - 08:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="20:45" data-slot="Dinner (08:30 PM - 09:00 PM)">08:30 PM - 09:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:15" data-slot="Dinner (09:00 PM - 09:30 PM)">09:00 PM - 09:30 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
+                    <button type="button" class="btn btn-sm btn-light border rounded-pill slot-chip-btn" data-time="21:45" data-slot="Dinner (09:30 PM - 10:00 PM)">09:30 PM - 10:00 PM <span class="slot-cap-badge badge bg-success-subtle text-success ms-1"></span></button>
                   </div>
                 </div>
 
@@ -358,11 +401,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               <!-- Synced via JS -->
             </div>
 
+            <!-- Inline Coupon & Loyalty Points Card -->
+            <div class="border-top pt-3 mb-3">
+              <div class="input-group input-group-sm mb-2">
+                <input type="text" class="form-control text-uppercase font-monospace fw-bold" id="checkoutCouponTextInput" placeholder="Promo Code (e.g. LUSHFOREST)">
+                <button class="btn btn-outline-success fw-bold" type="button" id="checkoutApplyCouponBtn">Apply</button>
+              </div>
+              <div id="checkoutCouponFeedback" class="small mb-2"></div>
+
+              <?php if ($userLoyaltyPoints > 0): ?>
+                <div class="p-2 rounded-3 bg-warning-subtle border border-warning d-flex align-items-center justify-content-between gap-2">
+                  <div class="small">
+                    <div class="fw-bold text-dark"><i class="bi bi-stars text-warning me-1"></i>Zippy Loyalty Points</div>
+                    <div class="text-muted" style="font-size:0.72rem;">Balance: <strong><?= $userLoyaltyPoints ?> pts</strong> (1 pt = ₹1, max 50% of food total)</div>
+                  </div>
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="useLoyaltyPointsToggle" style="cursor:pointer;">
+                  </div>
+                </div>
+              <?php endif; ?>
+            </div>
+
             <!-- Bill Breakdown -->
             <div class="border-top pt-3">
               <div class="d-flex justify-content-between small text-muted mb-2">
                 <span>Fulfillment Window</span>
                 <span class="fw-bold text-forest text-end" id="summaryDeliveryType">⚡ Express (~25-30m)</span>
+              </div>
+              <div class="d-flex justify-content-between small text-muted mb-2" id="chkDistanceRow">
+                <span>Delivery Distance (Bengaluru Hub)</span>
+                <span class="fw-semibold text-dark" id="chkDistanceLabel">2.5 km</span>
               </div>
               <div class="d-flex justify-content-between small text-muted mb-2">
                 <span>Item Total</span>
@@ -383,6 +451,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
               <div class="d-flex justify-content-between small text-success mb-2" id="chkDiscountRow" style="display:none !important;">
                 <span>Coupon Discount</span>
                 <span class="fw-bold" id="chkDiscount">-₹0.00</span>
+              </div>
+              <div class="d-flex justify-content-between small text-primary mb-2" id="chkLoyaltyRow" style="display:none !important;">
+                <span>Loyalty Points Redeemed</span>
+                <span class="fw-bold" id="chkLoyalty">-₹0.00</span>
               </div>
 
               <div class="border-top pt-3 mt-2 mb-4 d-flex justify-content-between align-items-center">
@@ -934,59 +1006,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 window.currentGrandTotal = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
+  const HUB_LAT = <?= json_encode((float)ZIPPY_HUB_LAT) ?>;
+  const HUB_LNG = <?= json_encode((float)ZIPPY_HUB_LNG) ?>;
+  const USER_LOYALTY_BALANCE = <?= json_encode((int)$userLoyaltyPoints) ?>;
+  const INDIAN_ZONES = <?= json_encode($indianZones) ?>;
+
   const jsonInput = document.getElementById('checkoutCartJsonInput');
   const couponInput = document.getElementById('checkoutCouponInput');
+  const couponTextInput = document.getElementById('checkoutCouponTextInput');
+  const couponApplyBtn = document.getElementById('checkoutApplyCouponBtn');
+  const couponFeedback = document.getElementById('checkoutCouponFeedback');
+  const loyaltyToggle = document.getElementById('useLoyaltyPointsToggle');
+  const loyaltyHiddenInput = document.getElementById('checkoutLoyaltyInput');
   const itemsContainer = document.getElementById('checkoutSummaryItems');
   const checkoutForm = document.getElementById('checkoutForm');
 
   // Synchronize client cart with hidden input
   if (jsonInput) jsonInput.value = JSON.stringify(cart);
   if (couponInput) couponInput.value = activeCoupon || '';
+  if (couponTextInput && activeCoupon) couponTextInput.value = activeCoupon;
 
-  // Synchronize UI bill breakdown
-  if (itemsContainer) {
+  function calcHaversineKm(lat1, lng1, lat2, lng2) {
+    const toRad = d => (d * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return Math.round(R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))) * 100) / 100;
+  }
+
+  function calcTieredDeliveryFee(distanceKm, subtotal) {
+    if (subtotal >= 499 || subtotal <= 0) return 0;
+    if (distanceKm <= 3.0) return 25;
+    if (distanceKm <= 6.0) return 40;
+    if (distanceKm <= 10.0) return 55;
+    return 70;
+  }
+
+  function getSelectedDistanceKm() {
+    const newAddrCollapse = document.getElementById('newAddressCollapse');
+    const newAddrLine = document.getElementById('newAddressLineInput');
+    const useNewAddr = newAddrCollapse && newAddrCollapse.classList.contains('show') && newAddrLine && newAddrLine.value.trim() !== '';
+    const checkedSaved = document.querySelector('input[name="address_id"]:checked');
+    if (!useNewAddr && checkedSaved) {
+      const distAttr = parseFloat(checkedSaved.getAttribute('data-distance') || '');
+      if (!Number.isNaN(distAttr) && distAttr >= 0) return distAttr;
+      const lat = parseFloat(checkedSaved.getAttribute('data-lat') || HUB_LAT);
+      const lng = parseFloat(checkedSaved.getAttribute('data-lng') || HUB_LNG);
+      return calcHaversineKm(HUB_LAT, HUB_LNG, lat, lng);
+    }
+    const newLat = parseFloat(document.getElementById('newLatitudeInput')?.value || HUB_LAT);
+    const newLng = parseFloat(document.getElementById('newLongitudeInput')?.value || HUB_LNG);
+    return calcHaversineKm(HUB_LAT, HUB_LNG, newLat, newLng);
+  }
+
+  function recalculateCheckoutSummary() {
+    if (!itemsContainer) return;
     if (!cart || cart.length === 0) {
       itemsContainer.innerHTML = '<div class="text-center text-muted small py-3">No items in cart. Please return to menu.</div>';
-    } else {
-      let subtotal = 0;
-      itemsContainer.innerHTML = '';
-      cart.forEach(item => {
-        subtotal += item.price * item.qty;
-        const row = document.createElement('div');
-        row.className = 'd-flex justify-content-between align-items-center small py-1';
-        row.innerHTML = `
-          <div class="text-truncate me-2">
-            <span class="badge ${item.isVeg ? 'bg-success' : 'bg-danger'} px-1 me-1" style="font-size:0.6rem;">${item.qty}x</span>
-            <span>${item.name}</span>
-          </div>
-          <span class="fw-bold">₹${(item.price * item.qty).toFixed(2)}</span>
-        `;
-        itemsContainer.appendChild(row);
-      });
+      return;
+    }
 
-      const coupon = activeCoupon;
-      let discount = 0;
-      if (coupon === 'LUSHFOREST' && subtotal >= 299) {
-        discount = Math.min(subtotal * 0.20, 100);
-      } else if (coupon === 'ZIPPY50' && subtotal >= 399) {
-        discount = Math.min(subtotal * 0.50, 120);
-      } else if (coupon === 'WELCOME' && subtotal >= 199) {
-        discount = 50;
-      }
+    let subtotal = 0;
+    itemsContainer.innerHTML = '';
+    cart.forEach(item => {
+      subtotal += item.price * item.qty;
+      const row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-center small py-1';
+      row.innerHTML = `
+        <div class="text-truncate me-2">
+          <span class="badge ${item.isVeg ? 'bg-success' : 'bg-danger'} px-1 me-1" style="font-size:0.6rem;">${item.qty}x</span>
+          <span>${escapeHtml(item.name)}</span>
+        </div>
+        <span class="fw-bold">₹${(item.price * item.qty).toFixed(2)}</span>
+      `;
+      itemsContainer.appendChild(row);
+    });
 
-      const deliveryFee = subtotal >= 499 ? 0 : 40;
-      const platformFee = 5;
-      const taxable = Math.max(0, subtotal - discount);
-      const gst = taxable * 0.05;
-      const grandTotal = taxable + gst + deliveryFee + platformFee;
-      window.currentGrandTotal = grandTotal;
+    const distanceKm = getSelectedDistanceKm();
+    const deliveryFee = calcTieredDeliveryFee(distanceKm, subtotal);
+    const platformFee = 5;
+    const discount = evaluateDynamicCoupon(activeCoupon, subtotal);
+    const afterCoupon = Math.max(0, subtotal - discount);
 
-      document.getElementById('chkSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
-      document.getElementById('chkDelivery').textContent = deliveryFee === 0 ? 'FREE' : `₹${deliveryFee.toFixed(2)}`;
-      document.getElementById('chkGst').textContent = `₹${gst.toFixed(2)}`;
-      document.getElementById('chkTotal').textContent = `₹${grandTotal.toFixed(2)}`;
+    let loyaltyPointsToUse = 0;
+    let loyaltyDiscount = 0;
+    if (loyaltyToggle && loyaltyToggle.checked && USER_LOYALTY_BALANCE > 0 && afterCoupon > 0) {
+      const maxPts = Math.floor(afterCoupon * 0.5);
+      loyaltyPointsToUse = Math.max(0, Math.min(USER_LOYALTY_BALANCE, maxPts));
+      loyaltyDiscount = loyaltyPointsToUse;
+    }
+    if (loyaltyHiddenInput) loyaltyHiddenInput.value = String(loyaltyPointsToUse);
+    if (couponInput) couponInput.value = activeCoupon || '';
 
-      const discRow = document.getElementById('chkDiscountRow');
+    const taxable = Math.max(0, afterCoupon - loyaltyDiscount);
+    const gst = Math.round(taxable * 0.05 * 100) / 100;
+    const grandTotal = Math.max(0, Math.round((taxable + gst + deliveryFee + platformFee) * 100) / 100);
+    window.currentGrandTotal = grandTotal;
+
+    const distLbl = document.getElementById('chkDistanceLabel');
+    if (distLbl) distLbl.textContent = `${distanceKm.toFixed(1)} km`;
+    document.getElementById('chkSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
+    document.getElementById('chkDelivery').textContent = deliveryFee === 0 ? 'FREE' : `₹${deliveryFee.toFixed(2)}`;
+    document.getElementById('chkGst').textContent = `₹${gst.toFixed(2)}`;
+    document.getElementById('chkTotal').textContent = `₹${grandTotal.toFixed(2)}`;
+
+    const discRow = document.getElementById('chkDiscountRow');
+    if (discRow) {
       if (discount > 0) {
         discRow.style.setProperty('display', 'flex', 'important');
         document.getElementById('chkDiscount').textContent = `-₹${discount.toFixed(2)}`;
@@ -994,6 +1120,99 @@ document.addEventListener('DOMContentLoaded', () => {
         discRow.style.setProperty('display', 'none', 'important');
       }
     }
+
+    const loyaltyRow = document.getElementById('chkLoyaltyRow');
+    if (loyaltyRow) {
+      if (loyaltyDiscount > 0) {
+        loyaltyRow.style.setProperty('display', 'flex', 'important');
+        document.getElementById('chkLoyalty').textContent = `-₹${loyaltyDiscount.toFixed(2)} (${loyaltyPointsToUse} pts)`;
+      } else {
+        loyaltyRow.style.setProperty('display', 'none', 'important');
+      }
+    }
+  }
+
+  recalculateCheckoutSummary();
+
+  document.querySelectorAll('.address-radio-input').forEach(r => {
+    r.addEventListener('change', recalculateCheckoutSummary);
+  });
+
+  const newZoneSel = document.getElementById('newZoneSelector');
+  const newPinInput = document.getElementById('newPincodeInput');
+  const newAddrLineInput = document.getElementById('newAddressLineInput');
+  if (newZoneSel) {
+    newZoneSel.addEventListener('change', function() {
+      const opt = this.options[this.selectedIndex];
+      if (!this.value) return;
+      if (newPinInput) newPinInput.value = this.value;
+      const latInput = document.getElementById('newLatitudeInput');
+      const lngInput = document.getElementById('newLongitudeInput');
+      if (latInput && opt.dataset.lat) latInput.value = opt.dataset.lat;
+      if (lngInput && opt.dataset.lng) lngInput.value = opt.dataset.lng;
+      recalculateCheckoutSummary();
+    });
+  }
+  if (newPinInput) {
+    newPinInput.addEventListener('input', function() {
+      const pin = this.value.trim();
+      if (INDIAN_ZONES[pin]) {
+        const latInput = document.getElementById('newLatitudeInput');
+        const lngInput = document.getElementById('newLongitudeInput');
+        if (latInput) latInput.value = INDIAN_ZONES[pin].lat;
+        if (lngInput) lngInput.value = INDIAN_ZONES[pin].lng;
+        if (newZoneSel) newZoneSel.value = pin;
+      }
+      recalculateCheckoutSummary();
+    });
+  }
+  if (newAddrLineInput) {
+    newAddrLineInput.addEventListener('input', recalculateCheckoutSummary);
+  }
+  if (loyaltyToggle) {
+    loyaltyToggle.addEventListener('change', recalculateCheckoutSummary);
+  }
+
+  if (couponApplyBtn && couponTextInput) {
+    couponApplyBtn.addEventListener('click', async () => {
+      const code = couponTextInput.value.trim().toUpperCase();
+      if (!code) {
+        activeCoupon = null;
+        window.ZIPPY_VALIDATED_COUPON = null;
+        localStorage.removeItem('pooja_active_coupon');
+        if (couponFeedback) {
+          couponFeedback.className = 'small text-muted mb-2';
+          couponFeedback.textContent = 'Coupon cleared.';
+        }
+        recalculateCheckoutSummary();
+        return;
+      }
+      const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+      try {
+        const res = await fetch(`${window.CUSTOMER_URL}/ajax/validate-coupon.php?code=${encodeURIComponent(code)}&subtotal=${encodeURIComponent(subtotal)}`);
+        const data = await res.json();
+        if (data && data.valid) {
+          activeCoupon = code;
+          window.ZIPPY_VALIDATED_COUPON = data.coupon || null;
+          localStorage.setItem('pooja_active_coupon', code);
+          if (couponFeedback) {
+            couponFeedback.className = 'small text-success fw-semibold mb-2';
+            couponFeedback.textContent = `Applied ${code}: Save ₹${Number(data.discount || 0).toFixed(2)}`;
+          }
+          recalculateCheckoutSummary();
+        } else {
+          if (couponFeedback) {
+            couponFeedback.className = 'small text-danger mb-2';
+            couponFeedback.textContent = (data && data.error) ? data.error : 'Invalid coupon code.';
+          }
+        }
+      } catch (e) {
+        if (couponFeedback) {
+          couponFeedback.className = 'small text-danger mb-2';
+          couponFeedback.textContent = 'Unable to verify coupon right now.';
+        }
+      }
+    });
   }
 
   // Delivery Timing Toggle (Deliver Now vs Schedule in Advance)
@@ -1009,6 +1228,59 @@ document.addEventListener('DOMContentLoaded', () => {
   const timeHidden = document.getElementById('scheduledTimeHidden');
   const datePills = document.querySelectorAll('.date-pill-btn');
   const slotChips = document.querySelectorAll('.slot-chip-btn');
+
+  async function refreshFcfsSlotCapacity(dateVal) {
+    if (!dateVal) return;
+    try {
+      const res = await fetch(`${window.CUSTOMER_URL}/ajax/slot-availability.php?date=${encodeURIComponent(dateVal)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || !data.success || !data.slots) return;
+
+      const byTime = data.slots_by_time || {};
+      const byLabel = data.slots_by_label || {};
+      if (Array.isArray(data.slots)) {
+        data.slots.forEach(s => {
+          if (s.time) byTime[s.time] = s;
+          if (s.label) byLabel[s.label] = s;
+        });
+      }
+
+      let activeSlotFull = false;
+      let firstAvailableChip = null;
+
+      slotChips.forEach(chip => {
+        const slotTime = chip.getAttribute('data-time') || '';
+        const slotLabel = chip.getAttribute('data-slot') || '';
+        const info = byTime[slotTime] || byLabel[slotLabel] || (!Array.isArray(data.slots) ? data.slots[slotLabel] : null);
+        const badge = chip.querySelector('.slot-cap-badge');
+        if (info) {
+          const remaining = Number(info.remaining ?? 0);
+          const full = Boolean(info.is_full ?? info.full) || remaining <= 0;
+          chip.disabled = full;
+          chip.classList.toggle('opacity-50', full);
+          if (badge) {
+            badge.textContent = full ? 'FULL' : `${remaining} left`;
+            badge.className = full
+              ? 'slot-cap-badge badge bg-danger text-white ms-1'
+              : 'slot-cap-badge badge bg-success-subtle text-success ms-1';
+          }
+          if (!full && !firstAvailableChip) {
+            firstAvailableChip = chip;
+          }
+          if (chip.classList.contains('active') && full) {
+            activeSlotFull = true;
+          }
+        }
+      });
+
+      if (activeSlotFull && firstAvailableChip) {
+        firstAvailableChip.click();
+      }
+    } catch (e) {
+      // silent catch; server enforces FCFS lock at checkout submit
+    }
+  }
 
   function updateScheduleSummary() {
     if (!radioSched || !radioSched.checked) {
@@ -1061,6 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cardNow.style.borderColor = '';
       }
       if (advanceBox) advanceBox.style.display = 'block';
+      if (dateInput) refreshFcfsSlotCapacity(dateInput.value);
     } else {
       if (radioNow) radioNow.checked = true;
       if (cardNow) {
@@ -1102,6 +1375,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dateInput) {
         dateInput.value = d;
       }
+      refreshFcfsSlotCapacity(d);
       updateScheduleSummary();
     });
   });
@@ -1119,6 +1393,7 @@ document.addEventListener('DOMContentLoaded', () => {
           p.style.color = '';
         }
       });
+      refreshFcfsSlotCapacity(this.value);
       updateScheduleSummary();
     });
   }
